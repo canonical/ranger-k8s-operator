@@ -7,20 +7,20 @@ import unittest
 
 import ops
 import ops.testing
-from charm import RangerK8SOperatorCharm
+from charm import RangerK8SCharm
 
 
 class TestCharm(unittest.TestCase):
     def setUp(self):
-        self.harness = ops.testing.Harness(RangerK8SOperatorCharm)
+        self.harness = ops.testing.Harness(RangerK8SCharm)
         self.addCleanup(self.harness.cleanup)
         self.harness.begin()
 
-    def test_httpbin_pebble_ready(self):
+    def test_ranger_pebble_ready(self):
         # Expected plan after Pebble ready with default config
         expected_plan = {
             "services": {
-                "httpbin": {
+                "ranger": {
                     "override": "replace",
                     "summary": "httpbin",
                     "command": "gunicorn -b 0.0.0.0:80 httpbin:app -k gevent",
@@ -30,25 +30,25 @@ class TestCharm(unittest.TestCase):
             },
         }
         # Simulate the container coming up and emission of pebble-ready event
-        self.harness.container_pebble_ready("httpbin")
+        self.harness.container_pebble_ready("ranger")
         # Get the plan now we've run PebbleReady
-        updated_plan = self.harness.get_container_pebble_plan("httpbin").to_dict()
+        updated_plan = self.harness.get_container_pebble_plan("ranger").to_dict()
         # Check we've got the plan we expected
         self.assertEqual(expected_plan, updated_plan)
         # Check the service was started
-        service = self.harness.model.unit.get_container("httpbin").get_service("httpbin")
+        service = self.harness.model.unit.get_container("ranger").get_service("ranger")
         self.assertTrue(service.is_running())
         # Ensure we set an ActiveStatus with no message
         self.assertEqual(self.harness.model.unit.status, ops.ActiveStatus())
 
     def test_config_changed_valid_can_connect(self):
         # Ensure the simulated Pebble API is reachable
-        self.harness.set_can_connect("httpbin", True)
+        self.harness.set_can_connect("ranger", True)
         # Trigger a config-changed event with an updated value
         self.harness.update_config({"log-level": "debug"})
         # Get the plan now we've run PebbleReady
-        updated_plan = self.harness.get_container_pebble_plan("httpbin").to_dict()
-        updated_env = updated_plan["services"]["httpbin"]["environment"]
+        updated_plan = self.harness.get_container_pebble_plan("ranger").to_dict()
+        updated_env = updated_plan["services"]["ranger"]["environment"]
         # Check the config change was effective
         self.assertEqual(updated_env, {"GUNICORN_CMD_ARGS": "--log-level debug"})
         self.assertEqual(self.harness.model.unit.status, ops.ActiveStatus())
@@ -61,7 +61,7 @@ class TestCharm(unittest.TestCase):
 
     def test_config_changed_invalid(self):
         # Ensure the simulated Pebble API is reachable
-        self.harness.set_can_connect("httpbin", True)
+        self.harness.set_can_connect("ranger", True)
         # Trigger a config-changed event with an updated value
         self.harness.update_config({"log-level": "foobar"})
         # Check the charm is in BlockedStatus

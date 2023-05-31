@@ -8,19 +8,30 @@ Avoid using this README file for information that is maintained or published els
 Use links instead.
 -->
 
-# ranger-k8s-operator
+# Ranger K8s Operator
 
-Charmhub package name: operator-template
-More information: https://charmhub.io/ranger-k8s-operator
+This is the Kubernetes Python Operator for [Apache Ranger](https://github.com/apache/ranger).
 
-Describe your charm in one or two sentences.
+## Usage
 
-## Other resources
+Note: This operator requires the use of juju>=3.1.
 
-<!-- If your charm is documented somewhere else other than Charmhub, provide a link separately. -->
+### Deploying Ranger and PostgreSQL Database in MicroK8S
 
-- [Read more](https://example.com)
+Ranger requires PostgreSQL to store its state. 
+Therefore, its deployment requires a relation with the Postgres charm:
 
-- [Contributing](CONTRIBUTING.md) <!-- or link to other contribution documentation -->
+```bash
+# this will be blocked until the relation with Postgres is created 
+juju deploy ./ranger-k8s_ubuntu-20.04-amd64.charm --resource ranger-image=localhost:32000/ranger:2.4.0
+juju deploy postgresql-k8s --channel 14/stable --trust
+juju relate ranger-k8s:db postgresql-k8s:database
+```
+Refer to [CONTRIBUTING.md](./CONTRIBUTING.md) for details on building the charm and ranger image. 
 
-- See the [Juju SDK documentation](https://juju.is/docs/sdk) for more information about developing and improving charms.
+## Contributing
+
+This charm is still in active development. Please see the
+[Juju SDK docs](https://juju.is/docs/sdk) for guidelines on enhancements to this
+charm following best practice guidelines, and
+[CONTRIBUTING.md](./CONTRIBUTING.md) for developer guidance.

@@ -24,7 +24,7 @@ async def test_build_and_deploy(ops_test: OpsTest):
     """
     # Build and deploy charm from local source folder
     charm = await ops_test.build_charm(".")
-    resources = {"httpbin-image": METADATA["resources"]["httpbin-image"]["upstream-source"]}
+    resources = {"ranger-image": METADATA["resources"]["ranger-image"]["upstream-source"]}
 
     # Deploy the charm and wait for active/idle status
     await asyncio.gather(

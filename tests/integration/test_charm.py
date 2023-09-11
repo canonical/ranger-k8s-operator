@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-# Copyright 2023 Genc Tato
+# Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
+
+"""Charm integration tests."""
 
 import asyncio
 import logging
@@ -24,12 +26,21 @@ async def test_build_and_deploy(ops_test: OpsTest):
     """
     # Build and deploy charm from local source folder
     charm = await ops_test.build_charm(".")
-    resources = {"ranger-image": METADATA["resources"]["ranger-image"]["upstream-source"]}
+    resources = {
+        "ranger-image": METADATA["resources"]["ranger-image"][
+            "upstream-source"
+        ]
+    }
 
     # Deploy the charm and wait for active/idle status
     await asyncio.gather(
-        ops_test.model.deploy(charm, resources=resources, application_name=APP_NAME),
+        ops_test.model.deploy(
+            charm, resources=resources, application_name=APP_NAME
+        ),
         ops_test.model.wait_for_idle(
-            apps=[APP_NAME], status="active", raise_on_blocked=True, timeout=1000
+            apps=[APP_NAME],
+            status="active",
+            raise_on_blocked=True,
+            timeout=1000,
         ),
     )

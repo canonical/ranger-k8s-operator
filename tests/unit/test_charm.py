@@ -17,7 +17,7 @@ from charm import RangerK8SCharm
 from state import State
 
 logger = logging.getLogger(__name__)
-
+APPLICATION_PORT = "6080"
 
 class TestCharm(TestCase):
     """Unit tests.
@@ -146,6 +146,28 @@ class TestCharm(TestCase):
             harness.model.unit.status,
             ActiveStatus(),
         )
+
+    def test_ingress(self):
+        """The charm relates correctly to the nginx ingress charm."""
+        harness = self.harness
+
+        simulate_lifecycle(harness)
+
+        nginx_route_relation_id = harness.add_relation(
+            "nginx-route", "ingress"
+        )
+        harness.charm._require_nginx_route()
+
+        assert harness.get_relation_data(
+            nginx_route_relation_id, harness.charm.app
+        ) == {
+            "service-namespace": harness.charm.model.name,
+            "service-hostname": harness.charm.app.name,
+            "service-name": harness.charm.app.name,
+            "service-port": APPLICATION_PORT,
+            "backend-protocol": "HTTP",
+            "tls-secret-name": "ranger-tls",
+        }
 
 
 def simulate_lifecycle(harness):

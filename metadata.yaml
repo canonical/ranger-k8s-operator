@@ -30,6 +30,8 @@ requires:
   db:
     interface: postgresql_client
     limit: 1
+  nginx-route:
+    interface: nginx-route
 
 # The containers and resources metadata apply to Kubernetes charms only.
 # Remove them if not required.

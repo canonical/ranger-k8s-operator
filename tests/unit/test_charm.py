@@ -17,6 +17,7 @@ from charm import RangerK8SCharm
 from state import State
 
 logger = logging.getLogger(__name__)
+
 APPLICATION_PORT = "6080"
 
 class TestCharm(TestCase):
@@ -74,7 +75,7 @@ class TestCharm(TestCase):
                 "ranger": {
                     "override": "replace",
                     "summary": "ranger server",
-                    "command": "/home/ranger/scripts/ranger.sh",
+                    "command": "/tmp/entrypoint.sh",
                     "startup": "enabled",
                     "environment": {
                         "DB_NAME": "ranger-k8s_db",

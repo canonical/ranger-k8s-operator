@@ -58,7 +58,7 @@ class RangerK8SCharm(ops.CharmBase):
         )
         self.postgres_relation_handler = PostgresRelationHandler(self)
 
-          # Handle Ingress
+        # Handle Ingress
         self._require_nginx_route()
 
     def _require_nginx_route(self):
@@ -153,7 +153,7 @@ class RangerK8SCharm(ops.CharmBase):
             "services": {
                 self.name: {
                     "summary": "ranger server",
-                    "command": "/home/ranger/scripts/ranger.sh",
+                    "command": "/tmp/entrypoint.sh",
                     "startup": "enabled",
                     "override": "replace",
                     "environment": context,

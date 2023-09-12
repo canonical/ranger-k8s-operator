@@ -1,35 +1,31 @@
 #!/usr/bin/env python3
-# Copyright 2023 Genc Tato
+# Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-import asyncio
+"""Charm integration tests."""
+
 import logging
-from pathlib import Path
 
 import pytest
-import yaml
+import requests
+from conftest import deploy  # noqa: F401, pylint: disable=W0611
+from helpers import APP_NAME, get_unit_url
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
 
-METADATA = yaml.safe_load(Path("./metadata.yaml").read_text())
-APP_NAME = METADATA["name"]
-
 
 @pytest.mark.abort_on_fail
-async def test_build_and_deploy(ops_test: OpsTest):
-    """Build the charm-under-test and deploy it together with related charms.
+@pytest.mark.usefixtures("deploy")
+class TestDeployment:
+    """Integration tests for charm."""
 
-    Assert on the unit status before any relations/configurations take place.
-    """
-    # Build and deploy charm from local source folder
-    charm = await ops_test.build_charm(".")
-    resources = {"ranger-image": METADATA["resources"]["ranger-image"]["upstream-source"]}
+    async def test_ui(self, ops_test: OpsTest):
+        """Perform GET request on the Ranger UI host."""
+        url = await get_unit_url(
+            ops_test, application=APP_NAME, unit=0, port=6080
+        )
+        logger.info("curling app address: %s", url)
 
-    # Deploy the charm and wait for active/idle status
-    await asyncio.gather(
-        ops_test.model.deploy(charm, resources=resources, application_name=APP_NAME),
-        ops_test.model.wait_for_idle(
-            apps=[APP_NAME], status="active", raise_on_blocked=True, timeout=1000
-        ),
-    )
+        response = requests.get(url, timeout=300, verify=False)  # nosec
+        assert response.status_code == 200

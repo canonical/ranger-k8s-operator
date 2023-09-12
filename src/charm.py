@@ -132,7 +132,7 @@ class RangerK8SCharm(ops.CharmBase):
             "services": {
                 self.name: {
                     "summary": "ranger server",
-                    "command": "/tmp/entrypoint.sh",
+                    "command": "/tmp/entrypoint.sh",  #nosec
                     "startup": "enabled",
                     "override": "replace",
                     "environment": context,

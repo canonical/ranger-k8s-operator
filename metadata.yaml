@@ -1,8 +1,6 @@
-# This file populates the Overview on Charmhub.
-# See https://juju.is/docs/sdk/metadata-reference for a checklist and guidance.
+# Copyright 2023 Canonical Ltd.
+# See LICENSE file for licensing details.
 
-# The charm package name, no spaces (required)
-# See https://juju.is/docs/sdk/naming#heading--naming-charms for guidance.
 name: ranger-k8s
  
 # The following metadata are human-readable and will be published prominently on Charmhub.
@@ -22,6 +20,13 @@ description: |
 
   Finally, a paragraph that describes whom the charm is useful for.
 
+maintainers:
+  - Commercial Systems <jaas-crew@lists.canonical.com>
+
+source: https://github.com/canonical/ranger-k8s-operator
+docs: https://github.com/canonical/ranger-k8s-operator
+issues: https://github.com/canonical/ranger-k8s-operator/issues
+
 peers:
   peer:
     interface: ranger
@@ -31,22 +36,12 @@ requires:
     interface: postgresql_client
     limit: 1
 
-# The containers and resources metadata apply to Kubernetes charms only.
-# Remove them if not required.
-
-# Your workload’s containers.
 containers:
   ranger:
     resource: ranger-image
 
-# This field populates the Resources tab on Charmhub.
 resources:
-  # An OCI image resource for each container listed above.
-  # You may remove this if your charm will run without a workload sidecar container.
   ranger-image:
     type: oci-image
     description: OCI image for Apache Ranger
-    # The upstream-source field is ignored by Juju. It is included here as a reference
-    # so the integration testing suite knows which image to deploy during testing. This field
-    # is also used by the 'canonical/charming-actions' Github action for automated releasing.
     upstream-source: canonical/ranger

@@ -51,4 +51,4 @@ resources:
     # The upstream-source field is ignored by Juju. It is included here as a reference
     # so the integration testing suite knows which image to deploy during testing. This field
     # is also used by the 'canonical/charming-actions' Github action for automated releasing.
-    upstream-source: apache/ranger:2.4.0
+    upstream-source: canonical/ranger

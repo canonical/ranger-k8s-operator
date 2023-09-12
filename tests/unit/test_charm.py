@@ -18,7 +18,6 @@ from state import State
 
 logger = logging.getLogger(__name__)
 
-APPLICATION_PORT = "6080"
 
 class TestCharm(TestCase):
     """Unit tests.
@@ -165,7 +164,7 @@ class TestCharm(TestCase):
             "service-namespace": harness.charm.model.name,
             "service-hostname": harness.charm.app.name,
             "service-name": harness.charm.app.name,
-            "service-port": APPLICATION_PORT,
+            "service-port": "6080",
             "backend-protocol": "HTTP",
             "tls-secret-name": "ranger-tls",
         }

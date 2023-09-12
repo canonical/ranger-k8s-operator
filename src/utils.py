@@ -19,10 +19,14 @@ def render(template_name, context):
     Returns:
         A dict containing the rendered template.
     """
-    charm_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+    charm_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), os.pardir)
+    )
     loader = FileSystemLoader(os.path.join(charm_dir, "templates"))
     return (
-        Environment(loader=loader, autoescape=True).get_template(template_name).render(**context)
+        Environment(loader=loader, autoescape=True)
+        .get_template(template_name)
+        .render(**context)
     )
 
 
@@ -51,17 +55,20 @@ def log_event_handler(logger):
             """Log decorator method.
 
             Args:
-                self: current object
                 event: The event triggered when the relation changes.
 
             Returns:
                 Decorated method.
             """
-            logger.info(f"* running {self.__class__.__name__}.{method.__name__}")
+            logger.info(
+                f"* running {self.__class__.__name__}.{method.__name__}"
+            )
             try:
                 return method(self, event)
             finally:
-                logger.info(f"* completed {self.__class__.__name__}.{method.__name__}")
+                logger.info(
+                    f"* completed {self.__class__.__name__}.{method.__name__}"
+                )
 
         return decorated
 

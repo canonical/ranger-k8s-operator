@@ -118,6 +118,7 @@ class RangerK8SCharm(ops.CharmBase):
                 "DB_PWD": db_conn["password"],
                 "RANGER_ADMIN_PWD": self.config["ranger-admin-password"],
                 "JAVA_OPTS": "-Duser.timezone=UTC0",
+                "RANGER_VERSION": "2.4.0",
             }
         )
 
@@ -132,7 +133,7 @@ class RangerK8SCharm(ops.CharmBase):
             "services": {
                 self.name: {
                     "summary": "ranger server",
-                    "command": "/tmp/entrypoint.sh",
+                    "command": "/home/ranger/scripts/ranger.sh",
                     "startup": "enabled",
                     "override": "replace",
                     "environment": context,

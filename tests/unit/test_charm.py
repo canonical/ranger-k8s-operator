@@ -74,7 +74,7 @@ class TestCharm(TestCase):
                 "ranger": {
                     "override": "replace",
                     "summary": "ranger server",
-                    "command": "/tmp/entrypoint.sh",
+                    "command": "/home/ranger/scripts/ranger.sh",
                     "startup": "enabled",
                     "environment": {
                         "DB_NAME": "ranger-k8s_db",

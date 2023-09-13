@@ -24,10 +24,10 @@ class PostgresRelationHandler(framework.Object):
         Args:
             charm: The charm to attach the hooks to.
         """
-        super().__init__(charm, "db")
+        super().__init__(charm, "database")
         self.charm = charm
 
-        # Handle db:pgsql relation.
+        # Handle database relation.
         charm.framework.observe(
             self.charm.postgres_relation.on.database_created, self._on_database_changed
         )
@@ -35,7 +35,7 @@ class PostgresRelationHandler(framework.Object):
             self.charm.postgres_relation.on.endpoints_changed, self._on_database_changed
         )
         charm.framework.observe(
-            self.charm.postgres_relation.on.db_relation_broken, self._on_database_relation_broken
+            self.charm.on.database_relation_broken, self._on_database_relation_broken
         )
 
     @log_event_handler(logger)

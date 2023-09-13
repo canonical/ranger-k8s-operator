@@ -39,7 +39,7 @@ class RangerK8SCharm(ops.CharmBase):
         self.framework.observe(self.on.config_changed, self._on_config_changed)
 
         self.postgres_relation = DatabaseRequires(
-            self, relation_name="db", database_name=PostgresRelationHandler.DB_NAME
+            self, relation_name="database", database_name=PostgresRelationHandler.DB_NAME
         )
         self.postgres_relation_handler = PostgresRelationHandler(self)
 

@@ -2,14 +2,6 @@
 # See LICENSE file for licensing details.
 
 options:
-  log-level:
-    description: |
-      Configures the log level of gunicorn. 
-
-      Acceptable values are: "info", "debug", "warning", "error" and "critical"
-    default: "info"
-    type: string
-
   ranger-admin-password:
     description: |
       Password used for the policy manager (Web interface)

@@ -74,7 +74,7 @@ class TestCharm(TestCase):
                 "ranger": {
                     "override": "replace",
                     "summary": "ranger server",
-                    "command": "/tmp/entrypoint.sh",  #nosec
+                    "command": "/tmp/entrypoint.sh",  # nosec
                     "startup": "enabled",
                     "environment": {
                         "DB_NAME": "ranger-k8s_db",
@@ -84,7 +84,6 @@ class TestCharm(TestCase):
                         "DB_PWD": "admin",
                         "RANGER_ADMIN_PWD": "rangerR0cks!",
                         "JAVA_OPTS": "-Duser.timezone=UTC0",
-                        "LOG_LEVEL": "info",
                     },
                 }
             },
@@ -104,27 +103,6 @@ class TestCharm(TestCase):
             ActiveStatus(""),
         )
 
-    def test_invalid_config_value(self):
-        """The charm blocks if an invalid config value is provided."""
-        harness = self.harness
-        simulate_lifecycle(harness)
-
-        # Update the config with an invalid value.
-        self.harness.update_config({"log-level": "debugging"})
-
-        # The change is not applied to the plan.
-        want_log_level = "info"
-        got_log_level = harness.get_container_pebble_plan("ranger").to_dict()[
-            "services"
-        ]["ranger"]["environment"]["LOG_LEVEL"]
-        self.assertEqual(got_log_level, want_log_level)
-
-        # The BlockStatus is set with a message.
-        self.assertEqual(
-            harness.model.unit.status,
-            BlockedStatus("config: invalid log level 'debugging'"),
-        )
-
     def test_config_changed(self):
         """The pebble plan changes according to config changes."""
         harness = self.harness
@@ -134,7 +112,7 @@ class TestCharm(TestCase):
         self.harness.update_config({"ranger-admin-password": "secure-pass"})
 
         # The new plan reflects the change.
-        want_admin_password = "secure-pass"  #nosec
+        want_admin_password = "secure-pass"  # nosec
         got_admin_password = harness.get_container_pebble_plan(
             "ranger"
         ).to_dict()["services"]["ranger"]["environment"]["RANGER_ADMIN_PWD"]

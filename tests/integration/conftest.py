@@ -24,7 +24,9 @@ async def deploy(ops_test: OpsTest):
     """Deploy the app."""
     charm = await ops_test.build_charm(".")
     resources = {
-        "ranger-image": "localhost:32000/ranger-admin:2.3.0"
+        "ranger-image": METADATA["resources"]["ranger-image"][
+            "upstream-source"
+        ]
     }
     await ops_test.model.deploy(POSTGRES_NAME, channel="14", trust=True)
     await ops_test.model.deploy(

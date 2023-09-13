@@ -17,8 +17,8 @@ from charms.data_platform_libs.v0.database_requires import DatabaseRequires
 from charms.nginx_ingress_integrator.v0.nginx_route import require_nginx_route
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 
-from relations.postgres import PostgresRelationHandler
 from literals import APPLICATION_PORT
+from relations.postgres import PostgresRelationHandler
 from state import State
 from utils import log_event_handler, render
 
@@ -29,7 +29,11 @@ VALID_LOG_LEVELS = ["info", "debug", "warning", "error", "critical"]
 
 
 class RangerK8SCharm(ops.CharmBase):
-    """Charm the service."""
+    """Charm the service.
+
+    Attributes:
+        external_hostname: DNS listing used for external connections.
+    """
 
     @property
     def external_hostname(self):
@@ -153,7 +157,7 @@ class RangerK8SCharm(ops.CharmBase):
             "services": {
                 self.name: {
                     "summary": "ranger server",
-                    "command": "/tmp/entrypoint.sh",
+                    "command": "/tmp/entrypoint.sh",  #nosec
                     "startup": "enabled",
                     "override": "replace",
                     "environment": context,

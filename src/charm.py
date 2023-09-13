@@ -15,7 +15,7 @@ https://discourse.charmhub.io/t/4208
 import logging
 
 import ops
-from charms.data_platform_libs.v0.database_requires import DatabaseRequires
+from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 from relations.postgres import PostgresRelationHandler
 from state import State

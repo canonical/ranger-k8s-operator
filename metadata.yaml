@@ -35,6 +35,8 @@ requires:
   db:
     interface: postgresql_client
     limit: 1
+  nginx-route:
+    interface: nginx-route
 
 containers:
   ranger:

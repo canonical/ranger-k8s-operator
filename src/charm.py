@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2023 Canonical Ltd
+# Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
-#
-# Learn more at: https://juju.is/docs/sdk
 
 """Charm the service.
 
@@ -16,11 +14,17 @@ import logging
 
 import ops
 from charms.data_platform_libs.v0.database_requires import DatabaseRequires
-from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus
+from ops.model import (
+    ActiveStatus,
+    BlockedStatus,
+    MaintenanceStatus,
+    WaitingStatus,
+)
+from ops.pebble import CheckStatus
+
 from relations.postgres import PostgresRelationHandler
 from state import State
 from utils import log_event_handler, render
-from ops.pebble import CheckStatus
 
 # Log messages can be retrieved using juju debug-log
 logger = logging.getLogger(__name__)
@@ -32,16 +36,25 @@ class RangerK8SCharm(ops.CharmBase):
     """Charm the service."""
 
     def __init__(self, *args):
+        """Construct.
+
+        Args:
+            args: Ignore.
+        """
         super().__init__(*args)
         self.state = State(self.app, lambda: self.model.get_relation("peer"))
         self.name = "ranger"
 
-        self.framework.observe(self.on.ranger_pebble_ready, self._on_ranger_pebble_ready)
+        self.framework.observe(
+            self.on.ranger_pebble_ready, self._on_ranger_pebble_ready
+        )
         self.framework.observe(self.on.config_changed, self._on_config_changed)
         self.framework.observe(self.on.update_status, self._on_update_status)
 
         self.postgres_relation = DatabaseRequires(
-            self, relation_name="db", database_name=PostgresRelationHandler.DB_NAME
+            self,
+            relation_name="db",
+            database_name=PostgresRelationHandler.DB_NAME,
         )
         self.postgres_relation_handler = PostgresRelationHandler(self)
 
@@ -121,7 +134,9 @@ class RangerK8SCharm(ops.CharmBase):
         options = {
             "log-level": "LOG_LEVEL",
         }
-        context = {config_key: self.config[key] for key, config_key in options.items()}
+        context = {
+            config_key: self.config[key] for key, config_key in options.items()
+        }
         db_conn = self.state.database_connection
         context.update(
             {
@@ -136,7 +151,9 @@ class RangerK8SCharm(ops.CharmBase):
         )
 
         config = render("config.jinja", context)
-        container.push("/usr/lib/ranger/install.properties", config, make_dirs=True)
+        container.push(
+            "/usr/lib/ranger/install.properties", config, make_dirs=True
+        )
 
         logger.info("planning ranger execution")
         pebble_layer = {
@@ -144,26 +161,24 @@ class RangerK8SCharm(ops.CharmBase):
             "services": {
                 self.name: {
                     "summary": "ranger server",
-                    "command": "/tmp/entrypoint.sh",
+                    "command": "/tmp/entrypoint.sh",  # nosec
                     "startup": "enabled",
                     "override": "replace",
-                    # Including config values here so that a change in the
-                    # config forces re-planning to restart the service.
                     "environment": context,
                 }
             },
         }
         pebble_layer.update(
-                {
-                    "checks": {
-                        "up": {
-                            "override": "replace",
-                            "period": "10s",
-                            "http": {"url": "http://localhost:6080/"},
-                        }
+            {
+                "checks": {
+                    "up": {
+                        "override": "replace",
+                        "period": "10s",
+                        "http": {"url": "http://localhost:6080/"},
                     }
-                },
-            )
+                }
+            },
+        )
         container.add_layer(self.name, pebble_layer, combine=True)
         container.replan()
 

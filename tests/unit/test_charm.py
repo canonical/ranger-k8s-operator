@@ -10,7 +10,7 @@ import json
 import logging
 from unittest import TestCase
 
-from ops.model import ActiveStatus, BlockedStatus
+from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
 from ops.testing import Harness
 
 from charm import RangerK8SCharm
@@ -98,10 +98,10 @@ class TestCharm(TestCase):
         )
         self.assertTrue(service.is_running())
 
-        # The ActiveStatus is set with replan message.
+        # The MaintenanceStatus is set with replan message.
         self.assertEqual(
             harness.model.unit.status,
-            ActiveStatus(""),
+            MaintenanceStatus('replanning application'),
         )
 
     def test_invalid_config_value(self):
@@ -144,7 +144,7 @@ class TestCharm(TestCase):
         # The MaintenanceStatus is set with replan message.
         self.assertEqual(
             harness.model.unit.status,
-            ActiveStatus(),
+            MaintenanceStatus('replanning application'),
         )
 
     def test_ingress(self):

@@ -14,6 +14,7 @@ import logging
 
 import ops
 from charms.data_platform_libs.v0.database_requires import DatabaseRequires
+from charms.nginx_ingress_integrator.v0.nginx_route import require_nginx_route
 from ops.model import (
     ActiveStatus,
     BlockedStatus,
@@ -21,7 +22,6 @@ from ops.model import (
     WaitingStatus,
 )
 from ops.pebble import CheckStatus
-from charms.nginx_ingress_integrator.v0.nginx_route import require_nginx_route
 
 from literals import APPLICATION_PORT
 from relations.postgres import PostgresRelationHandler

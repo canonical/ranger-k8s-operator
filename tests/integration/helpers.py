@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 METADATA = yaml.safe_load(Path("./metadata.yaml").read_text())
 POSTGRES_NAME = "postgresql-k8s"
 APP_NAME = "ranger-k8s"
+NGINX_NAME = "nginx-ingress-integrator"
 
 
 async def perform_ranger_integrations(ops_test: OpsTest, app_name):
@@ -28,6 +29,10 @@ async def perform_ranger_integrations(ops_test: OpsTest, app_name):
 
     await ops_test.model.wait_for_idle(
         apps=[app_name], status="active", raise_on_blocked=False, timeout=1500
+    )
+    await ops_test.model.integrate(APP_NAME, NGINX_NAME)
+    await ops_test.model.wait_for_idle(
+        apps=[NGINX_NAME], status="active", raise_on_blocked=False, timeout=1500
     )
 
 

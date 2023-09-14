@@ -11,6 +11,7 @@ from helpers import (
     APP_NAME,
     METADATA,
     POSTGRES_NAME,
+    NGINX_NAME,
     perform_ranger_integrations,
 )
 from pytest_operator.plugin import OpsTest
@@ -35,6 +36,7 @@ async def deploy(ops_test: OpsTest):
         application_name=APP_NAME,
         num_units=1,
     )
+    await ops_test.model.deploy(NGINX_NAME, trust=True)
 
     async with ops_test.fast_forward():
         await ops_test.model.wait_for_idle(
@@ -52,6 +54,12 @@ async def deploy(ops_test: OpsTest):
         )
         await perform_ranger_integrations(ops_test, APP_NAME)
 
+        await ops_test.model.wait_for_idle(
+        apps=[NGINX_NAME, APP_NAME],
+        status="active",
+        raise_on_blocked=False,
+        timeout=1000,
+    )
         assert (
             ops_test.model.applications[APP_NAME].units[0].workload_status
             == "active"

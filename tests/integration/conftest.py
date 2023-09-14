@@ -30,11 +30,11 @@ async def deploy(ops_test: OpsTest):
     }
     await ops_test.model.deploy(POSTGRES_NAME, channel="14", trust=True)
     await ops_test.model.deploy(
-            charm,
-            resources=resources,
-            application_name=APP_NAME,
-            num_units=1,
-        )
+        charm,
+        resources=resources,
+        application_name=APP_NAME,
+        num_units=1,
+    )
 
     async with ops_test.fast_forward():
         await ops_test.model.wait_for_idle(

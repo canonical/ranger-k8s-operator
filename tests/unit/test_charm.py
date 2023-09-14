@@ -74,7 +74,7 @@ class TestCharm(TestCase):
                 "ranger": {
                     "override": "replace",
                     "summary": "ranger server",
-                    "command": "/tmp/entrypoint.sh",  #nosec
+                    "command": "/tmp/entrypoint.sh",  # nosec
                     "startup": "enabled",
                     "environment": {
                         "DB_NAME": "ranger-k8s_db",
@@ -134,7 +134,7 @@ class TestCharm(TestCase):
         self.harness.update_config({"ranger-admin-password": "secure-pass"})
 
         # The new plan reflects the change.
-        want_admin_password = "secure-pass"  #nosec
+        want_admin_password = "secure-pass"  # nosec
         got_admin_password = harness.get_container_pebble_plan(
             "ranger"
         ).to_dict()["services"]["ranger"]["environment"]["RANGER_ADMIN_PWD"]

@@ -16,6 +16,7 @@ METADATA = yaml.safe_load(Path("./metadata.yaml").read_text())
 POSTGRES_NAME = "postgresql-k8s"
 APP_NAME = "ranger-k8s"
 
+
 async def perform_ranger_integrations(ops_test: OpsTest, app_name):
     """Integrate Ranger charm with PostgreSQL charm.
 

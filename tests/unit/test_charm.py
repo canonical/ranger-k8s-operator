@@ -141,7 +141,7 @@ class TestCharm(TestCase):
 
         self.assertEqual(got_admin_password, want_admin_password)
 
-        # The MaintenanceStatus is set with replan message.
+        # The ActiveStatus is set with replan message.
         self.assertEqual(
             harness.model.unit.status,
             ActiveStatus(),

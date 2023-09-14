@@ -13,7 +13,7 @@ https://discourse.charmhub.io/t/4208
 import logging
 
 import ops
-from charms.data_platform_libs.v0.database_requires import DatabaseRequires
+from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 
 from relations.postgres import PostgresRelationHandler
@@ -45,9 +45,7 @@ class RangerK8SCharm(ops.CharmBase):
         self.framework.observe(self.on.config_changed, self._on_config_changed)
 
         self.postgres_relation = DatabaseRequires(
-            self,
-            relation_name="db",
-            database_name=PostgresRelationHandler.DB_NAME,
+            self, relation_name="database", database_name=PostgresRelationHandler.DB_NAME
         )
         self.postgres_relation_handler = PostgresRelationHandler(self)
 

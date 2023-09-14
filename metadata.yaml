@@ -22,7 +22,7 @@ peers:
     interface: ranger
 
 requires:
-  db:
+  database:
     interface: postgresql_client
     limit: 1
 

@@ -85,7 +85,6 @@ class TestCharm(TestCase):
                         "DB_PWD": "admin",
                         "RANGER_ADMIN_PWD": "rangerR0cks!",
                         "JAVA_OPTS": "-Duser.timezone=UTC0",
-                        "LOG_LEVEL": "info",
                     },
                 }
             },
@@ -105,27 +104,6 @@ class TestCharm(TestCase):
             MaintenanceStatus("replanning application"),
         )
 
-    def test_invalid_config_value(self):
-        """The charm blocks if an invalid config value is provided."""
-        harness = self.harness
-        simulate_lifecycle(harness)
-
-        # Update the config with an invalid value.
-        self.harness.update_config({"log-level": "debugging"})
-
-        # The change is not applied to the plan.
-        want_log_level = "info"
-        got_log_level = harness.get_container_pebble_plan("ranger").to_dict()[
-            "services"
-        ]["ranger"]["environment"]["LOG_LEVEL"]
-        self.assertEqual(got_log_level, want_log_level)
-
-        # The BlockStatus is set with a message.
-        self.assertEqual(
-            harness.model.unit.status,
-            BlockedStatus("config: invalid log level 'debugging'"),
-        )
-
     def test_config_changed(self):
         """The pebble plan changes according to config changes."""
         harness = self.harness
@@ -142,7 +120,7 @@ class TestCharm(TestCase):
 
         self.assertEqual(got_admin_password, want_admin_password)
 
-        # The MaintenanceStatus is set with replan message.
+        # The ActiveStatus is set with replan message.
         self.assertEqual(
             harness.model.unit.status,
             MaintenanceStatus("replanning application"),

@@ -74,7 +74,7 @@ class RangerK8SCharm(ops.CharmBase):
         if not self.state.is_ready():
             return
 
-        if not self.charm.state.database_connection:
+        if not self.state.database_connection:
             return
 
         container = self.unit.get_container(self.name)

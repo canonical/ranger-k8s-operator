@@ -46,4 +46,6 @@ resources:
   ranger-image:
     type: oci-image
     description: OCI image for Apache Ranger
-    upstream-source: gtato/ranger:2.4.0
+    upstream-source: gtato/ranger:2.4.0  
+    #Image placeholder for initial integration testing. 
+    #Until image can be published under Canonical or as a ROCK.

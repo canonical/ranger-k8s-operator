@@ -16,10 +16,11 @@ import logging
 
 import ops
 from charms.data_platform_libs.v0.database_requires import DatabaseRequires
-from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
+from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus
 from relations.postgres import PostgresRelationHandler
 from state import State
 from utils import log_event_handler, render
+from ops.pebble import CheckStatus
 
 # Log messages can be retrieved using juju debug-log
 logger = logging.getLogger(__name__)
@@ -37,6 +38,7 @@ class RangerK8SCharm(ops.CharmBase):
 
         self.framework.observe(self.on.ranger_pebble_ready, self._on_ranger_pebble_ready)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
+        self.framework.observe(self.on.update_status, self._on_update_status)
 
         self.postgres_relation = DatabaseRequires(
             self, relation_name="db", database_name=PostgresRelationHandler.DB_NAME
@@ -61,6 +63,28 @@ class RangerK8SCharm(ops.CharmBase):
         """
         self.unit.status = WaitingStatus("configuring ranger")
         self.update(event)
+
+    @log_event_handler(logger)
+    def _on_update_status(self, event):
+        """Handle `update-status` events.
+
+        Args:
+            event: The `update-status` event triggered at intervals
+        """
+        if not self.state.is_ready():
+            return
+
+        if not self.charm.state.database_connection:
+            return
+
+        container = self.unit.get_container(self.name)
+
+        check = container.get_check("up")
+        if check.status != CheckStatus.UP:
+            self.unit.status = MaintenanceStatus("Status check: DOWN")
+            return
+
+        self.unit.status = ActiveStatus("Status check: UP")
 
     def validate(self):
         """Validate that configuration and relations are valid and ready.
@@ -129,11 +153,21 @@ class RangerK8SCharm(ops.CharmBase):
                 }
             },
         }
+        pebble_layer.update(
+                {
+                    "checks": {
+                        "up": {
+                            "override": "replace",
+                            "period": "10s",
+                            "http": {"url": "http://localhost:6080/"},
+                        }
+                    }
+                },
+            )
         container.add_layer(self.name, pebble_layer, combine=True)
         container.replan()
 
-        # probably run some health check before becoming active
-        self.unit.status = ActiveStatus()
+        self.unit.status = MaintenanceStatus("replanning application")
 
 
 if __name__ == "__main__":  # pragma: nocover

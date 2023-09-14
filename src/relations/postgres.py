@@ -4,17 +4,21 @@
 """Defines postgres relation event handling methods."""
 
 import logging
-
 from charms.data_platform_libs.v0.data_interfaces import DatabaseCreatedEvent
 from ops import framework
 from ops.model import WaitingStatus
+
 from utils import log_event_handler
 
 logger = logging.getLogger(__name__)
 
 
 class PostgresRelationHandler(framework.Object):
-    """Client for ranger:postgresql relations."""
+    """Client for ranger:postgresql relations.
+
+    Attributes:
+        DB_NAME: the name of the postgresql database
+    """
 
     DB_NAME = "ranger-k8s_db"
 
@@ -29,10 +33,12 @@ class PostgresRelationHandler(framework.Object):
 
         # Handle database relation.
         charm.framework.observe(
-            self.charm.postgres_relation.on.database_created, self._on_database_changed
+            self.charm.postgres_relation.on.database_created,
+            self._on_database_changed,
         )
         charm.framework.observe(
-            self.charm.postgres_relation.on.endpoints_changed, self._on_database_changed
+            self.charm.postgres_relation.on.endpoints_changed,
+            self._on_database_changed,
         )
         charm.framework.observe(
             self.charm.on.database_relation_broken, self._on_database_relation_broken
@@ -52,7 +58,9 @@ class PostgresRelationHandler(framework.Object):
         if not self.charm.unit.is_leader():
             return
 
-        self.charm.unit.status = WaitingStatus(f"handling {event.relation.name} change")
+        self.charm.unit.status = WaitingStatus(
+            f"handling {event.relation.name} change"
+        )
         self.update(event)
 
     @log_event_handler(logger)
@@ -93,7 +101,8 @@ class PostgresRelationHandler(framework.Object):
     def validate(self):
         """Check if the database connection is available.
 
-        Raises: ValueError if the database is not ready.
+        Raises:
+            ValueError: if the database is not ready.
         """
         if self.charm.state.database_connection is None:
             raise ValueError("database relation not ready")

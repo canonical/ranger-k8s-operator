@@ -1,26 +1,21 @@
-# This file populates the Overview on Charmhub.
-# See https://juju.is/docs/sdk/metadata-reference for a checklist and guidance.
+# Copyright 2023 Canonical Ltd.
+# See LICENSE file for licensing details.
 
-# The charm package name, no spaces (required)
-# See https://juju.is/docs/sdk/naming#heading--naming-charms for guidance.
 name: ranger-k8s
  
-# The following metadata are human-readable and will be published prominently on Charmhub.
+display-name: Ranger K8s Operator
 
-# (Recommended)
-display-name: Charm Template
-
-# (Required)
-summary: A very short one-line summary of the charm.
+summary: Kubernetes operator for Apache Ranger
 
 description: |
-  A single sentence that says what the charm is, concisely and memorably.
+ Apache Ranger is a framework to enable, monitor, and manage comprehensive data security.
 
-  A paragraph of one to three short sentences, that describe what the charm does.
+maintainers:
+  - Commercial Systems <jaas-crew@lists.canonical.com>
 
-  A third paragraph that explains what need the charm meets.
-
-  Finally, a paragraph that describes whom the charm is useful for.
+source: https://github.com/canonical/ranger-k8s-operator
+docs: https://github.com/canonical/ranger-k8s-operator
+issues: https://github.com/canonical/ranger-k8s-operator/issues
 
 peers:
   peer:
@@ -31,22 +26,12 @@ requires:
     interface: postgresql_client
     limit: 1
 
-# The containers and resources metadata apply to Kubernetes charms only.
-# Remove them if not required.
-
-# Your workload’s containers.
 containers:
   ranger:
     resource: ranger-image
 
-# This field populates the Resources tab on Charmhub.
 resources:
-  # An OCI image resource for each container listed above.
-  # You may remove this if your charm will run without a workload sidecar container.
   ranger-image:
     type: oci-image
     description: OCI image for Apache Ranger
-    # The upstream-source field is ignored by Juju. It is included here as a reference
-    # so the integration testing suite knows which image to deploy during testing. This field
-    # is also used by the 'canonical/charming-actions' Github action for automated releasing.
     upstream-source: canonical/ranger

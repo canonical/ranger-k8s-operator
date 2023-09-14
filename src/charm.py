@@ -2,20 +2,20 @@
 # Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Charm the service.
-
-Refer to the following post for a quick-start guide that will help you
-develop a new k8s charm using the Operator Framework:
-
-https://discourse.charmhub.io/t/4208
-"""
+"""Charm the service."""
 
 import logging
 
 import ops
 from charms.data_platform_libs.v0.database_requires import DatabaseRequires
 from charms.nginx_ingress_integrator.v0.nginx_route import require_nginx_route
-from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
+from ops.model import (
+    ActiveStatus,
+    BlockedStatus,
+    MaintenanceStatus,
+    WaitingStatus,
+)
+
 
 from literals import APPLICATION_PORT
 from relations.postgres import PostgresRelationHandler
@@ -24,8 +24,6 @@ from utils import log_event_handler, render
 
 # Log messages can be retrieved using juju debug-log
 logger = logging.getLogger(__name__)
-
-VALID_LOG_LEVELS = ["info", "debug", "warning", "error", "critical"]
 
 
 class RangerK8SCharm(ops.CharmBase):
@@ -50,10 +48,12 @@ class RangerK8SCharm(ops.CharmBase):
         self.state = State(self.app, lambda: self.model.get_relation("peer"))
         self.name = "ranger"
 
+        self.framework.observe(self.on.install, self._on_install)
         self.framework.observe(
             self.on.ranger_pebble_ready, self._on_ranger_pebble_ready
         )
         self.framework.observe(self.on.config_changed, self._on_config_changed)
+        self.framework.observe(self.on.restart_action, self._on_restart)
 
         self.postgres_relation = DatabaseRequires(
             self,
@@ -77,6 +77,15 @@ class RangerK8SCharm(ops.CharmBase):
         )
 
     @log_event_handler(logger)
+    def _on_install(self, event):
+        """Install application.
+
+        Args:
+            event: The event triggered when the relation changed.
+        """
+        self.unit.status = MaintenanceStatus("installing Ranger")
+
+    @log_event_handler(logger)
     def _on_ranger_pebble_ready(self, event: ops.PebbleReadyEvent):
         """Define and start ranger using the Pebble API.
 
@@ -95,15 +104,29 @@ class RangerK8SCharm(ops.CharmBase):
         self.unit.status = WaitingStatus("configuring ranger")
         self.update(event)
 
+    @log_event_handler(logger)
+    def _on_restart(self, event):
+        """Restart application, action handler.
+
+        Args:
+            event:The event triggered by the restart action
+        """
+        container = self.unit.get_container(self.name)
+        if not container.can_connect():
+            event.defer()
+            return
+
+        self.unit.status = MaintenanceStatus("restarting ranger")
+        container.restart(self.name)
+        event.set_results({"result": "ranger successfully restarted"})
+        self.unit.status = ActiveStatus()
+
     def validate(self):
         """Validate that configuration and relations are valid and ready.
 
         Raises:
             ValueError: in case of invalid configuration.
         """
-        log_level = self.model.config["log-level"].lower()
-        if log_level not in VALID_LOG_LEVELS:
-            raise ValueError(f"config: invalid log level {log_level!r}")
         if not self.state.is_ready():
             raise ValueError("peer relation not ready")
 
@@ -127,24 +150,16 @@ class RangerK8SCharm(ops.CharmBase):
             return
 
         logger.info("configuring ranger")
-        options = {
-            "log-level": "LOG_LEVEL",
-        }
-        context = {
-            config_key: self.config[key] for key, config_key in options.items()
-        }
         db_conn = self.state.database_connection
-        context.update(
-            {
-                "DB_NAME": db_conn["dbname"],
-                "DB_HOST": db_conn["host"],
-                "DB_PORT": db_conn["port"],
-                "DB_USER": db_conn["user"],
-                "DB_PWD": db_conn["password"],
-                "RANGER_ADMIN_PWD": self.config["ranger-admin-password"],
-                "JAVA_OPTS": "-Duser.timezone=UTC0",
-            }
-        )
+        context = {
+            "DB_NAME": db_conn["dbname"],
+            "DB_HOST": db_conn["host"],
+            "DB_PORT": db_conn["port"],
+            "DB_USER": db_conn["user"],
+            "DB_PWD": db_conn["password"],
+            "RANGER_ADMIN_PWD": self.config["ranger-admin-password"],
+            "JAVA_OPTS": "-Duser.timezone=UTC0",
+        }
 
         config = render("config.jinja", context)
         container.push(
@@ -157,7 +172,7 @@ class RangerK8SCharm(ops.CharmBase):
             "services": {
                 self.name: {
                     "summary": "ranger server",
-                    "command": "/tmp/entrypoint.sh",  #nosec
+                    "command": "/tmp/entrypoint.sh",  # nosec
                     "startup": "enabled",
                     "override": "replace",
                     "environment": context,

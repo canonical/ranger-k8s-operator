@@ -8,9 +8,10 @@
 
 import json
 import logging
-from unittest import TestCase
+from unittest import TestCase, mock
 
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
+from ops.pebble import CheckStatus
 from ops.testing import Harness
 
 from charm import RangerK8SCharm
@@ -101,7 +102,7 @@ class TestCharm(TestCase):
         # The MaintenanceStatus is set with replan message.
         self.assertEqual(
             harness.model.unit.status,
-            MaintenanceStatus('replanning application'),
+            MaintenanceStatus("replanning application"),
         )
 
     def test_invalid_config_value(self):
@@ -144,7 +145,7 @@ class TestCharm(TestCase):
         # The MaintenanceStatus is set with replan message.
         self.assertEqual(
             harness.model.unit.status,
-            MaintenanceStatus('replanning application'),
+            MaintenanceStatus("replanning application"),
         )
 
     def test_ingress(self):
@@ -168,6 +169,21 @@ class TestCharm(TestCase):
             "backend-protocol": "HTTP",
             "tls-secret-name": "ranger-tls",
         }
+
+    def test_update_status_up(self):
+        """The charm updates the unit status to active based on UP status."""
+        harness = self.harness
+
+        simulate_lifecycle(harness)
+
+        container = harness.model.unit.get_container("ranger")
+        container.get_check = mock.Mock(status="up")
+        container.get_check.return_value.status = CheckStatus.UP
+        harness.charm.on.update_status.emit()
+
+        self.assertEqual(
+            harness.model.unit.status, ActiveStatus("Status check: UP")
+        )
 
 
 def simulate_lifecycle(harness):

@@ -10,8 +10,8 @@ import pytest_asyncio
 from helpers import (
     APP_NAME,
     METADATA,
-    POSTGRES_NAME,
     NGINX_NAME,
+    POSTGRES_NAME,
     perform_ranger_integrations,
 )
 from pytest_operator.plugin import OpsTest
@@ -55,11 +55,11 @@ async def deploy(ops_test: OpsTest):
         await perform_ranger_integrations(ops_test, APP_NAME)
 
         await ops_test.model.wait_for_idle(
-        apps=[NGINX_NAME, APP_NAME],
-        status="active",
-        raise_on_blocked=False,
-        timeout=1000,
-    )
+            apps=[NGINX_NAME, APP_NAME],
+            status="active",
+            raise_on_blocked=False,
+            timeout=1000,
+        )
         assert (
             ops_test.model.applications[APP_NAME].units[0].workload_status
             == "active"

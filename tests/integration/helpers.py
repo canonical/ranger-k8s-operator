@@ -32,7 +32,10 @@ async def perform_ranger_integrations(ops_test: OpsTest, app_name):
     )
     await ops_test.model.integrate(APP_NAME, NGINX_NAME)
     await ops_test.model.wait_for_idle(
-        apps=[NGINX_NAME], status="active", raise_on_blocked=False, timeout=1500
+        apps=[NGINX_NAME],
+        status="active",
+        raise_on_blocked=False,
+        timeout=1500,
     )
 
 

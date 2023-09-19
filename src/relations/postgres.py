@@ -4,8 +4,7 @@
 """Defines postgres relation event handling methods."""
 
 import logging
-
-from charms.data_platform_libs.v0.database_requires import DatabaseEvent
+from charms.data_platform_libs.v0.data_interfaces import DatabaseCreatedEvent
 from ops import framework
 from ops.model import WaitingStatus
 
@@ -29,10 +28,10 @@ class PostgresRelationHandler(framework.Object):
         Args:
             charm: The charm to attach the hooks to.
         """
-        super().__init__(charm, "db")
+        super().__init__(charm, "database")
         self.charm = charm
 
-        # Handle db:pgsql relation.
+        # Handle database relation.
         charm.framework.observe(
             self.charm.postgres_relation.on.database_created,
             self._on_database_changed,
@@ -42,11 +41,11 @@ class PostgresRelationHandler(framework.Object):
             self._on_database_changed,
         )
         charm.framework.observe(
-            self.charm.on.db_relation_broken, self._on_database_relation_broken
+            self.charm.on.database_relation_broken, self._on_database_relation_broken
         )
 
     @log_event_handler(logger)
-    def _on_database_changed(self, event: DatabaseEvent) -> None:
+    def _on_database_changed(self, event: DatabaseCreatedEvent) -> None:
         """Handle database creation/change events.
 
         Args:
@@ -65,7 +64,7 @@ class PostgresRelationHandler(framework.Object):
         self.update(event)
 
     @log_event_handler(logger)
-    def _on_database_relation_broken(self, event: DatabaseEvent) -> None:
+    def _on_database_relation_broken(self, event: DatabaseCreatedEvent) -> None:
         """Handle broken relations with the database.
 
         Args:

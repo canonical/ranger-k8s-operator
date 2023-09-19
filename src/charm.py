@@ -7,6 +7,7 @@
 import logging
 
 import ops
+
 from charms.data_platform_libs.v0.database_requires import DatabaseRequires
 from charms.nginx_ingress_integrator.v0.nginx_route import require_nginx_route
 from ops.model import (
@@ -16,7 +17,6 @@ from ops.model import (
     WaitingStatus,
 )
 from ops.pebble import CheckStatus
-
 from literals import APPLICATION_PORT
 from relations.postgres import PostgresRelationHandler
 from state import State
@@ -58,9 +58,7 @@ class RangerK8SCharm(ops.CharmBase):
 
 
         self.postgres_relation = DatabaseRequires(
-            self,
-            relation_name="db",
-            database_name=PostgresRelationHandler.DB_NAME,
+            self, relation_name="database", database_name=PostgresRelationHandler.DB_NAME
         )
         self.postgres_relation_handler = PostgresRelationHandler(self)
 

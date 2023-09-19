@@ -19,6 +19,7 @@ from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 from relations.postgres import PostgresRelationHandler
 from state import State
 from utils import log_event_handler, render
+from relations.provider import RangerProvider
 
 # Log messages can be retrieved using juju debug-log
 logger = logging.getLogger(__name__)
@@ -48,6 +49,7 @@ class RangerK8SCharm(ops.CharmBase):
             self, relation_name="database", database_name=PostgresRelationHandler.DB_NAME
         )
         self.postgres_relation_handler = PostgresRelationHandler(self)
+        self.provider = RangerProvider(self)
 
     @log_event_handler(logger)
     def _on_ranger_pebble_ready(self, event: ops.PebbleReadyEvent):

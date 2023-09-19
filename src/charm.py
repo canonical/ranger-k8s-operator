@@ -7,8 +7,7 @@
 import logging
 
 import ops
-
-from charms.data_platform_libs.v0.database_requires import DatabaseRequires
+from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
 from charms.nginx_ingress_integrator.v0.nginx_route import require_nginx_route
 from ops.model import (
     ActiveStatus,
@@ -17,6 +16,7 @@ from ops.model import (
     WaitingStatus,
 )
 from ops.pebble import CheckStatus
+
 from literals import APPLICATION_PORT
 from relations.postgres import PostgresRelationHandler
 from state import State
@@ -56,9 +56,10 @@ class RangerK8SCharm(ops.CharmBase):
         self.framework.observe(self.on.update_status, self._on_update_status)
         self.framework.observe(self.on.restart_action, self._on_restart)
 
-
         self.postgres_relation = DatabaseRequires(
-            self, relation_name="database", database_name=PostgresRelationHandler.DB_NAME
+            self,
+            relation_name="database",
+            database_name=PostgresRelationHandler.DB_NAME,
         )
         self.postgres_relation_handler = PostgresRelationHandler(self)
 
@@ -105,7 +106,6 @@ class RangerK8SCharm(ops.CharmBase):
         self.update(event)
 
     @log_event_handler(logger)
-
     def _on_update_status(self, event):
         """Handle `update-status` events.
 
@@ -142,7 +142,6 @@ class RangerK8SCharm(ops.CharmBase):
         container.restart(self.name)
         event.set_results({"result": "ranger successfully restarted"})
         self.unit.status = ActiveStatus()
-
 
     def validate(self):
         """Validate that configuration and relations are valid and ready.

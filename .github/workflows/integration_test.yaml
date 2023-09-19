@@ -18,8 +18,6 @@ jobs:
           channel: 1.25-strict/stable
       - name: Run integration tests
         run: tox -e integration -- --model testing
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Dump logs
         uses: canonical/charm-logdump-action@main
         if: failure()

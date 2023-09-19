@@ -46,4 +46,4 @@ resources:
   ranger-image:
     type: oci-image
     description: OCI image for Apache Ranger
-    upstream-source: canonical/ranger
+    upstream-source: ghcr.io/canonical/ranger:2.4.0

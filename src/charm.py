@@ -8,6 +8,7 @@ import logging
 
 import ops
 from charms.data_platform_libs.v0.database_requires import DatabaseRequires
+from charms.nginx_ingress_integrator.v0.nginx_route import require_nginx_route
 from ops.model import (
     ActiveStatus,
     BlockedStatus,
@@ -15,6 +16,8 @@ from ops.model import (
     WaitingStatus,
 )
 
+
+from literals import APPLICATION_PORT
 from relations.postgres import PostgresRelationHandler
 from state import State
 from utils import log_event_handler, render
@@ -24,7 +27,16 @@ logger = logging.getLogger(__name__)
 
 
 class RangerK8SCharm(ops.CharmBase):
-    """Charm the service."""
+    """Charm the service.
+
+    Attributes:
+        external_hostname: DNS listing used for external connections.
+    """
+
+    @property
+    def external_hostname(self):
+        """Return the DNS listing used for external connections."""
+        return self.config["external-hostname"] or self.app.name
 
     def __init__(self, *args):
         """Construct.
@@ -49,6 +61,20 @@ class RangerK8SCharm(ops.CharmBase):
             database_name=PostgresRelationHandler.DB_NAME,
         )
         self.postgres_relation_handler = PostgresRelationHandler(self)
+
+        # Handle Ingress
+        self._require_nginx_route()
+
+    def _require_nginx_route(self):
+        """Require nginx-route relation based on current configuration."""
+        require_nginx_route(
+            charm=self,
+            service_hostname=self.external_hostname,
+            service_name=self.app.name,
+            service_port=APPLICATION_PORT,
+            tls_secret_name=self.config["tls-secret-name"],
+            backend_protocol="HTTP",
+        )
 
     @log_event_handler(logger)
     def _on_install(self, event):

@@ -6,7 +6,7 @@
 
 import logging
 
-from ops.charm import RelationBrokenEvent, CharmBase
+from ops.charm import CharmBase
 from ops.framework import Object
 from utils import log_event_handler
 
@@ -43,5 +43,14 @@ class RangerProvider(Object):
 
         self.charm = charm
 
+    @log_event_handler(logger) 
+    def _on_relation_created(self, event):
+        """Handle database requested event.
 
+        Generate password and provide access to the Trino applictaion.
+        """
+        if not self.charm.unit.is_leader():
+            return
 
+        # Creates the user and password for this specific relation.
+        user = f"relation_id_{event.relation.id}"

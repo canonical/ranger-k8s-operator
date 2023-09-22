@@ -8,9 +8,10 @@
 
 import json
 import logging
-from unittest import TestCase
+from unittest import TestCase, mock
 
-from ops.model import ActiveStatus, BlockedStatus
+from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
+from ops.pebble import CheckStatus
 from ops.testing import Harness
 
 from charm import RangerK8SCharm
@@ -74,7 +75,7 @@ class TestCharm(TestCase):
                 "ranger": {
                     "override": "replace",
                     "summary": "ranger server",
-                    "command": "/tmp/entrypoint.sh",  #nosec
+                    "command": "/tmp/entrypoint.sh",  # nosec
                     "startup": "enabled",
                     "environment": {
                         "DB_NAME": "ranger-k8s_db",
@@ -84,7 +85,6 @@ class TestCharm(TestCase):
                         "DB_PWD": "admin",
                         "RANGER_ADMIN_PWD": "rangerR0cks!",
                         "JAVA_OPTS": "-Duser.timezone=UTC0",
-                        "LOG_LEVEL": "info",
                     },
                 }
             },
@@ -98,31 +98,10 @@ class TestCharm(TestCase):
         )
         self.assertTrue(service.is_running())
 
-        # The ActiveStatus is set with replan message.
+        # The MaintenanceStatus is set with replan message.
         self.assertEqual(
             harness.model.unit.status,
-            ActiveStatus(""),
-        )
-
-    def test_invalid_config_value(self):
-        """The charm blocks if an invalid config value is provided."""
-        harness = self.harness
-        simulate_lifecycle(harness)
-
-        # Update the config with an invalid value.
-        self.harness.update_config({"log-level": "debugging"})
-
-        # The change is not applied to the plan.
-        want_log_level = "info"
-        got_log_level = harness.get_container_pebble_plan("ranger").to_dict()[
-            "services"
-        ]["ranger"]["environment"]["LOG_LEVEL"]
-        self.assertEqual(got_log_level, want_log_level)
-
-        # The BlockStatus is set with a message.
-        self.assertEqual(
-            harness.model.unit.status,
-            BlockedStatus("config: invalid log level 'debugging'"),
+            MaintenanceStatus("replanning application"),
         )
 
     def test_config_changed(self):
@@ -134,7 +113,7 @@ class TestCharm(TestCase):
         self.harness.update_config({"ranger-admin-password": "secure-pass"})
 
         # The new plan reflects the change.
-        want_admin_password = "secure-pass"  #nosec
+        want_admin_password = "secure-pass"  # nosec
         got_admin_password = harness.get_container_pebble_plan(
             "ranger"
         ).to_dict()["services"]["ranger"]["environment"]["RANGER_ADMIN_PWD"]
@@ -144,7 +123,44 @@ class TestCharm(TestCase):
         # The ActiveStatus is set with replan message.
         self.assertEqual(
             harness.model.unit.status,
-            ActiveStatus(),
+            MaintenanceStatus("replanning application"),
+        )
+
+    def test_ingress(self):
+        """The charm relates correctly to the nginx ingress charm."""
+        harness = self.harness
+
+        simulate_lifecycle(harness)
+
+        nginx_route_relation_id = harness.add_relation(
+            "nginx-route", "ingress"
+        )
+        harness.charm._require_nginx_route()
+
+        assert harness.get_relation_data(
+            nginx_route_relation_id, harness.charm.app
+        ) == {
+            "service-namespace": harness.charm.model.name,
+            "service-hostname": harness.charm.app.name,
+            "service-name": harness.charm.app.name,
+            "service-port": "6080",
+            "backend-protocol": "HTTP",
+            "tls-secret-name": "ranger-tls",
+        }
+
+    def test_update_status_up(self):
+        """The charm updates the unit status to active based on UP status."""
+        harness = self.harness
+
+        simulate_lifecycle(harness)
+
+        container = harness.model.unit.get_container("ranger")
+        container.get_check = mock.Mock(status="up")
+        container.get_check.return_value.status = CheckStatus.UP
+        harness.charm.on.update_status.emit()
+
+        self.assertEqual(
+            harness.model.unit.status, ActiveStatus("Status check: UP")
         )
 
 

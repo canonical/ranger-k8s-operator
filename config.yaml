@@ -2,16 +2,19 @@
 # See LICENSE file for licensing details.
 
 options:
-  log-level:
-    description: |
-      Configures the log level of gunicorn. 
-
-      Acceptable values are: "info", "debug", "warning", "error" and "critical"
-    default: "info"
-    type: string
-
   ranger-admin-password:
     description: |
       Password used for the policy manager (Web interface)
     default: "rangerR0cks!"
     type: string
+  tls-secret-name:
+    description: |
+        Name of the k8s secret which contains the TLS certificate to be used by ingress.
+    default: ranger-tls
+    type: string
+  external-hostname:
+    description: |
+        The DNS listing used for external connections. 
+        Will default to the name of the deployed application.
+    type: string
+    default: ranger-k8s

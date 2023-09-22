@@ -4,6 +4,7 @@
 """Defines postgres relation event handling methods."""
 
 import logging
+
 from charms.data_platform_libs.v0.data_interfaces import DatabaseCreatedEvent
 from ops import framework
 from ops.model import WaitingStatus

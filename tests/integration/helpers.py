@@ -16,6 +16,9 @@ METADATA = yaml.safe_load(Path("./metadata.yaml").read_text())
 POSTGRES_NAME = "postgresql-k8s"
 APP_NAME = "ranger-k8s"
 NGINX_NAME = "nginx-ingress-integrator"
+TRINO_NAME = "trino-k8s"
+RANGER_URL = "http://localhost:6080"
+RANGER_AUTH = ("admin", "rangerR0cks!")
 
 
 async def perform_ranger_integrations(ops_test: OpsTest, app_name):
@@ -37,6 +40,7 @@ async def perform_ranger_integrations(ops_test: OpsTest, app_name):
         raise_on_blocked=False,
         timeout=1500,
     )
+    await ops_test.model.integrate(APP_NAME, TRINO_NAME)
 
 
 async def get_unit_url(

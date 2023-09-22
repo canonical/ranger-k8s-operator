@@ -19,9 +19,9 @@ from ops.pebble import CheckStatus
 
 from literals import APPLICATION_PORT
 from relations.postgres import PostgresRelationHandler
+from relations.provider import RangerProvider
 from state import State
 from utils import log_event_handler, render
-from relations.provider import RangerProvider
 
 # Log messages can be retrieved using juju debug-log
 logger = logging.getLogger(__name__)

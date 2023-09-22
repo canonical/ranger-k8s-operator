@@ -8,8 +8,9 @@ import logging
 
 import pytest
 import requests
+from apache_ranger.client import ranger_client
 from conftest import deploy  # noqa: F401, pylint: disable=W0611
-from helpers import APP_NAME, get_unit_url
+from helpers import APP_NAME, RANGER_AUTH, RANGER_URL, get_unit_url
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
@@ -29,3 +30,12 @@ class TestDeployment:
 
         response = requests.get(url, timeout=300, verify=False)  # nosec
         assert response.status_code == 200
+
+    async def test_service_created(self, ops_test: OpsTest):
+        """Check Trino service has been created in Ranger."""
+        response = requests.get(RANGER_URL, timeout=300, verify=False)  # nosec
+        assert response.status_code == 200
+
+        ranger = ranger_client.RangerClient(RANGER_URL, RANGER_AUTH)
+        retrieved_service = ranger.get_service("trino")
+        assert retrieved_service is not None

@@ -6,11 +6,12 @@
 
 import logging
 
-from ops.charm import CharmBase
-from ops.framework import Object
-from utils import log_event_handler, generate_password
 from apache_ranger.client import ranger_client
 from apache_ranger.model import ranger_service
+from ops.charm import CharmBase
+from ops.framework import Object
+
+from utils import generate_password, log_event_handler
 
 logger = logging.getLogger(__name__)
 RANGER_URL = "http://localhost:6080"
@@ -28,7 +29,7 @@ class RangerProvider(Object):
     def __init__(
         self, charm: CharmBase, relation_name: str = "policy"
     ) -> None:
-        """Constructor for RangerProvider object.
+        """Construct RangerProvider object.
 
         Args:
             charm: the charm for which this relation is provided
@@ -37,10 +38,6 @@ class RangerProvider(Object):
         self.relation_name = relation_name
 
         super().__init__(charm, self.relation_name)
-        self.framework.observe(
-            charm.on[self.relation_name].relation_created,
-            self._on_relation_changed,
-        )
         self.framework.observe(
             charm.on[self.relation_name].relation_changed,
             self._on_relation_changed,
@@ -61,7 +58,9 @@ class RangerProvider(Object):
             logging.info("service exists already")
             return
 
-        service = ranger_service.RangerService({'name': data["name"], 'type': data["type"]})
+        service = ranger_service.RangerService(
+            {"name": data["name"], "type": data["type"]}
+        )
         password = generate_password(12)
         service.configs = {
             "username": f"relation_id_{event.relation.id}",
@@ -74,11 +73,33 @@ class RangerProvider(Object):
         ranger.create_service(service)
         logging.info("service successfully created!")
 
+    def _set_policy_manager(self, event):
+        """Set the policy manager url in the relation databag.
+
+        Args:
+            event: relation event
+        """
+        relation = self.charm.model.get_relation(
+            self.relation_name, event.relation.id
+        )
+        host = self.charm.config["external-hostname"]
+        if host == "ranger-k8s":
+            protocol = "http"
+        else:
+            protocol = "https"
+        if relation:
+            relation.data[self.charm.app].update(
+                {"policy_manager_url": f"{protocol}://{host}:6080"}
+            )
+
     @log_event_handler(logger)
     def _on_relation_changed(self, event):
         """Handle database requested event.
 
         Generate password and provide access to the Trino applictaion.
+
+        Args:
+            event: relation changed event.
         """
         if not self.charm.unit.is_leader():
             return
@@ -90,16 +111,11 @@ class RangerProvider(Object):
 
         ranger_auth = ("admin", self.charm.config["ranger-admin-password"])
         ranger = ranger_client.RangerClient(RANGER_URL, ranger_auth)
+
         try:
             self._create_ranger_service(ranger, data, event)
         except Exception as err:
             logging.debug(err)
             return
 
-        relation = self.charm.model.get_relation(
-            self.relation_name, event.relation.id
-        )
-        if relation:
-            relation.data[self.charm.app].update(
-                {"policy_manager_url": "http://ranger-k8s:6080"}
-            )
+        self._set_policy_manager(event)

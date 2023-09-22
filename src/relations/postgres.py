@@ -41,7 +41,8 @@ class PostgresRelationHandler(framework.Object):
             self._on_database_changed,
         )
         charm.framework.observe(
-            self.charm.on.database_relation_broken, self._on_database_relation_broken
+            self.charm.on.database_relation_broken,
+            self._on_database_relation_broken,
         )
 
     @log_event_handler(logger)
@@ -64,7 +65,9 @@ class PostgresRelationHandler(framework.Object):
         self.update(event)
 
     @log_event_handler(logger)
-    def _on_database_relation_broken(self, event: DatabaseCreatedEvent) -> None:
+    def _on_database_relation_broken(
+        self, event: DatabaseCreatedEvent
+    ) -> None:
         """Handle broken relations with the database.
 
         Args:

@@ -46,7 +46,9 @@ class RangerK8SCharm(ops.CharmBase):
         self.framework.observe(self.on.config_changed, self._on_config_changed)
 
         self.postgres_relation = DatabaseRequires(
-            self, relation_name="database", database_name=PostgresRelationHandler.DB_NAME
+            self,
+            relation_name="database",
+            database_name=PostgresRelationHandler.DB_NAME,
         )
         self.postgres_relation_handler = PostgresRelationHandler(self)
         self.provider = RangerProvider(self)
@@ -132,7 +134,7 @@ class RangerK8SCharm(ops.CharmBase):
             "services": {
                 self.name: {
                     "summary": "ranger server",
-                    "command": "/tmp/entrypoint.sh",  #nosec
+                    "command": "/tmp/entrypoint.sh",  # nosec
                     "startup": "enabled",
                     "override": "replace",
                     "environment": context,

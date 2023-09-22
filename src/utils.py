@@ -5,6 +5,8 @@
 
 import functools
 import os
+import secrets
+import string
 
 from jinja2 import Environment, FileSystemLoader
 
@@ -73,3 +75,17 @@ def log_event_handler(logger):
         return decorated
 
     return decorator
+
+
+def generate_password(len) -> str:
+    """Create randomized string for use as app passwords.
+
+    Returns:
+        String of `len` randomized letter+digit characters
+    """
+    return "".join(
+        [
+            secrets.choice(string.ascii_letters + string.digits)
+            for _ in range(len)
+        ]
+    )

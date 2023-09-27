@@ -43,7 +43,7 @@ async def deploy(ops_test: OpsTest):
         resources=resources,
         application_name=TRINO_NAME,
         num_units=1,
-        config={"charm-function": "all"},
+        config={"ranger-service-name": "trino"},
     )
 
     async with ops_test.fast_forward():

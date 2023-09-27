@@ -53,7 +53,7 @@ class PostgresRelationHandler(framework.Object):
         Args:
             event: The event triggered when the relation changed.
         """
-        if not self.charm.state.is_ready():
+        if not self.charm._state.is_ready():
             event.defer()
             return
 
@@ -74,7 +74,7 @@ class PostgresRelationHandler(framework.Object):
         Args:
             event: The event triggered when the relation changed.
         """
-        if not self.charm.state.is_ready():
+        if not self.charm._state.is_ready():
             event.defer()
             return
 
@@ -99,7 +99,7 @@ class PostgresRelationHandler(framework.Object):
                 "user": event.username,
             }
 
-        self.charm.state.database_connection = db_conn
+        self.charm._state.database_connection = db_conn
         self.charm.update(event)
 
     def validate(self):
@@ -108,5 +108,5 @@ class PostgresRelationHandler(framework.Object):
         Raises:
             ValueError: if the database is not ready.
         """
-        if self.charm.state.database_connection is None:
+        if self.charm._state.database_connection is None:
             raise ValueError("database relation not ready")

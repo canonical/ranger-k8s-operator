@@ -38,13 +38,6 @@ async def deploy(ops_test: OpsTest):
         num_units=1,
     )
     await ops_test.model.deploy(NGINX_NAME, trust=True)
-    await ops_test.model.deploy(
-        charm,
-        resources=resources,
-        application_name=TRINO_NAME,
-        num_units=1,
-        config={"ranger-service-name": "trino"},
-    )
 
     async with ops_test.fast_forward():
         await ops_test.model.wait_for_idle(

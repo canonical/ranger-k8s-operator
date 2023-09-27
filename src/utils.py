@@ -75,20 +75,3 @@ def log_event_handler(logger):
         return decorated
 
     return decorator
-
-
-def generate_password(length) -> str:
-    """Create randomized string for use as app passwords.
-
-    Args:
-        length: length of string to be returned
-
-    Returns:
-        String of `length` randomized letter+digit characters
-    """
-    return "".join(
-        [
-            secrets.choice(string.ascii_letters + string.digits)
-            for _ in range(length)
-        ]
-    )

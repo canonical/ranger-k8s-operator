@@ -8,9 +8,8 @@ import logging
 
 import pytest
 import requests
-from apache_ranger.client import ranger_client
 from conftest import deploy  # noqa: F401, pylint: disable=W0611
-from helpers import APP_NAME, RANGER_AUTH, RANGER_URL, get_unit_url
+from helpers import APP_NAME, get_unit_url
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)

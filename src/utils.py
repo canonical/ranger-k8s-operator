@@ -5,8 +5,6 @@
 
 import functools
 import os
-import secrets
-import string
 
 from jinja2 import Environment, FileSystemLoader
 

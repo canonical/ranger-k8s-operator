@@ -16,8 +16,6 @@ METADATA = yaml.safe_load(Path("./metadata.yaml").read_text())
 POSTGRES_NAME = "postgresql-k8s"
 APP_NAME = "ranger-k8s"
 NGINX_NAME = "nginx-ingress-integrator"
-RANGER_URL = "http://localhost:6080"
-RANGER_AUTH = ("admin", "rangerR0cks!")
 
 
 async def perform_ranger_integrations(ops_test: OpsTest, app_name):

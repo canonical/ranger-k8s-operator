@@ -49,8 +49,64 @@ class RangerProvider(Object):
 
         self.charm = charm
 
+    @log_event_handler(logger)
+    def _on_relation_changed(self, event):
+        """Handle policy relation changed event.
+
+        Create Ranger service for related application.
+
+        Args:
+            event: relation changed event.
+        """
+        if not self.charm.unit.is_leader():
+            return
+
+        data = event.relation.data[event.app]
+
+        if not data:
+            return
+
+        self.charm.unit.status = MaintenanceStatus("Adding policy relation")
+
+        try:
+            ranger = self._authenticate_ranger_api()
+            self._create_ranger_service(ranger, data, event)
+        except Exception as err:
+            self.charm.unit.status = BlockedStatus("Failed to add service")
+            logger.error(err)
+            return
+
+        self._set_policy_manager(event)
+        self.charm.unit.status = ActiveStatus()
+
+    @log_event_handler(logger)
+    def _on_relation_broken(self, event):
+        """Handle on relation broken event.
+
+        Args:
+            event: on relation broken event.
+        """
+        if not self.charm.unit.is_leader():
+            return
+
+        if f"relation_{event.relation.id}" not in self.charm._state.services:
+            return
+
+        try:
+            service_id = self.charm._state.services[
+                f"relation_{event.relation.id}"
+            ]
+            self._delete_ranger_service(service_id)
+        except Exception as err:
+            logger.error(err)
+            return
+
+        existing_services = self.charm._state.services
+        del existing_services[f"relation_{event.relation.id}"]
+        self.charm._state.services = existing_services
+
     def _create_ranger_service(self, ranger, data, event):
-        """Create Trino service in Ranger.
+        """Create application service in Ranger.
 
         Args:
             ranger: ranger client
@@ -88,43 +144,12 @@ class RangerProvider(Object):
         relation = self.charm.model.get_relation(
             self.relation_name, event.relation.id
         )
-        host = self.charm.config["external-hostname"]
-        if host == "ranger-k8s":
-            url = f"http://{host}:6080"
-        else:
-            url = {f"https://{host}"}
+        host = self.charm.config["application-name"]
+
         if relation:
-            relation.data[self.charm.app].update({"policy_manager_url": url})
-
-    @log_event_handler(logger)
-    def _on_relation_changed(self, event):
-        """Handle database requested event.
-
-        Generate password and provide access to the Trino applictaion.
-
-        Args:
-            event: relation changed event.
-        """
-        if not self.charm.unit.is_leader():
-            return
-
-        data = event.relation.data[event.app]
-
-        if not data:
-            return
-
-        self.charm.unit.status = MaintenanceStatus("Adding policy relation")
-
-        try:
-            ranger = self._authenticate_ranger_api()
-            self._create_ranger_service(ranger, data, event)
-        except Exception as err:
-            self.charm.unit.status = BlockedStatus("Failed to add service")
-            logger.error(err)
-            return
-
-        self._set_policy_manager(event)
-        self.charm.unit.status = ActiveStatus()
+            relation.data[self.charm.app].update(
+                {"policy_manager_url": f"http://{host}:6080"}
+            )
 
     def _authenticate_ranger_api(self):
         """Prepare Ranger client.
@@ -147,29 +172,3 @@ class RangerProvider(Object):
 
         if retrieved_service is not None:
             ranger.delete_service_by_id(service_id)
-
-    @log_event_handler(logger)
-    def _on_relation_broken(self, event):
-        """Handle on relation broken event.
-
-        Args:
-            event: on relation broken event.
-        """
-        if not self.charm.unit.is_leader():
-            return
-
-        if f"relation_{event.relation.id}" not in self.charm._state.services:
-            return
-
-        try:
-            service_id = self.charm._state.services[
-                f"relation_{event.relation.id}"
-            ]
-            self._delete_ranger_service(service_id)
-        except Exception as err:
-            logger.error(err)
-            return
-
-        existing_services = self.charm._state.services
-        del existing_services[f"relation_{event.relation.id}"]
-        self.charm._state.services = existing_services

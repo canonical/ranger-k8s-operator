@@ -17,7 +17,7 @@ from ops.model import (
 )
 from ops.pebble import CheckStatus
 
-from literals import APP_NAME, APPLICATION_PORT
+from literals import APPLICATION_PORT
 from relations.postgres import PostgresRelationHandler
 from relations.provider import RangerProvider
 from state import State
@@ -173,10 +173,7 @@ class RangerK8SCharm(ops.CharmBase):
             event.defer()
             return
 
-        if self.config["external-hostname"] == APP_NAME:
-            self.model.unit.open_port(port=APPLICATION_PORT, protocol="tcp")
-        else:
-            self.model.unit.close_port(port=APPLICATION_PORT, protocol="tcp")
+        self.model.unit.open_port(port=APPLICATION_PORT, protocol="tcp")
 
         logger.info("configuring ranger")
         db_conn = self._state.database_connection

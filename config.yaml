@@ -18,3 +18,9 @@ options:
         Will default to the name of the deployed application.
     type: string
     default: ranger-k8s
+  application-name:
+    description: |
+      The internal host name used for communication with Ranger.
+      It should match the name of your charm deployment.
+    type: string
+    default: ranger-k8s 

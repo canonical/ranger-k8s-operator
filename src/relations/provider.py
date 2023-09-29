@@ -12,7 +12,7 @@ from ops.charm import CharmBase
 from ops.framework import Object
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
 
-from literals import RANGER_URL
+from literals import APPLICATION_PORT, RANGER_URL
 from utils import log_event_handler
 
 logger = logging.getLogger(__name__)
@@ -148,7 +148,7 @@ class RangerProvider(Object):
 
         if relation:
             relation.data[self.charm.app].update(
-                {"policy_manager_url": f"http://{host}:6080"}
+                {"policy_manager_url": f"http://{host}:{APPLICATION_PORT}"}
             )
 
     def _authenticate_ranger_api(self):

@@ -154,6 +154,9 @@ class RangerK8SCharm(ops.CharmBase):
         if not self._state.is_ready():
             raise ValueError("peer relation not ready")
 
+        if self.config["application-name"] == "":
+            raise ValueError("invalid configuration of application-name")
+
         self.postgres_relation_handler.validate()
 
     def update(self, event):

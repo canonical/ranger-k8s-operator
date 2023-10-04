@@ -136,6 +136,13 @@ class RangerProvider(Object):
                 service.configs[key] = value
 
         created_service = ranger.create_service(service)
+
+        new_service = ranger.get_service(service_name)
+        if new_service is None:
+            logger.info("Service unable to be created, deferring event.")
+            event.defer()
+            return
+
         logger.info(f"Service {service_name!r} created successfully!")
 
         services = self.charm._state.services or {}

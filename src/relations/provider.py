@@ -6,11 +6,12 @@
 
 import logging
 
+from apache_ranger import RangerServiceException
 from apache_ranger.client import ranger_client
 from apache_ranger.model import ranger_service
 from ops.charm import CharmBase
 from ops.framework import Object
-from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
+from ops.model import ActiveStatus, MaintenanceStatus
 
 from literals import ADMIN_USER, APPLICATION_PORT, RANGER_URL
 from utils import log_event_handler
@@ -71,8 +72,8 @@ class RangerProvider(Object):
         try:
             ranger = self._create_ranger_client()
             self._create_ranger_service(ranger, data, event)
-        except Exception:
-            self.charm.unit.status = BlockedStatus("Failed to add service")
+        except RangerServiceException:
+            event.defer()
             logger.exception(
                 "An error occurred while creating the ranger service:"
             )
@@ -99,7 +100,7 @@ class RangerProvider(Object):
                 f"relation_{event.relation.id}"
             ]
             self._delete_ranger_service(service_id)
-        except Exception:
+        except RangerServiceException:
             logger.exception(
                 "An error occurred while deleting the ranger service:"
             )

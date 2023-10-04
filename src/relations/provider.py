@@ -6,7 +6,7 @@
 
 import logging
 
-from apache_ranger import RangerServiceException
+from apache_ranger.exceptions import RangerServiceException
 from apache_ranger.client import ranger_client
 from apache_ranger.model import ranger_service
 from ops.charm import CharmBase

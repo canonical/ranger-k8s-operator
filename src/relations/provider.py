@@ -12,7 +12,7 @@ from ops.charm import CharmBase
 from ops.framework import Object
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
 
-from literals import APPLICATION_PORT, RANGER_URL
+from literals import ADMIN_USER, APPLICATION_PORT, RANGER_URL
 from utils import log_event_handler
 
 logger = logging.getLogger(__name__)
@@ -69,11 +69,13 @@ class RangerProvider(Object):
         self.charm.unit.status = MaintenanceStatus("Adding policy relation")
 
         try:
-            ranger = self._authenticate_ranger_api()
+            ranger = self._create_ranger_client()
             self._create_ranger_service(ranger, data, event)
-        except Exception as err:
+        except Exception:
             self.charm.unit.status = BlockedStatus("Failed to add service")
-            logger.error(err)
+            logger.exception(
+                "An error occurred while creating the ranger service:"
+            )
             return
 
         self._set_policy_manager(event)
@@ -97,8 +99,10 @@ class RangerProvider(Object):
                 f"relation_{event.relation.id}"
             ]
             self._delete_ranger_service(service_id)
-        except Exception as err:
-            logger.error(err)
+        except Exception:
+            logger.exception(
+                "An error occurred while deleting the ranger service:"
+            )
             return
 
         existing_services = self.charm._state.services
@@ -113,13 +117,16 @@ class RangerProvider(Object):
             data: relation data
             event: relation event
         """
-        retrieved_service = ranger.get_service(data["name"])
+        service_name = data["name"]
+        retrieved_service = ranger.get_service(service_name)
         if retrieved_service is not None:
-            logging.info("service exists already")
+            logger.info(
+                f"Service {service_name!r} not created as it already exists."
+            )
             return
 
         service = ranger_service.RangerService(
-            {"name": data["name"], "type": data["type"]}
+            {"name": service_name, "type": data["type"]}
         )
         service.configs = {
             "username": f"relation_id_{event.relation.id}",
@@ -129,7 +136,7 @@ class RangerProvider(Object):
                 service.configs[key] = value
 
         created_service = ranger.create_service(service)
-        logging.info("service created successfully!")
+        logger.info(f"Service {service_name!r} created successfully!")
 
         services = self.charm._state.services or {}
         services[f"relation_{event.relation.id}"] = created_service.id
@@ -151,13 +158,13 @@ class RangerProvider(Object):
                 {"policy_manager_url": f"http://{host}:{APPLICATION_PORT}"}
             )
 
-    def _authenticate_ranger_api(self):
+    def _create_ranger_client(self):
         """Prepare Ranger client.
 
         Returns:
             ranger: ranger client
         """
-        ranger_auth = ("admin", self.charm.config["ranger-admin-password"])
+        ranger_auth = (ADMIN_USER, self.charm.config["ranger-admin-password"])
         ranger = ranger_client.RangerClient(RANGER_URL, ranger_auth)
         return ranger
 
@@ -167,7 +174,7 @@ class RangerProvider(Object):
         Args:
             service_id: the ID of the service to delete
         """
-        ranger = self._authenticate_ranger_api()
+        ranger = self._create_ranger_client()
         retrieved_service = ranger.get_service_by_id(service_id)
 
         if retrieved_service is not None:

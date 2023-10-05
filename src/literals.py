@@ -4,3 +4,5 @@
 """Manager for handling charm literals."""
 
 APPLICATION_PORT = 6080
+RANGER_URL = "http://localhost:6080"
+ADMIN_USER = "admin"

@@ -19,6 +19,7 @@ from ops.pebble import CheckStatus
 
 from literals import APPLICATION_PORT
 from relations.postgres import PostgresRelationHandler
+from relations.provider import RangerProvider
 from state import State
 from utils import log_event_handler, render
 
@@ -45,7 +46,7 @@ class RangerK8SCharm(ops.CharmBase):
             args: Ignore.
         """
         super().__init__(*args)
-        self.state = State(self.app, lambda: self.model.get_relation("peer"))
+        self._state = State(self.app, lambda: self.model.get_relation("peer"))
         self.name = "ranger"
 
         self.framework.observe(self.on.install, self._on_install)
@@ -62,6 +63,7 @@ class RangerK8SCharm(ops.CharmBase):
             database_name=PostgresRelationHandler.DB_NAME,
         )
         self.postgres_relation_handler = PostgresRelationHandler(self)
+        self.provider = RangerProvider(self)
 
         # Handle Ingress
         self._require_nginx_route()
@@ -112,10 +114,10 @@ class RangerK8SCharm(ops.CharmBase):
         Args:
             event: The `update-status` event triggered at intervals
         """
-        if not self.state.is_ready():
+        if not self._state.is_ready():
             return
 
-        if not self.state.database_connection:
+        if not self._state.database_connection:
             return
 
         container = self.unit.get_container(self.name)
@@ -149,8 +151,11 @@ class RangerK8SCharm(ops.CharmBase):
         Raises:
             ValueError: in case of invalid configuration.
         """
-        if not self.state.is_ready():
+        if not self._state.is_ready():
             raise ValueError("peer relation not ready")
+
+        if self.config["application-name"] == "":
+            raise ValueError("invalid configuration of application-name")
 
         self.postgres_relation_handler.validate()
 
@@ -171,8 +176,10 @@ class RangerK8SCharm(ops.CharmBase):
             event.defer()
             return
 
+        self.model.unit.open_port(port=APPLICATION_PORT, protocol="tcp")
+
         logger.info("configuring ranger")
-        db_conn = self.state.database_connection
+        db_conn = self._state.database_connection
         context = {
             "DB_NAME": db_conn["dbname"],
             "DB_HOST": db_conn["host"],

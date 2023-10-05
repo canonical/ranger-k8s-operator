@@ -28,6 +28,10 @@ requires:
   nginx-route:
     interface: nginx-route
 
+provides:
+  policy:
+    interface: ranger_client
+
 containers:
   ranger:
     resource: ranger-image

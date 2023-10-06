@@ -24,3 +24,8 @@ options:
       It should match the name of your charm deployment.
     type: string
     default: ranger-k8s 
+  user-group-configuration:
+    description: |
+      Yaml formatted user, group and membership definitions
+      to be created in Ranger admin for policy enforcement.
+    type: string

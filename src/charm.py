@@ -22,6 +22,7 @@ from relations.postgres import PostgresRelationHandler
 from relations.provider import RangerProvider
 from state import State
 from utils import log_event_handler, render
+from groups import RangerGroupManager
 
 # Log messages can be retrieved using juju debug-log
 logger = logging.getLogger(__name__)
@@ -64,6 +65,7 @@ class RangerK8SCharm(ops.CharmBase):
         )
         self.postgres_relation_handler = PostgresRelationHandler(self)
         self.provider = RangerProvider(self)
+        self.group_manager = RangerGroupManager(self)
 
         # Handle Ingress
         self._require_nginx_route()
@@ -104,7 +106,6 @@ class RangerK8SCharm(ops.CharmBase):
         Args:
             event: The event triggered when the relation changed.
         """
-        self.unit.status = WaitingStatus("configuring ranger")
         self.update(event)
 
     @log_event_handler(logger)
@@ -177,6 +178,11 @@ class RangerK8SCharm(ops.CharmBase):
             return
 
         self.model.unit.open_port(port=APPLICATION_PORT, protocol="tcp")
+
+        # User management
+        users_groups_config = self.config.get("user-group-configuration")
+        if users_groups_config:
+            self.group_manager._synchronize_file(event)
 
         logger.info("configuring ranger")
         db_conn = self._state.database_connection

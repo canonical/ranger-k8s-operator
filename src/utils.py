@@ -5,7 +5,8 @@
 
 import functools
 import os
-
+import random
+import string
 from jinja2 import Environment, FileSystemLoader
 
 
@@ -73,3 +74,30 @@ def log_event_handler(logger):
         return decorated
 
     return decorator
+
+
+def generate_random_string(length) -> str:
+    """Create randomized string for use as app passwords and username ID.
+
+    Args:
+        length: number of characters to generate
+
+    Returns:
+        String of randomized letter+digit characters
+    """
+    uppercase_letters = string.ascii_uppercase
+    lowercase_letters = string.ascii_lowercase
+    digits = string.digits
+
+    all_characters = uppercase_letters + lowercase_letters + digits
+
+    password = (
+        random.choice(uppercase_letters)
+        + random.choice(lowercase_letters)
+        + random.choice(digits)
+    )
+    password += "".join(
+        random.choice(all_characters) for _ in range(length - 3)
+    )
+
+    return "".join(random.sample(password, len(password)))

@@ -36,7 +36,6 @@ class RangerGroupManager():
         auth = (ADMIN_USER, admin_password)
         return auth
 
-    @log_event_handler(logger)
     def _handle_synchronize_file(self, event):
         if not self.charm.unit.status == ActiveStatus('Status check: UP'):
             event.defer()
@@ -45,10 +44,14 @@ class RangerGroupManager():
         if not self.charm.unit.is_leader():
             return
 
-        self.synchronize()
+        config_data = self._read_file()
+        for key in config_data:
+            data = next(iter(config_data.values()))
+            self.synchronize(data)
+            self._add_to_relations(key, data)
 
-    def synchronize(self):
-        data = self._read_file()
+    @log_event_handler(logger)
+    def synchronize(self, data):
         self._sync(data["groups"], "groups")
         self._sync(data["users"], "users")
         self._sync_memberships(data["memberships"])
@@ -69,7 +72,6 @@ class RangerGroupManager():
         response = requests.delete(url, headers=HEADERS, auth=self._auth)
         return response
 
-
     def _create_request(self, object_type, data):
         url = f"{RANGER_URL}/service/xusers/{object_type}"
         response = requests.post(url, headers=HEADERS, json=data, auth=self._auth)
@@ -81,7 +83,6 @@ class RangerGroupManager():
             logger.info(f"Deleted {type}: {id}")
         else:
             logger.info(f"Unable to delete {type}: {id}")
-
 
     def _create(self, type, name, values):
         if type == "users":
@@ -171,6 +172,13 @@ class RangerGroupManager():
                 if item["name"] == groupname and item["userId"] == user_id
             )
             self._delete("groupusers", delete_id)
+
+    def _add_to_relations(self, key, data):
+        policy_relations = self.charm.model.relations["policy"]
+        for relation in policy_relations:
+            if key == f"relation_{relation.id}":
+                yaml_string = yaml.dump(data)
+                relation.data[self.charm.app].update({"user-group-configuration": yaml_string})
 
 
 def create_user_payload(user):

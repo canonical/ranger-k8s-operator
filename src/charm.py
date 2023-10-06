@@ -182,7 +182,7 @@ class RangerK8SCharm(ops.CharmBase):
         # User management
         users_groups_config = self.config.get("user-group-configuration")
         if users_groups_config:
-            self.group_manager._synchronize_file(event)
+            self.group_manager._handle_synchronize_file(event)
 
         logger.info("configuring ranger")
         db_conn = self._state.database_connection

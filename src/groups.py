@@ -47,11 +47,11 @@ class RangerGroupManager():
         config_data = self._read_file()
         for key in config_data:
             data = next(iter(config_data.values()))
-            self.synchronize(data)
             self._add_to_relations(key, data)
+            self._synchronize(data)
 
     @log_event_handler(logger)
-    def synchronize(self, data):
+    def _synchronize(self, data):
         self._sync(data["groups"], "groups")
         self._sync(data["users"], "users")
         self._sync_memberships(data["memberships"])

@@ -4,9 +4,13 @@
 """Define helpers methods."""
 
 import functools
+import logging
 import os
 import random
 import string
+import time
+
+from apache_ranger.exceptions import RangerServiceException
 from jinja2 import Environment, FileSystemLoader
 
 
@@ -101,3 +105,65 @@ def generate_random_string(length) -> str:
     )
 
     return "".join(random.sample(password, len(password)))
+
+
+def retry(max_retries=3, delay=2, backoff=2):
+    """Decorate function to retry executing upon failure.
+
+    Args:
+        max_retries: The maximum number of times to retry the decorated function.
+        delay: The initial delay (in seconds) before the first retry.
+        backoff: The factor by which the delay increases with each retry.
+
+    Returns:
+        decorator: A retry decorator function.
+    """
+
+    def decorator(func):
+        """Apply decorator function to the target function.
+
+        Args:
+            func: The function to decorate.
+
+        Returns:
+            wrapper: A decorated function that will be retried upon failure.
+        """
+
+        def wrapper(*args, **kwargs):
+            """Execute wrapper for the decorated function and handle retries.
+
+            Args:
+                args: Positional arguments passed to the decorated function.
+                kwargs: Keyword arguments passed to the decorated function.
+
+            Returns:
+                result: The result of the decorated function if successful.
+                None: If max_retries are reached without success, returns None.
+
+            Raises:
+                RangerServiceException: If max_retries are reached without success.
+            """
+            logger = logging.getLogger(__name__)
+
+            current_delay = delay  # Define current_delay before using it
+            for attempt in range(max_retries):
+                try:
+                    result = func(*args, **kwargs)
+                    return result
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        logger.warning(
+                            f"Request failed (attempt {attempt + 1}): {e}"
+                        )
+                        time.sleep(current_delay)
+                        current_delay *= backoff
+                    else:
+                        logger.exception("Max retries reached for request")
+                        raise RangerServiceException(
+                            "Max retries reached for request."
+                        ) from e
+            return None
+
+        return wrapper
+
+    return decorator

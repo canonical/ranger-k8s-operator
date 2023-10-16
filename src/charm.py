@@ -9,20 +9,15 @@ import logging
 import ops
 from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
 from charms.nginx_ingress_integrator.v0.nginx_route import require_nginx_route
-from ops.model import (
-    ActiveStatus,
-    BlockedStatus,
-    MaintenanceStatus,
-    WaitingStatus,
-)
+from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
 from ops.pebble import CheckStatus
 
+from groups import RangerGroupManager
 from literals import APPLICATION_PORT
 from relations.postgres import PostgresRelationHandler
 from relations.provider import RangerProvider
 from state import State
 from utils import log_event_handler, render
-from groups import RangerGroupManager
 
 # Log messages can be retrieved using juju debug-log
 logger = logging.getLogger(__name__)

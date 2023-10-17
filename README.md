@@ -29,6 +29,62 @@ juju relate ranger-k8s:db postgresql-k8s:database
 ```
 Refer to [CONTRIBUTING.md](./CONTRIBUTING.md) for details on building the charm and ranger image. 
 
+### Group management with Apache Ranger
+The Charmed Ranger Operator makes use of the [Ranger API](https://ranger.apache.org/apidocs/index.html) and [apache-ranger PyPi package](https://pypi.org/project/apache-ranger/) to manage users and groups. The source of users and group memberships is a `user-group-configuration.yaml` file provided to the charm as a configuration value `user-group-configuration`. 
+
+An example of this file is here: 
+```
+ranger-k8s:
+   user-group-configuration: |
+      relation_2:
+         users:
+            - name: user1
+              firstname: One
+              lastname: User
+              email: user1@canonical.com
+            - name: user2
+              firstname: Two
+              lastname: User
+              email: user2@canonical.com
+
+         groups:
+            - name: developers
+              description: users with developer level access.
+            - name: users
+              description: users with select only access.
+
+         memberships:
+            - groupname: users
+              users: [user1, user2]
+            - groupname: developers
+              users: [user2]
+```
+The charm will automatically sync users and groups from the configuration file to Ranger admin. Removing groups and group memberships were required.
+
+#### Group management in related application
+Related applications must have the Ranger plugin configured. The Ranger plugin schedules regular download of Ranger policies (every 3 minutes) storing these policies within the related application in a cache. On access request, the requesting user's UNIX group is used when comparing to Ranger group policies to determine access. 
+
+#### Get relation ID
+To automatically share this user and group information with the related charm, you must ensure the `relation_id` present in the `user-group-configuration.yaml` matches the corresponding application. The user data will then be available to the related application via the relation databag. The relation ID is required as there can be more than 1 application related to the Ranger charm.
+
+This can be done with: 
+```
+juju show-unit <application name>/0 --format json | jq
+```
+#### Trino relation
+The configuration of these groups is done automatically on relation with the Ranger charm in the [Trino K8s charm](https://charmhub.io/trino-k8s).
+
+```
+# relate trino and ranger charms:
+juju relate trino-k8s:policy ranger-k8s:policy
+
+# confirm applications are related and wait until active:
+juju status --relations
+
+# provide the ranger configuration file:
+juju config ranger-k8s --file=user-group-configuration.yaml
+```
+
 ### Ingress
 The Ranger operator exposes its ports using the Nginx Ingress Integrator operator. You must first make sure to have an Nginx Ingress Controller deployed. To enable TLS connections, you must have a TLS certificate stored as a k8s secret (default name is "ranger-tls"). A self-signed certificate for development purposes can be created as follows:
 

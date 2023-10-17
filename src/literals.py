@@ -11,3 +11,4 @@ HEADERS = {
     "Content-Type": "application/json",
 }
 SYSTEM_GROUPS = ["public"]
+EXPECTED_KEYS = ["users", "groups", "memberships"]

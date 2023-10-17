@@ -3,6 +3,7 @@
 
 """Helper class used to manage interactions with the Ranger API for user/group operations."""
 
+import copy
 import json
 import logging
 
@@ -12,7 +13,13 @@ from apache_ranger.exceptions import RangerServiceException
 from ops.charm import CharmBase
 from ops.model import ActiveStatus
 
-from literals import ADMIN_USER, HEADERS, RANGER_URL, SYSTEM_GROUPS
+from literals import (
+    ADMIN_USER,
+    EXPECTED_KEYS,
+    HEADERS,
+    RANGER_URL,
+    SYSTEM_GROUPS,
+)
 from utils import generate_random_string, log_event_handler, retry
 
 logger = logging.getLogger(__name__)
@@ -54,8 +61,9 @@ class RangerGroupManager:
         config_data = self._read_file()
         for key in config_data:
             data = next(iter(config_data.values()))
-            self._add_to_relations(key, data)
+            relation_data = copy.deepcopy(data)
             self._synchronize(key, data, event)
+            self._add_to_relations(key, relation_data)
 
     def _read_file(self):
         """Read the user-group-configuration from the charm config.
@@ -200,7 +208,6 @@ class RangerGroupManager:
                 f"A Ranger Service Exception has occurred while attempting to get {member_type}:"
             )
             raise
-
         j = json.loads(response.text)
         if member_type == "groups":
             output = j["vXGroups"]
@@ -323,6 +330,7 @@ class RangerGroupManager:
             (membership["name"], membership["userId"])
             for membership in existing_memberships
         }
+
         return existing_memberships, existing_combinations
 
     def _get_user_ids(self, apply_memberships):
@@ -433,6 +441,40 @@ class RangerGroupManager:
                 relation.data[self.charm.app].update(
                     {"user-group-configuration": yaml_string}
                 )
+
+    def _validate(self):
+        """Validate user-group-configuration file values.
+
+        Raises:
+            ValueError: in case the file cannot be parsed.
+                        in case the file cannot be converted to a dictionary.
+                        in case relation key is missing.
+                        in case user, group or membership values are missing.
+
+        """
+        try:
+            data = yaml.safe_load(
+                self.charm.config["user-group-configuration"]
+            )
+        except yaml.YAMLError as e:
+            raise ValueError(
+                "The configuration file is improperly formatted, unable to parse."
+            ) from e
+
+        if not isinstance(data, dict):
+            raise ValueError("The configuration file is improperly formatted.")
+
+        for key in data.keys():
+            if not key.startswith("relation_"):
+                raise ValueError(
+                    "User management configuration file must have relation keys."
+                )
+
+            for expected_key in EXPECTED_KEYS:
+                if expected_key not in data[key]:
+                    raise ValueError(
+                        f"Missing '{expected_key}' values in the configuration file."
+                    )
 
 
 def create_user_payload(user):

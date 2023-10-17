@@ -153,6 +153,9 @@ class RangerK8SCharm(ops.CharmBase):
         if self.config["application-name"] == "":
             raise ValueError("invalid configuration of application-name")
 
+        if self.config.get("user-group-configuration"):
+            self.group_manager._validate()
+
         self.postgres_relation_handler.validate()
 
     def update(self, event):
@@ -174,7 +177,6 @@ class RangerK8SCharm(ops.CharmBase):
 
         self.model.unit.open_port(port=APPLICATION_PORT, protocol="tcp")
 
-        # User management
         users_groups_config = self.config.get("user-group-configuration")
         if users_groups_config:
             self.group_manager._handle_synchronize_file(event)

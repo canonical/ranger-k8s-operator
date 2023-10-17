@@ -19,6 +19,43 @@ from state import State
 
 logger = logging.getLogger(__name__)
 
+GROUP_MANAGEMENT = """
+    relation_1:
+        users:
+          - name: user1
+            firstname: One
+            lastname: User
+            email: user1@canonical.com
+        memberships:
+          - groupname: commercial-systems
+            users: [user1]
+        groups:
+          - name: commercial-systems
+            description: commercial systems team
+"""
+MISSING_RELATION_CONFIG = """
+        users:
+          - name: user1
+            firstname: One
+            lastname: User
+            email: user1@canonical.com
+"""
+INCORRECTLY_FORMATTED_CONFIG = """
+            users:
+          - name: user1
+            firstname: One
+            lastname: User
+            email: user1@canonical.com
+"""
+MISSING_VALUE_CONFIG = """
+    relation_1:
+        users:
+          - name: user1
+            firstname: One
+            lastname: User
+            email: user1@canonical.com
+"""
+
 
 class TestCharm(TestCase):
     """Unit tests.
@@ -179,6 +216,88 @@ class TestCharm(TestCase):
         assert relation_data == {
             "policy_manager_url": "http://ranger-k8s:6080"
         }
+
+    def test_user_group_configuration(self):
+        """The user-group-configuration paramerter is validated."""
+        harness = self.harness
+        simulate_lifecycle(harness)
+
+        # Unable to parse configuration file.
+        self.harness.update_config(
+            {"user-group-configuration": f"{INCORRECTLY_FORMATTED_CONFIG}"}
+        )
+        self.assertEqual(
+            harness.model.unit.status,
+            BlockedStatus(
+                "The configuration file is improperly formatted, unable to parse."
+            ),
+        )
+        # Missing relation id in configuration file.
+        self.harness.update_config(
+            {"user-group-configuration": f"{MISSING_RELATION_CONFIG}"}
+        )
+        self.assertEqual(
+            harness.model.unit.status,
+            BlockedStatus(
+                "User management configuration file must have relation keys."
+            ),
+        )
+
+        # Missing value `groups` in configuration file.
+        self.harness.update_config(
+            {"user-group-configuration": f"{MISSING_VALUE_CONFIG}"}
+        )
+        self.assertEqual(
+            harness.model.unit.status,
+            BlockedStatus(
+                "Missing 'groups' values in the configuration file."
+            ),
+        )
+
+        # Correct configuration file.
+        self.harness.update_config(
+            {"user-group-configuration": f"{GROUP_MANAGEMENT}"}
+        )
+        self.assertEqual(
+            harness.model.unit.status,
+            MaintenanceStatus("replanning application"),
+        )
+
+    def test_auth(self):
+        """Ranger API authentication is created as expected."""
+        harness = self.harness
+        self.harness.update_config({"ranger-admin-password": "ubuntuR0cks!"})
+        expected_auth = ("admin", "ubuntuR0cks!")
+        auth = harness.charm.group_manager._auth
+        self.assertEqual(auth, expected_auth)
+
+    @mock.patch("charm.RangerGroupManager._get_existing_values")
+    @mock.patch("charm.RangerGroupManager._delete_request")
+    @mock.patch("charm.RangerGroupManager._create_request")
+    def test_update_relation_data(
+        self, _get_existing_values, _delete_request, _create_request
+    ):
+        """The user-group-configuration file is synced and relation data updated."""
+        harness = self.harness
+        simulate_lifecycle(harness)
+
+        # Add Trino relation
+        rel_id = harness.add_relation("policy", "trino-k8s")
+        harness.add_relation_unit(rel_id, "trino-k8s/0")
+
+        # ActiveStatus following check
+        container = harness.model.unit.get_container("ranger")
+        container.get_check = mock.Mock(status="up")
+        container.get_check.return_value.status = CheckStatus.UP
+        harness.charm.on.update_status.emit()
+
+        # Update relation data with config
+        self.harness.update_config(
+            {"user-group-configuration": f"{GROUP_MANAGEMENT}"}
+        )
+        harness.charm.on.config_changed.emit()
+        relation_data = self.harness.get_relation_data(rel_id, "ranger-k8s")
+        assert relation_data.get("user-group-configuration") is not None
 
 
 def simulate_lifecycle(harness):

@@ -59,7 +59,7 @@ ranger-k8s:
             - groupname: developers
               users: [user2]
 ```
-The charm will automatically sync users and groups from the configuration file to Ranger admin. Removing groups and group memberships were required.
+The charm will automatically sync users and groups from the configuration file to Ranger admin. Removing groups and group memberships where not present in the configuration file. This means that you should not create groups and user associations directly in the UI as they will be removed if not present in the file.
 
 #### Group management in related application
 Related applications must have the Ranger plugin configured. The Ranger plugin schedules regular download of Ranger policies (every 3 minutes) storing these policies within the related application in a cache. On access request, the requesting user's UNIX group is used when comparing to Ranger group policies to determine access. 

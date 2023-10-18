@@ -272,10 +272,10 @@ class TestCharm(TestCase):
         self.assertEqual(auth, expected_auth)
 
     @mock.patch("charm.RangerGroupManager._get_existing_values")
-    @mock.patch("charm.RangerGroupManager._delete_request")
-    @mock.patch("charm.RangerGroupManager._create_request")
+    @mock.patch("charm.RangerGroupManager._delete_members")
+    @mock.patch("charm.RangerGroupManager._create_members")
     def test_update_relation_data(
-        self, _get_existing_values, _delete_request, _create_request
+        self, _get_existing_values, _delete_members, _create_members
     ):
         """The user-group-configuration file is synced and relation data updated."""
         harness = self.harness

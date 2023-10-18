@@ -94,7 +94,7 @@ class RangerGroupManager:
             event.defer()
 
     @retry(max_retries=3, delay=2, backoff=2)
-    def _get_request(self, member_type):
+    def _query_members(self, member_type):
         """Send a GET request to the Ranger API for members.
 
         Args:
@@ -110,7 +110,7 @@ class RangerGroupManager:
         return response
 
     @retry(max_retries=3, delay=2, backoff=2)
-    def _delete_request(self, member_type, value_id):
+    def _delete_members(self, member_type, value_id):
         """Send a DELETE request to the Ranger API for a member.
 
         Args:
@@ -127,7 +127,7 @@ class RangerGroupManager:
         return response
 
     @retry(max_retries=3, delay=2, backoff=2)
-    def _create_request(self, member_type, data):
+    def _create_members(self, member_type, data):
         """Send a POST request to create a member in the Ranger API.
 
         Args:
@@ -158,7 +158,7 @@ class RangerGroupManager:
             RangerServiceException: when failing to delete a user, group or membership.
         """
         try:
-            response = self._delete_request(member_type, value_id)
+            response = self._delete_members(member_type, value_id)
         except RangerServiceException:
             logger.exception(
                 f"A Ranger Service Exception has occurred while attempting to delete {member_type}, {value_id}:"
@@ -185,7 +185,7 @@ class RangerGroupManager:
         )
 
         try:
-            response = self._create_request(member_type, data)
+            response = self._create_members(member_type, data)
         except RangerServiceException:
             logger.exception(
                 f"A Ranger Service Exception has occurred while attempting to create {member_type}, {name}:"
@@ -210,7 +210,7 @@ class RangerGroupManager:
             RangerServiceException: when failing to get existing user or group values.
         """
         try:
-            response = self._get_request(member_type)
+            response = self._query_members(member_type)
         except RangerServiceException:
             logger.exception(
                 f"A Ranger Service Exception has occurred while attempting to get {member_type}:"

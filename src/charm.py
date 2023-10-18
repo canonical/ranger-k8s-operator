@@ -57,6 +57,7 @@ class RangerK8SCharm(ops.CharmBase):
             self,
             relation_name="database",
             database_name=PostgresRelationHandler.DB_NAME,
+            extra_user_roles="admin",
         )
         self.postgres_relation_handler = PostgresRelationHandler(self)
         self.provider = RangerProvider(self)

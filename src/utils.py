@@ -6,7 +6,7 @@
 import functools
 import logging
 import os
-import random
+import secrets
 import string
 import time
 
@@ -81,7 +81,7 @@ def log_event_handler(logger):
 
 
 def generate_random_string(length) -> str:
-    """Create randomized string for use as app passwords and username ID.
+    """Create a secure randomized string for use as external user passwords.
 
     Args:
         length: number of characters to generate
@@ -95,16 +95,18 @@ def generate_random_string(length) -> str:
 
     all_characters = uppercase_letters + lowercase_letters + digits
 
-    password = (
-        random.choice(uppercase_letters)
-        + random.choice(lowercase_letters)
-        + random.choice(digits)
+    characters = [
+        secrets.choice(uppercase_letters)
+        + secrets.choice(lowercase_letters)
+        + secrets.choice(digits)
+    ]
+    characters.extend(
+        secrets.choice(all_characters) for _ in range(length - 3)
     )
-    password += "".join(
-        random.choice(all_characters) for _ in range(length - 3)
-    )
+    secrets.SystemRandom().shuffle(characters)
+    password = "".join(characters)
 
-    return "".join(random.sample(password, len(password)))
+    return password
 
 
 def retry(max_retries=3, delay=2, backoff=2):

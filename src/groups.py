@@ -104,7 +104,9 @@ class RangerGroupManager:
             Response from the GET request.
         """
         url = f"{RANGER_URL}/service/xusers/{member_type}"
-        response = requests.get(url, headers=HEADERS, auth=self._auth)
+        response = requests.get(
+            url, headers=HEADERS, auth=self._auth, timeout=10
+        )
         return response
 
     @retry(max_retries=3, delay=2, backoff=2)
@@ -119,7 +121,9 @@ class RangerGroupManager:
             Response from the DELETE request.
         """
         url = f"{RANGER_URL}/service/xusers/{member_type}/{value_id}"
-        response = requests.delete(url, headers=HEADERS, auth=self._auth)
+        response = requests.delete(
+            url, headers=HEADERS, auth=self._auth, timeout=10
+        )
         return response
 
     @retry(max_retries=3, delay=2, backoff=2)
@@ -135,7 +139,11 @@ class RangerGroupManager:
         """
         url = f"{RANGER_URL}/service/xusers/{member_type}"
         response = requests.post(
-            url, headers=HEADERS, json=data, auth=self._auth
+            url,
+            headers=HEADERS,
+            json=data,
+            auth=self._auth,
+            timeout=10,
         )
         return response
 

@@ -19,7 +19,7 @@ from state import State
 
 logger = logging.getLogger(__name__)
 
-GROUP_MANAGEMENT = """
+GROUP_MANAGEMENT = """\
     relation_1:
         users:
           - name: user1
@@ -33,21 +33,21 @@ GROUP_MANAGEMENT = """
           - name: commercial-systems
             description: commercial systems team
 """
-MISSING_RELATION_CONFIG = """
+MISSING_RELATION_CONFIG = """\
         users:
           - name: user1
             firstname: One
             lastname: User
             email: user1@canonical.com
 """
-INCORRECTLY_FORMATTED_CONFIG = """
+INCORRECTLY_FORMATTED_CONFIG = """\
             users:
           - name: user1
             firstname: One
             lastname: User
             email: user1@canonical.com
 """
-MISSING_VALUE_CONFIG = """
+MISSING_VALUE_CONFIG = """\
     relation_1:
         users:
           - name: user1
@@ -55,6 +55,27 @@ MISSING_VALUE_CONFIG = """
             lastname: User
             email: user1@canonical.com
 """
+RANGER_GET_RESPONSE = {
+  "vXUsers": [
+    {
+      "id": 1,
+      "name": "user1"
+    }
+  ],
+  "vXGroups": [
+    {
+      "id": 1,
+      "name": "public"
+    }
+  ],
+  "vXGroupUsers": [
+    {
+      "id": 3,
+      "name": "hr",
+      "userId": 1
+    }
+  ]
+}
 
 
 class TestCharm(TestCase):
@@ -271,11 +292,11 @@ class TestCharm(TestCase):
         auth = harness.charm.group_manager._auth
         self.assertEqual(auth, expected_auth)
 
-    @mock.patch("charm.RangerGroupManager._get_existing_values")
+    @mock.patch("charm.RangerGroupManager._query_members")
     @mock.patch("charm.RangerGroupManager._delete_members")
     @mock.patch("charm.RangerGroupManager._create_members")
     def test_update_relation_data(
-        self, _get_existing_values, _delete_members, _create_members
+        self, _delete_members, _create_members, mock_query_members
     ):
         """The user-group-configuration file is synced and relation data updated."""
         harness = self.harness
@@ -290,6 +311,11 @@ class TestCharm(TestCase):
         container.get_check = mock.Mock(status="up")
         container.get_check.return_value.status = CheckStatus.UP
         harness.charm.on.update_status.emit()
+
+        # Mock _query_members
+        mock_response = mock.MagicMock()
+        mock_response.text = RANGER_GET_RESPONSE
+        mock_query_members.return_value = mock_response.text
 
         # Update relation data with config
         self.harness.update_config(

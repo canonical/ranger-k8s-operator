@@ -169,3 +169,38 @@ def retry(max_retries=3, delay=2, backoff=2):
         return wrapper
 
     return decorator
+
+
+def handle_service_error(func):
+    """Handle RangerServiceException while interacting with the Ranger API.
+
+    Args:
+        func: The function to decorate.
+
+    Returns:
+        wrapper: A decorated function that raises an error on failure.
+    """
+
+    def wrapper(*args, **kwargs):
+        """Execute wrapper for the decorated function and handle errors.
+
+        Args:
+            args: Positional arguments passed to the decorated function.
+            kwargs: Keyword arguments passed to the decorated function.
+
+        Returns:
+            result: The result of the decorated function if successful.
+
+        Raises:
+            ExecError: In case the command fails to execute successfully.
+        """
+        logger = logging.getLogger(__name__)
+
+        try:
+            result = func(*args, **kwargs)
+            return result
+        except RangerServiceException:
+            logger.exception(f"Failed to execute {func.__name__}:")
+            raise
+
+    return wrapper

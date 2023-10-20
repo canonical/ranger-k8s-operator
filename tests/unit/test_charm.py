@@ -20,7 +20,7 @@ from state import State
 logger = logging.getLogger(__name__)
 
 GROUP_MANAGEMENT = """\
-    relation_1:
+    trino-service:
         users:
           - name: user1
             firstname: One
@@ -47,8 +47,22 @@ INCORRECTLY_FORMATTED_CONFIG = """\
             lastname: User
             email: user1@canonical.com
 """
-MISSING_VALUE_CONFIG = """\
+RELATION_DOES_NOT_EXIST_CONFIG = """\
     relation_1:
+        users:
+          - name: user1
+            firstname: One
+            lastname: User
+            email: user1@canonical.com
+        memberships:
+          - groupname: commercial-systems
+            users: [user1]
+        groups:
+          - name: commercial-systems
+            description: commercial systems team
+"""
+MISSING_VALUE_CONFIG = """\
+    trino-service:
         users:
           - name: user1
             firstname: One
@@ -56,25 +70,9 @@ MISSING_VALUE_CONFIG = """\
             email: user1@canonical.com
 """
 RANGER_GET_RESPONSE = {
-  "vXUsers": [
-    {
-      "id": 1,
-      "name": "user1"
-    }
-  ],
-  "vXGroups": [
-    {
-      "id": 1,
-      "name": "public"
-    }
-  ],
-  "vXGroupUsers": [
-    {
-      "id": 3,
-      "name": "hr",
-      "userId": 1
-    }
-  ]
+    "vXUsers": [{"id": 1, "name": "user1"}],
+    "vXGroups": [{"id": 1, "name": "public"}],
+    "vXGroupUsers": [{"id": 3, "name": "hr", "userId": 1}],
 }
 
 
@@ -235,13 +233,20 @@ class TestCharm(TestCase):
 
         relation_data = self.harness.get_relation_data(rel_id, "ranger-k8s")
         assert relation_data == {
-            "policy_manager_url": "http://ranger-k8s:6080"
+            "policy_manager_url": "http://ranger-k8s:6080",
+            "service_name": "trino-service",
         }
 
-    def test_user_group_configuration(self):
+    @mock.patch("charm.RangerProvider._create_ranger_service")
+    def test_user_group_configuration(self, _create_ranger_service):
         """The user-group-configuration paramerter is validated."""
         harness = self.harness
         simulate_lifecycle(harness)
+        rel_id = harness.add_relation("policy", "trino-k8s")
+        harness.add_relation_unit(rel_id, "trino-k8s/0")
+
+        event = make_policy_relation_changed_event(rel_id)
+        harness.charm.provider._on_relation_changed(event)
 
         # Unable to parse configuration file.
         self.harness.update_config(
@@ -260,8 +265,17 @@ class TestCharm(TestCase):
         self.assertEqual(
             harness.model.unit.status,
             BlockedStatus(
-                "User management configuration file must have relation keys."
+                "User management configuration file must have service keys."
             ),
+        )
+
+        # Service name is not a relation
+        self.harness.update_config(
+            {"user-group-configuration": f"{RELATION_DOES_NOT_EXIST_CONFIG}"}
+        )
+        self.assertEqual(
+            harness.model.unit.status,
+            BlockedStatus("relation_1 does not match a related service."),
         )
 
         # Missing value `groups` in configuration file.
@@ -292,19 +306,26 @@ class TestCharm(TestCase):
         auth = harness.charm.group_manager._auth
         self.assertEqual(auth, expected_auth)
 
+    @mock.patch("charm.RangerProvider._create_ranger_service")
     @mock.patch("charm.RangerGroupManager._query_members")
     @mock.patch("charm.RangerGroupManager._delete_members")
     @mock.patch("charm.RangerGroupManager._create_members")
     def test_update_relation_data(
-        self, _delete_members, _create_members, mock_query_members
+        self,
+        _delete_members,
+        _create_members,
+        mock_query_members,
+        _create_ranger_service,
     ):
         """The user-group-configuration file is synced and relation data updated."""
         harness = self.harness
         simulate_lifecycle(harness)
 
-        # Add Trino relation
         rel_id = harness.add_relation("policy", "trino-k8s")
         harness.add_relation_unit(rel_id, "trino-k8s/0")
+
+        event = make_policy_relation_changed_event(rel_id)
+        harness.charm.provider._on_relation_changed(event)
 
         # ActiveStatus following check
         container = harness.model.unit.get_container("ranger")
@@ -321,6 +342,7 @@ class TestCharm(TestCase):
         self.harness.update_config(
             {"user-group-configuration": f"{GROUP_MANAGEMENT}"}
         )
+
         harness.charm.on.config_changed.emit()
         relation_data = self.harness.get_relation_data(rel_id, "ranger-k8s")
         assert relation_data.get("user-group-configuration") is not None

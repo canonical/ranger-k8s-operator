@@ -36,7 +36,7 @@ An example of this file is here:
 ```
 ranger-k8s:
    user-group-configuration: |
-      relation_2:
+      trino-service:
          users:
             - name: user1
               firstname: One
@@ -64,13 +64,9 @@ The charm will automatically sync users and groups from the configuration file t
 #### Group management in related application
 Related applications must have the Ranger plugin configured. The Ranger plugin schedules regular download of Ranger policies (every 3 minutes) storing these policies within the related application in a cache. On access request, the requesting user's UNIX group is used when comparing to Ranger group policies to determine access. 
 
-#### Get relation ID
-To automatically share this user and group information with the related charm, you must ensure the `relation_id` present in the `user-group-configuration.yaml` matches the corresponding application. The user data will then be available to the related application via the relation databag. The relation ID is required as there can be more than 1 application related to the Ranger charm.
+#### Service name
+Before relation of an application to the Ranger charm, the application's `ranger-service-name` configuration parameter should be set. This will be the name of the Ranger service created for the application. When creating the `user-group-configuration.yaml` this service name should be used as the key for user and group data. Users will automatically be synchronized with the related charm matching the service name.
 
-This can be done with: 
-```
-juju show-unit <application name>/0 --format json | jq
-```
 #### Trino relation
 The configuration of these groups is done automatically on relation with the Ranger charm in the [Trino K8s charm](https://charmhub.io/trino-k8s).
 

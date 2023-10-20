@@ -279,22 +279,26 @@ class RangerGroupManager:
             return
 
         for relation in policy_relations:
-            if key == f"relation_{relation.id}":
+            service_name = relation.data[self.charm.app].get("service_name")
+            if key == service_name:
                 yaml_string = yaml.dump(data)
                 relation.data[self.charm.app].update(
                     {"user-group-configuration": yaml_string}
                 )
 
-    def _validate(self):
+    def _validate(self):  # noqa: C901
         """Validate user-group-configuration file values.
 
         Raises:
-            ValueError: in case the file cannot be parsed.
-                        in case the file cannot be converted to a dictionary.
-                        in case relation key is missing.
-                        in case user, group or membership values are missing.
+            ValueError: In case the file cannot be parsed.
+                        In case the file cannot be converted to a dictionary.
+                        In case there are no related services.
+                        In case relation key is missing.
+                        In case service name has no corresponding relation.
+                        In case user, group or membership values are missing.
 
         """
+        # Validate data can be loaded from the file.
         try:
             data = yaml.safe_load(
                 self.charm.config["user-group-configuration"]
@@ -304,15 +308,34 @@ class RangerGroupManager:
                 "The configuration file is improperly formatted, unable to parse."
             ) from e
 
+        # Validate resulting data is a dictionary.
         if not isinstance(data, dict):
             raise ValueError("The configuration file is improperly formatted.")
 
+        # Validate there are policy relations.
+        policy_relations = self.charm.model.relations.get("policy")
+        if not policy_relations:
+            raise ValueError(
+                "There are no relations with which to apply this file."
+            )
+
+        service_names = []
+        for relation in policy_relations:
+            service_name = relation.data[self.charm.app].get("service_name")
+            service_names.append(service_name)
+
         for key in data.keys():
-            if not key.startswith("relation_"):
+            # Validate the file has a service name.
+            if any(keyword in key for keyword in EXPECTED_KEYS):
                 raise ValueError(
-                    "User management configuration file must have relation keys."
+                    "User management configuration file must have service keys."
                 )
 
+            # Validate the file contains only services that exist.
+            if key not in service_names:
+                raise ValueError(f"{key} does not match a related service.")
+
+             # Validate that there are `user`, `group` and `membership` keys.
             for expected_key in EXPECTED_KEYS:
                 if expected_key not in data[key]:
                     raise ValueError(

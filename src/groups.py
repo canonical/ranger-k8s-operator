@@ -107,7 +107,7 @@ class RangerGroupManager:
 
         Args:
             config: Values to synchronize.
-            member_type: The type of member to synchronize (group or user).
+            member_type: The type of Ranger member (group, user or membership).
         """
         # Get existing values
         existing = self._get_existing_values(member_type)
@@ -139,7 +139,7 @@ class RangerGroupManager:
         """Retrieve existing members from the Ranger API.
 
         Args:
-            member_type: The type of member to retrieve (group, user or membership).
+            member_type: The type of Ranger member (group, user or membership).
 
         Returns:
             values: Existing members from the Ranger API.
@@ -170,7 +170,7 @@ class RangerGroupManager:
         """Send a GET request to the Ranger API for members.
 
         Args:
-            member_type: The type of member (group, user or membership).
+            member_type: The type of Ranger member (group, user or membership).
 
         Returns:
             Response from the GET request.
@@ -189,7 +189,7 @@ class RangerGroupManager:
         """Send a DELETE request to the Ranger API for a member.
 
         Args:
-            member_type: The type of member (group, user or membership).
+            member_type: The type of Ranger member (group, user or membership).
             value: The identifying value of the member to delete.
         """
         if member_type == "group" and value in SYSTEM_GROUPS:
@@ -202,7 +202,7 @@ class RangerGroupManager:
         value_id = ids[str(value)]
 
         endpoint = ENDPOINT_MAPPING[member_type]
-        url = f"{RANGER_URL}/service/xusers/{endpoint}/{value_id}?forceDelete=true"
+        url = f"{RANGER_URL}/service/xusers/{endpoint}/{value_id}"
         response = requests.delete(
             url, headers=HEADERS, auth=self._auth, timeout=10
         )
@@ -218,7 +218,7 @@ class RangerGroupManager:
         """Send a POST request to create a member in the Ranger API.
 
         Args:
-            member_type: The type of member (group, user or membership).
+            member_type: The type of Ranger member (group, user or membership).
             fields: Fields required for creating the payload.
             value: The identifying value for the member. Name or Tuple.
         """
@@ -244,7 +244,7 @@ class RangerGroupManager:
 
         Args:
             data: User, group or membership data.
-            member_type: The type of member (group, user or membership).
+            member_type: The type of Ranger member (group, user or membership).
 
         Returns:
             List of users, groups or memberships to apply.
@@ -324,7 +324,7 @@ def create_payload(member_type, member):
     """Create a payload for a new user in the Ranger API.
 
     Args:
-        member_type: The type of member (group, user or membership).
+        member_type: The type of Ranger member (group, user or membership).
         member: The fields for creating the member.
 
     Returns:

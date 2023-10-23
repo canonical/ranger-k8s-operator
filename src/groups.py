@@ -57,7 +57,7 @@ class RangerGroupManager:
         Args:
             event: The config changed event that triggered the synchronization.
         """
-        if not self.charm.unit.status == ActiveStatus("Status check: UP"):
+        if self.charm.unit.status != ActiveStatus("Status check: UP"):
             logger.debug("Status not active, event deferred.")
             event.defer()
             return
@@ -65,22 +65,12 @@ class RangerGroupManager:
         if not self.charm.unit.is_leader():
             return
 
-        config_data = self._read_file()
+        config_data = yaml.safe_load(self.charm.config["user-group-configuration"])
         for key in config_data:
             data = next(iter(config_data.values()))
             relation_data = copy.deepcopy(data)
             self._synchronize(key, data, event)
             self._add_to_relations(key, relation_data)
-
-    def _read_file(self):
-        """Read the user-group-configuration from the charm config.
-
-        Returns:
-            Data read from the configuration file.
-        """
-        config = self.charm.config["user-group-configuration"]
-        data = yaml.safe_load(config)
-        return data
 
     def _synchronize(self, key, data, event):
         """Synchronize data with the Ranger API.

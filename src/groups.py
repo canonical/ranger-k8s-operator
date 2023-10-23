@@ -23,7 +23,7 @@ from literals import (
 from utils import (
     create_xusers_url,
     generate_random_string,
-    handle_service_error,
+    raise_service_error,
     log_event_handler,
     retry,
 )
@@ -69,9 +69,8 @@ class RangerGroupManager:
         )
         for key in config_data:
             data = next(iter(config_data.values()))
-            relation_data = copy.deepcopy(data)
             self._synchronize(key, data, event)
-            self._add_to_relations(key, relation_data)
+            self._add_to_relations(key, data)
 
     def _synchronize(self, key, data, event):
         """Synchronize data with the Ranger API.
@@ -92,7 +91,7 @@ class RangerGroupManager:
             )
             event.defer()
 
-    @handle_service_error
+    @raise_service_error
     def _sync(self, config, member_type):
         """Synchronize apply values with the Ranger API.
 
@@ -126,7 +125,7 @@ class RangerGroupManager:
         for value in to_delete:
             self._delete_members(member_type, value)
 
-    @handle_service_error
+    @raise_service_error
     def _get_existing_values(self, member_type):
         """Retrieve existing members from the Ranger API.
 
@@ -156,7 +155,7 @@ class RangerGroupManager:
         self.charm._state.id_mapping = id_mapping
         return values
 
-    @handle_service_error
+    @raise_service_error
     @retry(max_retries=3, delay=2, backoff=2)
     def _query_members(self, member_type):
         """Send a GET request to the Ranger API for members.
@@ -174,7 +173,7 @@ class RangerGroupManager:
         member_data = json.loads(response.text)
         return member_data
 
-    @handle_service_error
+    @raise_service_error
     @retry(max_retries=3, delay=2, backoff=2)
     def _delete_members(self, member_type, value):
         """Send a DELETE request to the Ranger API for a member.
@@ -205,7 +204,7 @@ class RangerGroupManager:
                 f"Unable to delete {member_type}: {value_id}, {response.text}"
             )
 
-    @handle_service_error
+    @raise_service_error
     @retry(max_retries=3, delay=2, backoff=2)
     def _create_members(self, member_type, fields, value):
         """Send a POST request to create a member in the Ranger API.
@@ -249,7 +248,7 @@ class RangerGroupManager:
         id_mapping[member_type].update({str(key): member_id})
         self.charm._state.id_mapping = id_mapping
 
-    @handle_service_error
+    @raise_service_error
     def _transform_apply_values(self, data, member_type):
         """Get list of users, groups or memberships to apply from configuration file.
 

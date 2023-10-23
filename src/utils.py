@@ -173,8 +173,8 @@ def retry(max_retries=3, delay=2, backoff=2):
     return decorator
 
 
-def handle_service_error(func):
-    """Handle RangerServiceException while interacting with the Ranger API.
+def raise_service_error(func):
+    """Raise RangerServiceException while interacting with the Ranger API.
 
     Args:
         func: The function to decorate.
@@ -184,7 +184,7 @@ def handle_service_error(func):
     """
 
     def wrapper(*args, **kwargs):
-        """Execute wrapper for the decorated function and handle errors.
+        """Execute wrapper for the decorated function and raise errors.
 
         Args:
             args: Positional arguments passed to the decorated function.

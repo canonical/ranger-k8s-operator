@@ -57,25 +57,22 @@ class RangerGroupManager:
         Args:
             event: The config changed event that triggered the synchronization.
         """
+        if self.charm.unit.status != ActiveStatus("Status check: UP"):
+            logger.debug("Status not active, event deferred.")
+            event.defer()
+            return
+
         if not self.charm.unit.is_leader():
             return
 
-        config_data = self._read_file()
+        config_data = yaml.safe_load(
+            self.charm.config["user-group-configuration"]
+        )
         for key in config_data:
             data = next(iter(config_data.values()))
             relation_data = copy.deepcopy(data)
             self._synchronize(key, data, event)
             self._add_to_relations(key, relation_data)
-
-    def _read_file(self):
-        """Read the user-group-configuration from the charm config.
-
-        Returns:
-            Data read from the configuration file.
-        """
-        config = self.charm.config["user-group-configuration"]
-        data = yaml.safe_load(config)
-        return data
 
     def _synchronize(self, key, data, event):
         """Synchronize data with the Ranger API.
@@ -229,9 +226,28 @@ class RangerGroupManager:
             timeout=10,
         )
         if response.status_code == 200:
+            self._update_id_mapping(response, member_type)
             logger.info(f"Created {member_type}: {value}")
         else:
             logger.info(f"Unable to create {member_type}: {value}")
+
+    def _update_id_mapping(self, response, member_type):
+        """Update ID mapping for members created during synchronization.
+
+        Args:
+            response: The http response.
+            member_type: One of "user" or "group".
+        """
+        created_member = json.loads(response.text)
+        member_id = created_member["id"]
+        if member_type in ["user", "group"]:
+            key = created_member["name"]
+        elif member_type == "membership":
+            key = (created_member["name"], created_member["userId"])
+
+        id_mapping = self.charm._state.id_mapping
+        id_mapping[member_type].update({str(key): member_id})
+        self.charm._state.id_mapping = id_mapping
 
     @handle_service_error
     def _transform_apply_values(self, data, member_type):
@@ -247,9 +263,6 @@ class RangerGroupManager:
         if member_type in ["user", "group"]:
             values = [member["name"] for member in data]
             return values
-
-        _ = self._get_existing_values("user")
-        _ = self._get_existing_values("group")
 
         user_id_mapping = self.charm._state.id_mapping["user"]
 
@@ -312,7 +325,11 @@ class RangerGroupManager:
                     "User management configuration file must have service keys."
                 )
 
-             # Validate that there are `user`, `group` and `membership` keys.
+            # Validate the file contains only services that exist.
+            if key not in service_names:
+                raise ValueError(f"{key} does not match a related service.")
+
+            # Validate that there are `user`, `group` and `membership` keys.
             for expected_key in EXPECTED_KEYS:
                 if expected_key not in data[key]:
                     raise ValueError(

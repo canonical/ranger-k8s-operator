@@ -3,7 +3,6 @@
 
 """Helper class used to manage interactions with the Ranger API for user/group operations."""
 
-import copy
 import json
 import logging
 
@@ -23,8 +22,8 @@ from literals import (
 from utils import (
     create_xusers_url,
     generate_random_string,
-    raise_service_error,
     log_event_handler,
+    raise_service_error,
     retry,
 )
 

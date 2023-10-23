@@ -13,6 +13,8 @@ from helpers import (
     NGINX_NAME,
     POSTGRES_NAME,
     perform_ranger_integrations,
+    GROUP_MANAGEMENT,
+    TRINO_NAME,
 )
 from pytest_operator.plugin import OpsTest
 
@@ -30,13 +32,18 @@ async def deploy(ops_test: OpsTest):
         ]
     }
     await ops_test.model.deploy(POSTGRES_NAME, channel="14", trust=True)
+    ranger_config = {"user-group-configuration": GROUP_MANAGEMENT}
+
     await ops_test.model.deploy(
         charm,
         resources=resources,
         application_name=APP_NAME,
         num_units=1,
+        config=ranger_config,
     )
     await ops_test.model.deploy(NGINX_NAME, trust=True)
+    await ops_test.model.deploy(TRINO_NAME, channel="edge")
+
 
     async with ops_test.fast_forward():
         await ops_test.model.wait_for_idle(
@@ -55,7 +62,7 @@ async def deploy(ops_test: OpsTest):
         await perform_ranger_integrations(ops_test, APP_NAME)
 
         await ops_test.model.wait_for_idle(
-            apps=[NGINX_NAME, APP_NAME],
+            apps=[NGINX_NAME, APP_NAME, TRINO_NAME],
             status="active",
             raise_on_blocked=False,
             timeout=1000,

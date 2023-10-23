@@ -10,7 +10,6 @@ import requests
 import yaml
 from apache_ranger.exceptions import RangerServiceException
 from ops.charm import CharmBase
-from ops.model import ActiveStatus
 
 from literals import (
     ADMIN_USER,

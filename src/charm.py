@@ -179,7 +179,9 @@ class RangerK8SCharm(ops.CharmBase):
 
         self.model.unit.open_port(port=APPLICATION_PORT, protocol="tcp")
 
-        if self.config.get("user-group-configuration") and self.unit.status == ActiveStatus("Status check: UP"):
+        if self.config.get(
+            "user-group-configuration"
+        ) and self.unit.status == ActiveStatus("Status check: UP"):
             self.group_manager._handle_synchronize_file(event)
 
         logger.info("configuring ranger")

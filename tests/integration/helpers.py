@@ -16,7 +16,28 @@ METADATA = yaml.safe_load(Path("./metadata.yaml").read_text())
 POSTGRES_NAME = "postgresql-k8s"
 APP_NAME = "ranger-k8s"
 NGINX_NAME = "nginx-ingress-integrator"
-
+TRINO_SERVICE = "trino-service"
+TRINO_NAME = "trino-k8s"
+RANGER_URL = "http://localhost:6080"
+RANGER_AUTH = ("admin", "rangerR0cks!")
+HEADERS = {
+    "Accept": "application/json",
+    "Content-Type": "application/json",
+}
+GROUP_MANAGEMENT = """\
+    trino-service:
+        users:
+          - name: user1
+            firstname: One
+            lastname: User
+            email: user1@canonical.com
+        memberships:
+          - groupname: commercial-systems
+            users: [user1]
+        groups:
+          - name: commercial-systems
+            description: commercial systems team
+"""
 
 async def perform_ranger_integrations(ops_test: OpsTest, app_name):
     """Integrate Ranger charm with PostgreSQL charm.
@@ -37,6 +58,7 @@ async def perform_ranger_integrations(ops_test: OpsTest, app_name):
         raise_on_blocked=False,
         timeout=1500,
     )
+    await ops_test.model.integrate(APP_NAME, TRINO_NAME)
 
 
 async def get_unit_url(
@@ -58,4 +80,4 @@ async def get_unit_url(
     address = status["applications"][application]["units"][
         f"{application}/{unit}"
     ]["address"]
-    return f"{protocol}://{address}:{port}"
+    return f"{protocol}://{address}:{port}"    

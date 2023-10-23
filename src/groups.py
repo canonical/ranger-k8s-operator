@@ -15,14 +15,13 @@ from ops.model import ActiveStatus
 
 from literals import (
     ADMIN_USER,
-    ENDPOINT_MAPPING,
     EXPECTED_KEYS,
     HEADERS,
     MEMBER_TYPE_MAPPING,
-    RANGER_URL,
     SYSTEM_GROUPS,
 )
 from utils import (
+    create_xusers_url,
     generate_random_string,
     handle_service_error,
     log_event_handler,
@@ -108,21 +107,22 @@ class RangerGroupManager:
         apply = self._transform_apply_values(config, member_type)
 
         # Create members
-        to_create = [item for item in apply if item not in existing]
+        to_create = apply.difference(existing)
         for value in to_create:
             if member_type == "membership":
                 fields = value
             if member_type in ["user", "group"]:
-                fields = [
-                    member for member in config if member["name"] == value
-                ][0]
+                fields = next(
+                    (member for member in config if member["name"] == value),
+                    None,
+                )
             self._create_members(member_type, fields, value)
 
         if member_type == "user":
             return
 
         # delete groups and memberships
-        to_delete = [item for item in existing if item not in apply]
+        to_delete = existing.difference(apply)
         for value in to_delete:
             self._delete_members(member_type, value)
 
@@ -136,11 +136,11 @@ class RangerGroupManager:
         Returns:
             values: Existing members from the Ranger API.
         """
-        j = self._query_members(member_type)
+        member_data = self._query_members(member_type)
         key = MEMBER_TYPE_MAPPING[member_type]
-        all_fields = j[key]
+        all_fields = member_data[key]
 
-        values = []
+        values = set()
         member_id = {}
         id_mapping = self.charm._state.id_mapping or {}
 
@@ -149,7 +149,7 @@ class RangerGroupManager:
                 key = member.get("name")
             elif member_type == "membership":
                 key = (member["name"], member["userId"])
-            values.append(key)
+            values.add(key)
             member_id[str(key)] = member.get("id")
 
         id_mapping[member_type] = member_id
@@ -167,13 +167,12 @@ class RangerGroupManager:
         Returns:
             Response from the GET request.
         """
-        endpoint = ENDPOINT_MAPPING[member_type]
-        url = f"{RANGER_URL}/service/xusers/{endpoint}"
+        url = create_xusers_url(member_type)
         response = requests.get(
             url, headers=HEADERS, auth=self._auth, timeout=10
         )
-        j = json.loads(response.text)
-        return j
+        member_data = json.loads(response.text)
+        return member_data
 
     @handle_service_error
     @retry(max_retries=3, delay=2, backoff=2)
@@ -193,8 +192,8 @@ class RangerGroupManager:
         ids = self.charm._state.id_mapping[member_type]
         value_id = ids[str(value)]
 
-        endpoint = ENDPOINT_MAPPING[member_type]
-        url = f"{RANGER_URL}/service/xusers/{endpoint}/{value_id}"
+        base_url = create_xusers_url(member_type)
+        url = f"{base_url}/{value_id}"
         response = requests.delete(
             url, headers=HEADERS, auth=self._auth, timeout=10
         )
@@ -202,7 +201,9 @@ class RangerGroupManager:
         if response.status_code == 204:
             logger.info(f"Deleted {member_type}: {value_id}")
         else:
-            logger.info(f"Unable to delete {member_type}: {value_id}")
+            logger.info(
+                f"Unable to delete {member_type}: {value_id}, {response.text}"
+            )
 
     @handle_service_error
     @retry(max_retries=3, delay=2, backoff=2)
@@ -215,8 +216,7 @@ class RangerGroupManager:
             value: The identifying value for the member. Name or Tuple.
         """
         payload = create_payload(member_type, fields)
-        endpoint = ENDPOINT_MAPPING[member_type]
-        url = f"{RANGER_URL}/service/xusers/{endpoint}"
+        url = create_xusers_url(member_type)
 
         response = requests.post(
             url,
@@ -261,17 +261,17 @@ class RangerGroupManager:
             List of users, groups or memberships to apply.
         """
         if member_type in ["user", "group"]:
-            values = [member["name"] for member in data]
+            values = {member["name"] for member in data}
             return values
 
         user_id_mapping = self.charm._state.id_mapping["user"]
 
-        membership_tuples = []
+        membership_tuples = set()
         for membership in data:
             for user in membership["users"]:
                 user_id = user_id_mapping[user]
                 member = (membership["groupname"], user_id)
-                membership_tuples.append(member)
+                membership_tuples.add(member)
 
         return membership_tuples
 
@@ -379,7 +379,6 @@ def create_payload(member_type, member):
             "name": member["name"],
             "description": member["description"],
         }
-
     if member_type == "membership":
         payload = {
             "name": member[0],

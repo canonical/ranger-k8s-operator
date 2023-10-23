@@ -250,7 +250,7 @@ class TestCharm(TestCase):
 
         # Unable to parse configuration file.
         self.harness.update_config(
-            {"user-group-configuration": f"{INCORRECTLY_FORMATTED_CONFIG}"}
+            {"user-group-configuration": INCORRECTLY_FORMATTED_CONFIG}
         )
         self.assertEqual(
             harness.model.unit.status,
@@ -260,7 +260,7 @@ class TestCharm(TestCase):
         )
         # Missing relation id in configuration file.
         self.harness.update_config(
-            {"user-group-configuration": f"{MISSING_RELATION_CONFIG}"}
+            {"user-group-configuration": MISSING_RELATION_CONFIG}
         )
         self.assertEqual(
             harness.model.unit.status,
@@ -271,7 +271,7 @@ class TestCharm(TestCase):
 
         # Service name is not a relation
         self.harness.update_config(
-            {"user-group-configuration": f"{RELATION_DOES_NOT_EXIST_CONFIG}"}
+            {"user-group-configuration": RELATION_DOES_NOT_EXIST_CONFIG}
         )
         self.assertEqual(
             harness.model.unit.status,
@@ -280,7 +280,7 @@ class TestCharm(TestCase):
 
         # Missing value `groups` in configuration file.
         self.harness.update_config(
-            {"user-group-configuration": f"{MISSING_VALUE_CONFIG}"}
+            {"user-group-configuration": MISSING_VALUE_CONFIG}
         )
         self.assertEqual(
             harness.model.unit.status,
@@ -291,7 +291,7 @@ class TestCharm(TestCase):
 
         # Correct configuration file.
         self.harness.update_config(
-            {"user-group-configuration": f"{GROUP_MANAGEMENT}"}
+            {"user-group-configuration": GROUP_MANAGEMENT}
         )
         self.assertEqual(
             harness.model.unit.status,

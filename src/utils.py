@@ -13,6 +13,8 @@ import time
 from apache_ranger.exceptions import RangerServiceException
 from jinja2 import Environment, FileSystemLoader
 
+from literals import ENDPOINT_MAPPING, RANGER_URL
+
 
 def render(template_name, context):
     """Render the template with the given name using the given context dict.
@@ -204,3 +206,17 @@ def handle_service_error(func):
             raise
 
     return wrapper
+
+
+def create_xusers_url(member_type):
+    """Create Ranger API xusers URL.
+
+    Args:
+        member_type: The type of Ranger member (group, user or membership).
+
+    Returns:
+        url: The Ranger API URL for xusers.
+    """
+    endpoint = ENDPOINT_MAPPING[member_type]
+    url = f"{RANGER_URL}/service/xusers/{endpoint}"
+    return url

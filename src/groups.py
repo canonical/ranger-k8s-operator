@@ -226,9 +226,28 @@ class RangerGroupManager:
             timeout=10,
         )
         if response.status_code == 200:
+            self._update_id_mapping(response, member_type)
             logger.info(f"Created {member_type}: {value}")
         else:
             logger.info(f"Unable to create {member_type}: {value}")
+
+    def _update_id_mapping(self, response, member_type):
+        """Update ID mapping for members created during synchronization.
+
+        Args:
+            response: The http response.
+            member_type: One of "user" or "group".
+        """
+        created_member = json.loads(response.text)
+        member_id = created_member["id"]
+        if member_type in ["user", "group"]:
+            key = created_member["name"]
+        elif member_type == "membership":
+            key = (created_member["name"], created_member["userId"])
+
+        id_mapping = self.charm._state.id_mapping
+        id_mapping[member_type].update({str(key): member_id})
+        self.charm._state.id_mapping = id_mapping
 
     @handle_service_error
     def _transform_apply_values(self, data, member_type):
@@ -244,9 +263,6 @@ class RangerGroupManager:
         if member_type in ["user", "group"]:
             values = [member["name"] for member in data]
             return values
-
-        _ = self._get_existing_values("user")
-        _ = self._get_existing_values("group")
 
         user_id_mapping = self.charm._state.id_mapping["user"]
 

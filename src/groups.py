@@ -65,7 +65,9 @@ class RangerGroupManager:
         if not self.charm.unit.is_leader():
             return
 
-        config_data = yaml.safe_load(self.charm.config["user-group-configuration"])
+        config_data = yaml.safe_load(
+            self.charm.config["user-group-configuration"]
+        )
         for key in config_data:
             data = next(iter(config_data.values()))
             relation_data = copy.deepcopy(data)
@@ -325,7 +327,7 @@ class RangerGroupManager:
             if key not in service_names:
                 raise ValueError(f"{key} does not match a related service.")
 
-             # Validate that there are `user`, `group` and `membership` keys.
+            # Validate that there are `user`, `group` and `membership` keys.
             for expected_key in EXPECTED_KEYS:
                 if expected_key not in data[key]:
                     raise ValueError(

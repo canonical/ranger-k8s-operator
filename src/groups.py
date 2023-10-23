@@ -236,7 +236,7 @@ class RangerGroupManager:
 
         Args:
             response: The http response.
-            member_type: One of "user" or "group".
+            member_type: The type of Ranger member (group, user or membership).
         """
         created_member = json.loads(response.text)
         member_id = created_member["id"]

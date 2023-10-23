@@ -269,15 +269,6 @@ class TestCharm(TestCase):
             ),
         )
 
-        # Service name is not a relation
-        self.harness.update_config(
-            {"user-group-configuration": f"{RELATION_DOES_NOT_EXIST_CONFIG}"}
-        )
-        self.assertEqual(
-            harness.model.unit.status,
-            BlockedStatus("relation_1 does not match a related service."),
-        )
-
         # Missing value `groups` in configuration file.
         self.harness.update_config(
             {"user-group-configuration": f"{MISSING_VALUE_CONFIG}"}

@@ -69,6 +69,7 @@ class RangerProvider(Object):
 
         self.charm.unit.status = MaintenanceStatus("Adding policy relation")
 
+        logger.info("creating service")
         try:
             ranger = self._create_ranger_client()
             self._create_ranger_service(ranger, data, event)
@@ -85,6 +86,10 @@ class RangerProvider(Object):
             )
             return
 
+        if self.charm.config.get("user-group-configuration"):
+            logger.info("syncing users")
+            self.charm.group_manager._handle_synchronize_file(event)
+
         self._set_policy_manager(event)
         self.charm.unit.status = ActiveStatus()
 
@@ -98,6 +103,7 @@ class RangerProvider(Object):
         if not self.charm.unit.is_leader():
             return
 
+        logger.info(self.charm._state.services)
         if f"relation_{event.relation.id}" not in self.charm._state.services:
             return
 

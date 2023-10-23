@@ -57,11 +57,6 @@ class RangerGroupManager:
         Args:
             event: The config changed event that triggered the synchronization.
         """
-        if not self.charm.unit.status == ActiveStatus("Status check: UP"):
-            logger.debug("Status not active, event deferred.")
-            event.defer()
-            return
-
         if not self.charm.unit.is_leader():
             return
 
@@ -292,9 +287,7 @@ class RangerGroupManager:
         Raises:
             ValueError: In case the file cannot be parsed.
                         In case the file cannot be converted to a dictionary.
-                        In case there are no related services.
                         In case relation key is missing.
-                        In case service name has no corresponding relation.
                         In case user, group or membership values are missing.
 
         """
@@ -312,28 +305,12 @@ class RangerGroupManager:
         if not isinstance(data, dict):
             raise ValueError("The configuration file is improperly formatted.")
 
-        # Validate there are policy relations.
-        policy_relations = self.charm.model.relations.get("policy")
-        if not policy_relations:
-            raise ValueError(
-                "There are no relations with which to apply this file."
-            )
-
-        service_names = []
-        for relation in policy_relations:
-            service_name = relation.data[self.charm.app].get("service_name")
-            service_names.append(service_name)
-
         for key in data.keys():
             # Validate the file has a service name.
             if any(keyword in key for keyword in EXPECTED_KEYS):
                 raise ValueError(
                     "User management configuration file must have service keys."
                 )
-
-            # Validate the file contains only services that exist.
-            if key not in service_names:
-                raise ValueError(f"{key} does not match a related service.")
 
              # Validate that there are `user`, `group` and `membership` keys.
             for expected_key in EXPECTED_KEYS:

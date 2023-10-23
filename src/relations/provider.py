@@ -103,7 +103,6 @@ class RangerProvider(Object):
         if not self.charm.unit.is_leader():
             return
 
-        logger.info(self.charm._state.services)
         if f"relation_{event.relation.id}" not in self.charm._state.services:
             return
 

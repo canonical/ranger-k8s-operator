@@ -57,11 +57,6 @@ class RangerGroupManager:
         Args:
             event: The config changed event that triggered the synchronization.
         """
-        if self.charm.unit.status != ActiveStatus("Status check: UP"):
-            logger.debug("Status not active, event deferred.")
-            event.defer()
-            return
-
         if not self.charm.unit.is_leader():
             return
 
@@ -324,10 +319,6 @@ class RangerGroupManager:
                 raise ValueError(
                     "User management configuration file must have service keys."
                 )
-
-            # Validate the file contains only services that exist.
-            if key not in service_names:
-                raise ValueError(f"{key} does not match a related service.")
 
             # Validate that there are `user`, `group` and `membership` keys.
             for expected_key in EXPECTED_KEYS:

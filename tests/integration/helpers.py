@@ -14,9 +14,7 @@ logger = logging.getLogger(__name__)
 
 METADATA = yaml.safe_load(Path("./metadata.yaml").read_text())
 POSTGRES_NAME = "postgresql-k8s"
-POSTGRES_POLICY_NAME = "postgresql-k8s-policy"
 APP_NAME = "ranger-k8s"
-RANGER_POLICY_NAME = "ranger-k8s-policy"
 NGINX_NAME = "nginx-ingress-integrator"
 TRINO_SERVICE = "trino-service"
 TRINO_NAME = "trino-k8s"
@@ -40,27 +38,6 @@ GROUP_MANAGEMENT = """\
           - name: commercial-systems
             description: commercial systems team
 """
-
-
-async def perform_ranger_integrations(ops_test: OpsTest, app_name):
-    """Integrate Ranger charm with PostgreSQL charm.
-
-    Args:
-        ops_test: PyTest object
-        app_name: The name of the Ranger application
-    """
-    await ops_test.model.integrate(app_name, POSTGRES_NAME)
-
-    await ops_test.model.wait_for_idle(
-        apps=[app_name], status="active", raise_on_blocked=False, timeout=1500
-    )
-    await ops_test.model.integrate(APP_NAME, NGINX_NAME)
-    await ops_test.model.wait_for_idle(
-        apps=[NGINX_NAME],
-        status="active",
-        raise_on_blocked=False,
-        timeout=1500,
-    )
 
 
 async def get_unit_url(

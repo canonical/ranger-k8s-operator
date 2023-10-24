@@ -2,7 +2,7 @@
 # Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Trino policy integration tests."""
+"""Ranger policy integration tests."""
 
 import json
 import logging
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 @pytest.mark.skip_if_deployed
 @pytest_asyncio.fixture(name="deploy", scope="module")
-async def deploy_ranger(ops_test: OpsTest):
+async def deploy_policy_application(ops_test: OpsTest):
     """Add Ranger relation and apply group configuration."""
     charm = await ops_test.build_charm(".")
     resources = {

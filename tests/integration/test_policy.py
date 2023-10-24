@@ -16,7 +16,7 @@ from helpers import (
     GROUP_MANAGEMENT,
     HEADERS,
     METADATA,
-    POSTGRES_NAME,
+    POSTGRES_POLICY,
     RANGER_AUTH,
     RANGER_POLICY,
     TRINO_NAME,
@@ -39,7 +39,7 @@ async def deploy_ranger(ops_test: OpsTest):
         ]
     }
 
-    await ops_test.model.deploy(POSTGRES_NAME, channel="14", trust=True)
+    await ops_test.model.deploy(POSTGRES_POLICY, channel="14", trust=True)
 
     ranger_config = {"user-group-configuration": GROUP_MANAGEMENT}
     await ops_test.model.deploy(
@@ -57,15 +57,15 @@ async def deploy_ranger(ops_test: OpsTest):
         timeout=1200,
     )
     await ops_test.model.wait_for_idle(
-        apps=[POSTGRES_NAME],
+        apps=[POSTGRES_POLICY],
         status="active",
         raise_on_blocked=False,
         timeout=1200,
     )
 
-    await ops_test.model.integrate(RANGER_POLICY, POSTGRES_NAME)
+    await ops_test.model.integrate(RANGER_POLICY, POSTGRES_POLICY)
     await ops_test.model.wait_for_idle(
-        apps=[POSTGRES_NAME, RANGER_POLICY],
+        apps=[POSTGRES_POLICY, RANGER_POLICY],
         status="active",
         raise_on_blocked=False,
         timeout=1200,

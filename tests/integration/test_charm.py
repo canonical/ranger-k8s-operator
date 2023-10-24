@@ -50,7 +50,9 @@ class TestDeployment:
             ops_test, application=APP_NAME, unit=0, port=6080
         )
         url = f"{url}/service/xusers/groupusers"
-        response = requests.get(url, headers=HEADERS, auth=RANGER_AUTH)
+        response = requests.get(
+            url, headers=HEADERS, auth=RANGER_AUTH, timeout=20
+        )
         data = json.loads(response.text)
         group = data["vXGroupUsers"][0].get("name")
         user_id = data["vXGroupUsers"][0].get("userId")

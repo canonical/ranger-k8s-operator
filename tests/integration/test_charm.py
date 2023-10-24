@@ -5,6 +5,7 @@
 """Charm integration tests."""
 
 import logging
+
 import pytest
 import requests
 from conftest import deploy  # noqa: F401, pylint: disable=W0611

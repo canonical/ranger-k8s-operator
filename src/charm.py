@@ -165,7 +165,6 @@ class RangerK8SCharm(ops.CharmBase):
         Args:
             event: The event triggered when the relation changed.
         """
-        logger.info(f"Handling {type(event)} event")
         try:
             self.validate()
         except ValueError as err:

@@ -11,14 +11,13 @@ import pytest
 import pytest_asyncio
 import requests
 from apache_ranger.client import ranger_client
-from conftest import deploy  # noqa: F401, pylint: disable=W0611
 from helpers import (
     GROUP_MANAGEMENT,
     HEADERS,
     METADATA,
-    POSTGRES_POLICY,
+    POSTGRES_POLICY_NAME,
     RANGER_AUTH,
-    RANGER_POLICY,
+    RANGER_POLICY_NAME,
     TRINO_NAME,
     TRINO_SERVICE,
     get_unit_url,
@@ -39,33 +38,33 @@ async def deploy_ranger(ops_test: OpsTest):
         ]
     }
 
-    await ops_test.model.deploy(POSTGRES_POLICY, channel="14", trust=True)
+    await ops_test.model.deploy(POSTGRES_POLICY_NAME, channel="14", trust=True)
 
     ranger_config = {"user-group-configuration": GROUP_MANAGEMENT}
     await ops_test.model.deploy(
         charm,
         resources=resources,
-        application_name=RANGER_POLICY,
+        application_name=RANGER_POLICY_NAME,
         num_units=1,
         config=ranger_config,
     )
 
     await ops_test.model.wait_for_idle(
-        apps=[RANGER_POLICY],
+        apps=[RANGER_POLICY_NAME],
         status="blocked",
         raise_on_blocked=False,
         timeout=1200,
     )
     await ops_test.model.wait_for_idle(
-        apps=[POSTGRES_POLICY],
+        apps=[POSTGRES_POLICY_NAME],
         status="active",
         raise_on_blocked=False,
         timeout=1200,
     )
 
-    await ops_test.model.integrate(RANGER_POLICY, POSTGRES_POLICY)
+    await ops_test.model.integrate(RANGER_POLICY_NAME, POSTGRES_POLICY_NAME)
     await ops_test.model.wait_for_idle(
-        apps=[POSTGRES_POLICY, RANGER_POLICY],
+        apps=[POSTGRES_POLICY_NAME, RANGER_POLICY_NAME],
         status="active",
         raise_on_blocked=False,
         timeout=1200,
@@ -84,16 +83,16 @@ async def deploy_ranger(ops_test: OpsTest):
     )
 
     await ops_test.model.wait_for_idle(
-        apps=[TRINO_NAME, RANGER_POLICY],
+        apps=[TRINO_NAME, RANGER_POLICY_NAME],
         status="active",
         raise_on_blocked=False,
         timeout=1200,
     )
 
     logging.info("integrating trino and ranger")
-    await ops_test.model.integrate(RANGER_POLICY, TRINO_NAME)
+    await ops_test.model.integrate(RANGER_POLICY_NAME, TRINO_NAME)
     await ops_test.model.wait_for_idle(
-        apps=[TRINO_NAME, RANGER_POLICY],
+        apps=[TRINO_NAME, RANGER_POLICY_NAME],
         status="active",
         raise_on_blocked=False,
         timeout=1200,
@@ -108,7 +107,7 @@ class TestPolicy:
     async def test_service_created(self, ops_test: OpsTest):
         """Validate the service `trino-service` has been created."""
         url = await get_unit_url(
-            ops_test, application=RANGER_POLICY, unit=0, port=6080
+            ops_test, application=RANGER_POLICY_NAME, unit=0, port=6080
         )
         ranger = ranger_client.RangerClient(url, RANGER_AUTH)
 
@@ -121,7 +120,7 @@ class TestPolicy:
     async def test_group_membership(self, ops_test: OpsTest):
         """Validate `user-group-configuration` value has been synchronized."""
         url = await get_unit_url(
-            ops_test, application=RANGER_POLICY, unit=0, port=6080
+            ops_test, application=RANGER_POLICY_NAME, unit=0, port=6080
         )
         url = f"{url}/service/xusers/groupusers"
         response = requests.get(url, headers=HEADERS, auth=RANGER_AUTH)

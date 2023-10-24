@@ -14,9 +14,9 @@ logger = logging.getLogger(__name__)
 
 METADATA = yaml.safe_load(Path("./metadata.yaml").read_text())
 POSTGRES_NAME = "postgresql-k8s"
-POSTGRES_POLICY = "postgresql-k8s-policy"
+POSTGRES_POLICY_NAME = "postgresql-k8s-policy"
 APP_NAME = "ranger-k8s"
-RANGER_POLICY = "ranger-k8s-policy"
+RANGER_POLICY_NAME = "ranger-k8s-policy"
 NGINX_NAME = "nginx-ingress-integrator"
 TRINO_SERVICE = "trino-service"
 TRINO_NAME = "trino-k8s"

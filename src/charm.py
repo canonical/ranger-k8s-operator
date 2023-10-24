@@ -9,14 +9,10 @@ import logging
 import ops
 from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
 from charms.nginx_ingress_integrator.v0.nginx_route import require_nginx_route
-from ops.model import (
-    ActiveStatus,
-    BlockedStatus,
-    MaintenanceStatus,
-    WaitingStatus,
-)
+from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
 from ops.pebble import CheckStatus
 
+from groups import RangerGroupManager
 from literals import APPLICATION_PORT
 from relations.postgres import PostgresRelationHandler
 from relations.provider import RangerProvider
@@ -65,6 +61,7 @@ class RangerK8SCharm(ops.CharmBase):
         )
         self.postgres_relation_handler = PostgresRelationHandler(self)
         self.provider = RangerProvider(self)
+        self.group_manager = RangerGroupManager(self)
 
         # Handle Ingress
         self._require_nginx_route()
@@ -105,7 +102,6 @@ class RangerK8SCharm(ops.CharmBase):
         Args:
             event: The event triggered when the relation changed.
         """
-        self.unit.status = WaitingStatus("configuring ranger")
         self.update(event)
 
     @log_event_handler(logger)
@@ -158,6 +154,9 @@ class RangerK8SCharm(ops.CharmBase):
         if self.config["application-name"] == "":
             raise ValueError("invalid configuration of application-name")
 
+        if self.config.get("user-group-configuration"):
+            self.group_manager._validate()
+
         self.postgres_relation_handler.validate()
 
     def update(self, event):
@@ -178,6 +177,10 @@ class RangerK8SCharm(ops.CharmBase):
             return
 
         self.model.unit.open_port(port=APPLICATION_PORT, protocol="tcp")
+
+        users_groups_config = self.config.get("user-group-configuration")
+        if users_groups_config:
+            self.group_manager._handle_synchronize_file(event)
 
         logger.info("configuring ranger")
         db_conn = self._state.database_connection

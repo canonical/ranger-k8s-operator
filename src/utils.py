@@ -4,9 +4,16 @@
 """Define helpers methods."""
 
 import functools
+import logging
 import os
+import secrets
+import string
+import time
 
+from apache_ranger.exceptions import RangerServiceException
 from jinja2 import Environment, FileSystemLoader
+
+from literals import ENDPOINT_MAPPING, RANGER_URL
 
 
 def render(template_name, context):
@@ -73,3 +80,143 @@ def log_event_handler(logger):
         return decorated
 
     return decorator
+
+
+def generate_random_string(length) -> str:
+    """Create a secure randomized string for use as external user passwords.
+
+    Args:
+        length: number of characters to generate
+
+    Returns:
+        String of randomized letter+digit characters
+    """
+    uppercase_letters = string.ascii_uppercase
+    lowercase_letters = string.ascii_lowercase
+    digits = string.digits
+
+    all_characters = uppercase_letters + lowercase_letters + digits
+
+    characters = [
+        secrets.choice(uppercase_letters)
+        + secrets.choice(lowercase_letters)
+        + secrets.choice(digits)
+    ]
+    characters.extend(
+        secrets.choice(all_characters) for _ in range(length - 3)
+    )
+    secrets.SystemRandom().shuffle(characters)
+    password = "".join(characters)
+
+    return password
+
+
+def retry(max_retries=3, delay=2, backoff=2):
+    """Decorate function to retry executing upon failure.
+
+    Args:
+        max_retries: The maximum number of times to retry the decorated function.
+        delay: The initial delay (in seconds) before the first retry.
+        backoff: The factor by which the delay increases with each retry.
+
+    Returns:
+        decorator: A retry decorator function.
+    """
+
+    def decorator(func):
+        """Apply decorator function to the target function.
+
+        Args:
+            func: The function to decorate.
+
+        Returns:
+            wrapper: A decorated function that will be retried upon failure.
+        """
+
+        def wrapper(*args, **kwargs):
+            """Execute wrapper for the decorated function and handle retries.
+
+            Args:
+                args: Positional arguments passed to the decorated function.
+                kwargs: Keyword arguments passed to the decorated function.
+
+            Returns:
+                result: The result of the decorated function if successful.
+                None: If max_retries are reached without success, returns None.
+
+            Raises:
+                RangerServiceException: If max_retries are reached without success.
+            """
+            logger = logging.getLogger(__name__)
+
+            current_delay = delay  # Define current_delay before using it
+            for attempt in range(max_retries):
+                try:
+                    result = func(*args, **kwargs)
+                    return result
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        logger.warning(
+                            f"Request failed (attempt {attempt + 1}): {e}"
+                        )
+                        time.sleep(current_delay)
+                        current_delay *= backoff
+                    else:
+                        logger.exception("Max retries reached for request")
+                        raise RangerServiceException(
+                            "Max retries reached for request."
+                        ) from e
+            return None
+
+        return wrapper
+
+    return decorator
+
+
+def raise_service_error(func):
+    """Raise RangerServiceException while interacting with the Ranger API.
+
+    Args:
+        func: The function to decorate.
+
+    Returns:
+        wrapper: A decorated function that raises an error on failure.
+    """
+
+    def wrapper(*args, **kwargs):
+        """Execute wrapper for the decorated function and raise errors.
+
+        Args:
+            args: Positional arguments passed to the decorated function.
+            kwargs: Keyword arguments passed to the decorated function.
+
+        Returns:
+            result: The result of the decorated function if successful.
+
+        Raises:
+            ExecError: In case the command fails to execute successfully.
+        """
+        logger = logging.getLogger(__name__)
+
+        try:
+            result = func(*args, **kwargs)
+            return result
+        except RangerServiceException:
+            logger.exception(f"Failed to execute {func.__name__}:")
+            raise
+
+    return wrapper
+
+
+def create_xusers_url(member_type):
+    """Create Ranger API xusers URL.
+
+    Args:
+        member_type: The type of Ranger member (group, user or membership).
+
+    Returns:
+        url: The Ranger API URL for xusers.
+    """
+    endpoint = ENDPOINT_MAPPING[member_type]
+    url = f"{RANGER_URL}/service/xusers/{endpoint}"
+    return url

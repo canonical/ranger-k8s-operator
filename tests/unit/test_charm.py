@@ -258,7 +258,7 @@ class TestCharm(TestCase):
                 "The configuration file is improperly formatted, unable to parse."
             ),
         )
-        # Missing relation id in configuration file.
+        # Missing service name in configuration file.
         self.harness.update_config(
             {"user-group-configuration": MISSING_RELATION_CONFIG}
         )
@@ -267,15 +267,6 @@ class TestCharm(TestCase):
             BlockedStatus(
                 "User management configuration file must have service keys."
             ),
-        )
-
-        # Service name is not a relation
-        self.harness.update_config(
-            {"user-group-configuration": RELATION_DOES_NOT_EXIST_CONFIG}
-        )
-        self.assertEqual(
-            harness.model.unit.status,
-            BlockedStatus("relation_1 does not match a related service."),
         )
 
         # Missing value `groups` in configuration file.

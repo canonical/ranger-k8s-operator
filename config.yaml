@@ -1,0 +1,26 @@
+# Copyright 2023 Canonical Ltd.
+# See LICENSE file for licensing details.
+
+options:
+  ranger-admin-password:
+    description: |
+      Password used for the policy manager (Web interface)
+    default: "rangerR0cks!"
+    type: string
+  tls-secret-name:
+    description: |
+        Name of the k8s secret which contains the TLS certificate to be used by ingress.
+    default: ranger-tls
+    type: string
+  external-hostname:
+    description: |
+        The DNS listing used for external connections. 
+        Will default to the name of the deployed application.
+    type: string
+    default: ranger-k8s
+  application-name:
+    description: |
+      The internal host name used for communication with Ranger.
+      It should match the name of your charm deployment.
+    type: string
+    default: ranger-k8s 

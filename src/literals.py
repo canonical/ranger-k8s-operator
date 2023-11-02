@@ -4,7 +4,7 @@
 """Manager for handling charm literals."""
 
 APPLICATION_PORT = 6080
-RANGER_URL = "http://localhost:6080"
+LOCALHOST_URL = "http://localhost"
 ADMIN_USER = "admin"
 HEADERS = {
     "Accept": "application/json",

@@ -13,7 +13,7 @@ import time
 from apache_ranger.exceptions import RangerServiceException
 from jinja2 import Environment, FileSystemLoader
 
-from literals import ENDPOINT_MAPPING, RANGER_URL
+from literals import APPLICATION_PORT, ENDPOINT_MAPPING, LOCALHOST_URL
 
 
 def render(template_name, context):
@@ -218,5 +218,6 @@ def create_xusers_url(member_type):
         url: The Ranger API URL for xusers.
     """
     endpoint = ENDPOINT_MAPPING[member_type]
-    url = f"{RANGER_URL}/service/xusers/{endpoint}"
+    ranger_url = f"{LOCALHOST_URL}:{APPLICATION_PORT}"
+    url = f"{ranger_url}/service/xusers/{endpoint}"
     return url

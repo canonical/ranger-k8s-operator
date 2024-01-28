@@ -13,7 +13,7 @@ from ops.charm import CharmBase
 from ops.framework import Object
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
 
-from literals import ADMIN_USER, APPLICATION_PORT, RANGER_URL
+from literals import ADMIN_USER, APPLICATION_PORT, LOCALHOST_URL
 from utils import log_event_handler
 
 logger = logging.getLogger(__name__)
@@ -194,7 +194,8 @@ class RangerProvider(Object):
             ranger: ranger client
         """
         ranger_auth = (ADMIN_USER, self.charm.config["ranger-admin-password"])
-        ranger = ranger_client.RangerClient(RANGER_URL, ranger_auth)
+        ranger_url = f"{LOCALHOST_URL}:{APPLICATION_PORT}"
+        ranger = ranger_client.RangerClient(ranger_url, ranger_auth)
         return ranger
 
     def _delete_ranger_service(self, service_id):

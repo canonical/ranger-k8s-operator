@@ -320,7 +320,6 @@ LIBAPI = 0
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-
 LIBPATCH = 27
 
 PYDEPS = ["ops>=2.0.0"]
@@ -904,7 +903,6 @@ class DataRelation(Object, ABC):
 
         for field in fields:
             try:
-
                 relation.data[component].pop(field)
             except KeyError:
                 logger.error(
@@ -1062,6 +1060,7 @@ class DataProvides(DataRelation):
         if uri_to_databag and relation.data[self.component].get(secret_field):
             logging.error("Secret for relation %s already exists, not adding again", relation.id)
             return False
+
         content = self._content_for_secret_group(data, secret_fields, group_mapping)
 
         label = self._generate_secret_label(self.relation_name, relation.id, group_mapping)
@@ -1070,9 +1069,6 @@ class DataProvides(DataRelation):
         # According to lint we may not have a Secret ID
         if uri_to_databag and secret.meta and secret.meta.id:
             relation.data[self.component][secret_field] = secret.meta.id
-
-        # Return the content that was added
-        return True
 
         # Return the content that was added
         return True

@@ -3,14 +3,21 @@
 # See LICENSE file for licensing details.
 
 """Charm integration tests."""
-import json
 import logging
 
 import pytest
 import requests
 from apache_ranger.client import ranger_client
 from conftest import deploy  # noqa: F401, pylint: disable=W0611
-from helpers import APP_NAME, HEADERS, RANGER_AUTH, TRINO_SERVICE, get_unit_url
+from helpers import (
+    APP_NAME,
+    METADATA,
+    POSTGRES_NAME,
+    RANGER_AUTH,
+    TRINO_SERVICE,
+    get_memberships,
+    get_unit_url,
+)
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
@@ -49,13 +56,52 @@ class TestDeployment:
         url = await get_unit_url(
             ops_test, application=APP_NAME, unit=0, port=6080
         )
-        url = f"{url}/service/xusers/groupusers"
-        response = requests.get(
-            url, headers=HEADERS, auth=RANGER_AUTH, timeout=20
-        )
-        data = json.loads(response.text)
-        group = data["vXGroupUsers"][0].get("name")
-        user_id = data["vXGroupUsers"][0].get("userId")
-        membership = (group, user_id)
+        membership = await get_memberships(ops_test, url)
 
+        assert membership == ("commercial-systems", 8)
+
+    async def test_simulate_crash(self, ops_test: OpsTest):
+        """Simulate the crash of the Ranger charm.
+
+        Args:
+            ops_test: PyTest object.
+        """
+        # Destroy charm
+        await ops_test.model.applications[APP_NAME].destroy(force=True)
+        await ops_test.model.block_until(
+            lambda: APP_NAME not in ops_test.model.applications
+        )
+
+        # Deploy charm again
+        charm = await ops_test.build_charm(".")
+        resources = {
+            "ranger-image": METADATA["resources"]["ranger-image"][
+                "upstream-source"
+            ]
+        }
+        await ops_test.model.deploy(
+            charm,
+            resources=resources,
+            application_name=APP_NAME,
+            num_units=1,
+        )
+        await ops_test.model.wait_for_idle(
+            apps=[APP_NAME],
+            status="blocked",
+            raise_on_blocked=False,
+            timeout=1000,
+        )
+
+        await ops_test.model.integrate(APP_NAME, POSTGRES_NAME)
+
+        await ops_test.model.wait_for_idle(
+            apps=[APP_NAME, POSTGRES_NAME],
+            status="active",
+            raise_on_blocked=False,
+            timeout=1500,
+        )
+        url = await get_unit_url(
+            ops_test, application=APP_NAME, unit=0, port=6080
+        )
+        membership = await get_memberships(ops_test, url)
         assert membership == ("commercial-systems", 8)

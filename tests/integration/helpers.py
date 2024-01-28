@@ -4,9 +4,11 @@
 
 """Charm integration test helpers."""
 
+import json
 import logging
 from pathlib import Path
 
+import requests
 import yaml
 from pytest_operator.plugin import OpsTest
 
@@ -60,3 +62,22 @@ async def get_unit_url(
         f"{application}/{unit}"
     ]["address"]
     return f"{protocol}://{address}:{port}"
+
+
+async def get_memberships(ops_test: OpsTest, url):
+    """Return membership from Ranger.
+
+    Args:
+        ops_test: PyTest object.
+        url: Ranger unit address.
+
+    Returns:
+        membership: Ranger membership.
+    """
+    url = f"{url}/service/xusers/groupusers"
+    response = requests.get(url, headers=HEADERS, auth=RANGER_AUTH, timeout=20)
+    data = json.loads(response.text)
+    group = data["vXGroupUsers"][0].get("name")
+    user_id = data["vXGroupUsers"][0].get("userId")
+    membership = (group, user_id)
+    return membership

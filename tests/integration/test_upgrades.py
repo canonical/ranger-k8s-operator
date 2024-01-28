@@ -96,7 +96,9 @@ class TestUpgrade:
     async def test_config_unchanged(self, ops_test: OpsTest):
         """Validate config remains unchanged."""
         command = ["config", "ranger-k8s"]
-        stdout = await ops_test.juju(*command, check=True)
+        returncode, stdout, stderr = await ops_test.juju(*command, check=True)
+        if stderr:
+            logger.info(f"{returncode}: {stderr}")
         config = yaml.safe_load(stdout)
         password = config["settings"]["ranger-admin-password"]["value"]
         assert password == SECURE_PWD

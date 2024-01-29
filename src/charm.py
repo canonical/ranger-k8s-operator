@@ -9,11 +9,16 @@ import logging
 import ops
 from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
 from charms.nginx_ingress_integrator.v0.nginx_route import require_nginx_route
-from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
+from ops.model import (
+    ActiveStatus,
+    BlockedStatus,
+    MaintenanceStatus,
+    WaitingStatus,
+)
 from ops.pebble import CheckStatus
 
 from groups import RangerGroupManager
-from literals import APPLICATION_PORT
+from literals import APP_NAME, APPLICATION_PORT
 from relations.postgres import PostgresRelationHandler
 from relations.provider import RangerProvider
 from state import State
@@ -52,6 +57,9 @@ class RangerK8SCharm(ops.CharmBase):
         self.framework.observe(self.on.config_changed, self._on_config_changed)
         self.framework.observe(self.on.update_status, self._on_update_status)
         self.framework.observe(self.on.restart_action, self._on_restart)
+        self.framework.observe(
+            self.on.peer_relation_changed, self._on_peer_relation_changed
+        )
 
         self.postgres_relation = DatabaseRequires(
             self,
@@ -102,6 +110,19 @@ class RangerK8SCharm(ops.CharmBase):
         Args:
             event: The event triggered when the relation changed.
         """
+        self.update(event)
+
+    @log_event_handler(logger)
+    def _on_peer_relation_changed(self, event):
+        """Handle peer relation changes.
+
+        Args:
+            event: The event triggered when the peer relation changed.
+        """
+        if self.unit.is_leader():
+            return
+
+        self.unit.status = WaitingStatus(f"configuring {APP_NAME}")
         self.update(event)
 
     @log_event_handler(logger)

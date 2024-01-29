@@ -60,3 +60,24 @@ async def get_unit_url(
         f"{application}/{unit}"
     ]["address"]
     return f"{protocol}://{address}:{port}"
+
+
+async def scale(ops_test: OpsTest, app, units):
+    """Scale the application to the provided number and wait for idle.
+
+    Args:
+        ops_test: PyTest object.
+        app: Application to be scaled.
+        units: Number of units required.
+    """
+    await ops_test.model.applications[app].scale(scale=units)
+
+    # Wait for model to settle
+    await ops_test.model.wait_for_idle(
+        apps=[app],
+        status="active",
+        idle_period=30,
+        raise_on_blocked=True,
+        timeout=600,
+        wait_for_exact_units=units,
+    )

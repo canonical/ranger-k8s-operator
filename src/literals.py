@@ -22,3 +22,4 @@ ENDPOINT_MAPPING = {
     "group": "groups",
     "membership": "groupusers",
 }
+APP_NAME = "ranger-k8s"

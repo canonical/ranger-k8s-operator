@@ -38,6 +38,7 @@ GROUP_MANAGEMENT = """\
           - name: commercial-systems
             description: commercial systems team
 """
+SECURE_PWD = "ubuntuR0cks!"  # nosec
 
 
 async def get_unit_url(

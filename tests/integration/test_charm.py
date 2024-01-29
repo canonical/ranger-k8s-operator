@@ -103,5 +103,9 @@ class TestDeployment:
         url = await get_unit_url(
             ops_test, application=APP_NAME, unit=0, port=6080
         )
+        response = requests.get(url, timeout=300, verify=False)  # nosec
+        assert response.status_code == 200
+
         membership = await get_memberships(ops_test, url)
+        logger.info(membership)
         assert membership == ("commercial-systems", 8)

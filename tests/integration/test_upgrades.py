@@ -26,7 +26,7 @@ async def deploy(ops_test: OpsTest):
 
     ranger_config = {"ranger-admin-password": SECURE_PWD}
     await ops_test.model.deploy(
-        APP_NAME, channel="stable", config=ranger_config
+        APP_NAME, channel="edge", config=ranger_config
     )
 
     async with ops_test.fast_forward():
@@ -34,7 +34,7 @@ async def deploy(ops_test: OpsTest):
             apps=[POSTGRES_NAME],
             status="active",
             raise_on_blocked=False,
-            timeout=2000,
+            timeout=1500,
         )
 
         await ops_test.model.wait_for_idle(

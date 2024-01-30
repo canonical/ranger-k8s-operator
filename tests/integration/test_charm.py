@@ -67,7 +67,7 @@ class TestDeployment:
             ops_test: PyTest object.
         """
         # Destroy charm
-        await ops_test.model.applications[APP_NAME].destroy(force=True)
+        await ops_test.model.applications[APP_NAME].destroy()
         await ops_test.model.block_until(
             lambda: APP_NAME not in ops_test.model.applications
         )
@@ -107,5 +107,5 @@ class TestDeployment:
         assert response.status_code == 200
 
         membership = await get_memberships(ops_test, url)
-        logger.info(membership)
+        logger.info(f"Ranger memberships: {membership}")
         assert membership == ("commercial-systems", 8)

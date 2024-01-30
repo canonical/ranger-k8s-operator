@@ -75,7 +75,11 @@ async def get_memberships(ops_test: OpsTest, url):
         membership: Ranger membership.
     """
     url = f"{url}/service/xusers/groupusers"
-    response = requests.get(url, headers=HEADERS, auth=RANGER_AUTH, timeout=20)
+    try:
+        response = requests.get(url, headers=HEADERS, auth=RANGER_AUTH, timeout=20)
+    except requests.exceptions.RequestException as e:
+        logger.exception("An exception has occured while getting Ranger memberships:")
+        raise
     data = json.loads(response.text)
     group = data["vXGroupUsers"][0].get("name")
     user_id = data["vXGroupUsers"][0].get("userId")

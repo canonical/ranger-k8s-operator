@@ -4,9 +4,11 @@
 
 """Charm integration test helpers."""
 
+import json
 import logging
 from pathlib import Path
 
+import requests
 import yaml
 from pytest_operator.plugin import OpsTest
 
@@ -82,3 +84,33 @@ async def scale(ops_test: OpsTest, app, units):
         timeout=600,
         wait_for_exact_units=units,
     )
+
+
+async def get_memberships(ops_test: OpsTest, url):
+    """Return membership from Ranger.
+
+    Args:
+        ops_test: PyTest object.
+        url: Ranger unit address.
+
+    Returns:
+        membership: Ranger membership.
+
+    Raises:
+        Exception: requests exception.
+    """
+    url = f"{url}/service/xusers/groupusers"
+    try:
+        response = requests.get(
+            url, headers=HEADERS, auth=RANGER_AUTH, timeout=20
+        )
+    except requests.exceptions.RequestException:
+        logger.exception(
+            "An exception has occurred while getting Ranger memberships:"
+        )
+        raise
+    data = json.loads(response.text)
+    group = data["vXGroupUsers"][0].get("name")
+    user_id = data["vXGroupUsers"][0].get("userId")
+    membership = (group, user_id)
+    return membership

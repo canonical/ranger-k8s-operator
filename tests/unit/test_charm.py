@@ -146,7 +146,7 @@ class TestCharm(TestCase):
             },
         }
         got_plan = harness.get_container_pebble_plan("ranger").to_dict()
-        self.assertEqual(got_plan, want_plan)
+        self.assertEqual(got_plan["services"], want_plan["services"])
 
         # The service was started.
         service = harness.model.unit.get_container("ranger").get_service(

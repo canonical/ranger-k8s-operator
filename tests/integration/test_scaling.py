@@ -6,57 +6,14 @@
 import logging
 
 import pytest
-import pytest_asyncio
-from helpers import APP_NAME, METADATA, POSTGRES_NAME, scale
+from helpers import APP_NAME, get_application_url, get_memberships, scale
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
 
 
-@pytest.mark.skip_if_deployed
-@pytest_asyncio.fixture(name="deploy-scaling", scope="module")
-async def deploy(ops_test: OpsTest):
-    """Deploy the app."""
-    charm = await ops_test.build_charm(".")
-    resources = {
-        "ranger-image": METADATA["resources"]["ranger-image"][
-            "upstream-source"
-        ]
-    }
-    await ops_test.model.deploy(POSTGRES_NAME, channel="14", trust=True)
-    await ops_test.model.wait_for_idle(
-        apps=[POSTGRES_NAME],
-        status="active",
-        raise_on_blocked=False,
-        timeout=1000,
-    )
-
-    await ops_test.model.deploy(
-        charm,
-        resources=resources,
-        application_name=APP_NAME,
-        num_units=1,
-    )
-
-    await ops_test.model.wait_for_idle(
-        apps=[APP_NAME],
-        status="blocked",
-        raise_on_blocked=False,
-        timeout=1000,
-    )
-
-    await ops_test.model.integrate(APP_NAME, POSTGRES_NAME)
-
-    await ops_test.model.wait_for_idle(
-        apps=[APP_NAME, POSTGRES_NAME],
-        status="active",
-        raise_on_blocked=False,
-        timeout=1500,
-    )
-
-
 @pytest.mark.abort_on_fail
-@pytest.mark.usefixtures("deploy-scaling")
+@pytest.mark.usefixtures("deploy")
 class TestScaling:
     """Integration tests for scaling Ranger charm."""
 
@@ -65,7 +22,21 @@ class TestScaling:
         await scale(ops_test, app=APP_NAME, units=2)
         assert len(ops_test.model.applications[APP_NAME].units) == 2
 
+        url = await get_application_url(
+            ops_test, application=APP_NAME, port=6080
+        )
+        membership = await get_memberships(ops_test, url)
+        logger.info(f"Ranger memberships: {membership}")
+        assert membership == ("commercial-systems", 8)
+
     async def test_scaling_down(self, ops_test: OpsTest):
         """Scale Superset charm down to 1 unit."""
         await scale(ops_test, app=APP_NAME, units=1)
         assert len(ops_test.model.applications[APP_NAME].units) == 1
+
+        url = await get_application_url(
+            ops_test, application=APP_NAME, port=6080
+        )
+        membership = await get_memberships(ops_test, url)
+        logger.info(f"Ranger memberships: {membership}")
+        assert membership == ("commercial-systems", 8)

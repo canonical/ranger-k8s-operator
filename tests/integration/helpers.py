@@ -65,6 +65,43 @@ async def get_unit_url(
     return f"{protocol}://{address}:{port}"
 
 
+async def get_application_url(ops_test: OpsTest, application, port):
+    """Returns application URL from the model.
+
+    Args:
+        ops_test: PyTest object.
+        application: Name of the application.
+        port: Port number of the URL.
+
+    Returns:
+        Application URL of the form http://{address}:{port}
+    """
+    status = await ops_test.model.get_status()  # noqa: F821
+    address = status["applications"][application].public_address
+    return f"http://{address}:{port}"
+
+
+async def scale(ops_test: OpsTest, app, units):
+    """Scale the application to the provided number and wait for idle.
+
+    Args:
+        ops_test: PyTest object.
+        app: Application to be scaled.
+        units: Number of units required.
+    """
+    await ops_test.model.applications[app].scale(scale=units)
+
+    # Wait for model to settle
+    await ops_test.model.wait_for_idle(
+        apps=[app],
+        status="active",
+        idle_period=30,
+        raise_on_blocked=True,
+        timeout=600,
+        wait_for_exact_units=units,
+    )
+
+
 async def get_memberships(ops_test: OpsTest, url):
     """Return membership from Ranger.
 
@@ -89,6 +126,7 @@ async def get_memberships(ops_test: OpsTest, url):
         )
         raise
     data = json.loads(response.text)
+    logger.info(data)
     group = data["vXGroupUsers"][0].get("name")
     user_id = data["vXGroupUsers"][0].get("userId")
     membership = (group, user_id)

@@ -18,7 +18,7 @@ from ops.model import (
 from ops.pebble import CheckStatus
 
 from groups import RangerGroupManager
-from literals import APP_NAME, APPLICATION_PORT
+from literals import APP_NAME, APPLICATION_PORT, ADMIN_ENTRYPOINT, USERSYNC_ENTRYPOINT
 from relations.postgres import PostgresRelationHandler
 from relations.provider import RangerProvider
 from state import State
@@ -135,6 +135,11 @@ class RangerK8SCharm(ops.CharmBase):
         if not self._state.is_ready():
             return
 
+        charm_function = self.config["charm-function"]
+        if charm_function == "usersync":
+            self.unit.status = ActiveStatus("Status check: UP")
+            return
+
         if not self._state.database_connection:
             return
 
@@ -162,6 +167,49 @@ class RangerK8SCharm(ops.CharmBase):
         container.restart(self.name)
         event.set_results({"result": "ranger successfully restarted"})
         self.unit.status = ActiveStatus()
+
+    def _configure_ranger_admin(self, container):
+        """Prepare Ranger Admin install.properties file.
+
+        Args:
+            container: The application container.
+
+        Returns:
+            ADMIN_ENTRYPOINT: Entrypoint path for Ranger Admin startup.
+            context: Environement variables for pebble plan.
+        """
+        db_conn = self._state.database_connection
+        context = {
+                "DB_NAME": db_conn["dbname"],
+                "DB_HOST": db_conn["host"],
+                "DB_PORT": db_conn["port"],
+                "DB_USER": db_conn["user"],
+                "DB_PWD": db_conn["password"],
+                "RANGER_ADMIN_PWD": self.config["ranger-admin-password"],
+                "JAVA_OPTS": "-Duser.timezone=UTC0",
+            }
+        config = render("admin-config.jinja", context)
+        container.push(
+            "/usr/lib/ranger/admin/install.properties", config, make_dirs=True
+            )
+        return ADMIN_ENTRYPOINT, context
+
+    def _configure_ranger_usersync(self, container):
+        """Prepare Ranger Usersync install.properties file.
+
+        Args:
+            container: The application container.
+
+        Returns:
+            USERSYNC_ENTRYPOINT: Entrypoint path for Ranger Usersync startup.
+            context: Environement variables for pebble plan.
+        """
+        context = {}
+        config = render("ranger-usersync-config.jinja", context)
+        container.push(
+            "/usr/lib/ranger/usersync/install.properties", config, make_dirs=True
+            )
+        return USERSYNC_ENTRYPOINT, context
 
     def validate(self):
         """Validate that configuration and relations are valid and ready.
@@ -205,29 +253,21 @@ class RangerK8SCharm(ops.CharmBase):
             self.group_manager._handle_synchronize_file(event)
 
         logger.info("configuring ranger")
-        db_conn = self._state.database_connection
-        context = {
-            "DB_NAME": db_conn["dbname"],
-            "DB_HOST": db_conn["host"],
-            "DB_PORT": db_conn["port"],
-            "DB_USER": db_conn["user"],
-            "DB_PWD": db_conn["password"],
-            "RANGER_ADMIN_PWD": self.config["ranger-admin-password"],
-            "JAVA_OPTS": "-Duser.timezone=UTC0",
-        }
 
-        config = render("config.jinja", context)
-        container.push(
-            "/usr/lib/ranger/install.properties", config, make_dirs=True
-        )
-
-        logger.info("planning ranger execution")
+        charm_function = self.config["charm-function"]
+        if charm_function == "admin":
+            command, context = self._configure_ranger_admin(container)
+            
+        if charm_function == "usersync":
+            command, context = self._configure_ranger_usersync(container)
+            
+        logger.info(f"planning ranger {charm_function} execution")
         pebble_layer = {
             "summary": "ranger server layer",
             "services": {
                 self.name: {
                     "summary": "ranger server",
-                    "command": "/tmp/entrypoint.sh",  # nosec
+                    "command": command,
                     "startup": "enabled",
                     "override": "replace",
                     "environment": context,

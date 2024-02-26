@@ -29,3 +29,8 @@ options:
       Yaml formatted user, group and membership definitions
       to be created in Ranger admin for policy enforcement.
     type: string
+  charm-function:
+    description: |
+      The function the charm should provide, either `admin` or `usersync`.
+    type: string
+    default: admin

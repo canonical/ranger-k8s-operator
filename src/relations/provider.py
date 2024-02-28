@@ -86,10 +86,6 @@ class RangerProvider(Object):
             )
             return
 
-        if self.charm.config.get("user-group-configuration"):
-            logger.info("syncing users")
-            self.charm.group_manager._handle_synchronize_file(event)
-
         self._set_policy_manager(event)
         self.charm.unit.status = ActiveStatus()
 

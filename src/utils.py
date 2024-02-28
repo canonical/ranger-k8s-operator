@@ -206,18 +206,3 @@ def raise_service_error(func):
             raise
 
     return wrapper
-
-
-def create_xusers_url(member_type):
-    """Create Ranger API xusers URL.
-
-    Args:
-        member_type: The type of Ranger member (group, user or membership).
-
-    Returns:
-        url: The Ranger API URL for xusers.
-    """
-    endpoint = ENDPOINT_MAPPING[member_type]
-    ranger_url = f"{LOCALHOST_URL}:{APPLICATION_PORT}"
-    url = f"{ranger_url}/service/xusers/{endpoint}"
-    return url

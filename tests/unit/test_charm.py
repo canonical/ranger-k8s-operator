@@ -19,63 +19,6 @@ from state import State
 
 logger = logging.getLogger(__name__)
 
-GROUP_MANAGEMENT = """\
-    trino-service:
-        users:
-          - name: user1
-            firstname: One
-            lastname: User
-            email: user1@canonical.com
-        memberships:
-          - groupname: commercial-systems
-            users: [user1]
-        groups:
-          - name: commercial-systems
-            description: commercial systems team
-"""
-MISSING_RELATION_CONFIG = """\
-        users:
-          - name: user1
-            firstname: One
-            lastname: User
-            email: user1@canonical.com
-"""
-INCORRECTLY_FORMATTED_CONFIG = """\
-            users:
-          - name: user1
-            firstname: One
-            lastname: User
-            email: user1@canonical.com
-"""
-RELATION_DOES_NOT_EXIST_CONFIG = """\
-    relation_1:
-        users:
-          - name: user1
-            firstname: One
-            lastname: User
-            email: user1@canonical.com
-        memberships:
-          - groupname: commercial-systems
-            users: [user1]
-        groups:
-          - name: commercial-systems
-            description: commercial systems team
-"""
-MISSING_VALUE_CONFIG = """\
-    trino-service:
-        users:
-          - name: user1
-            firstname: One
-            lastname: User
-            email: user1@canonical.com
-"""
-RANGER_GET_RESPONSE = {
-    "vXUsers": [{"id": 1, "name": "user1"}],
-    "vXGroups": [{"id": 1, "name": "public"}],
-    "vXGroupUsers": [{"id": 3, "name": "hr", "userId": 1}],
-}
-
-
 class TestCharm(TestCase):
     """Unit tests.
 
@@ -120,7 +63,7 @@ class TestCharm(TestCase):
             BlockedStatus("peer relation not ready"),
         )
 
-    def test_ready(self):
+    def test_admin_ready(self):
         """The pebble plan is correctly generated when the charm is ready."""
         harness = self.harness
         simulate_lifecycle(harness)
@@ -130,8 +73,8 @@ class TestCharm(TestCase):
             "services": {
                 "ranger": {
                     "override": "replace",
-                    "summary": "ranger server",
-                    "command": "/tmp/entrypoint.sh",  # nosec
+                    "summary": "ranger admin",
+                    "command": "/home/ranger/scripts/ranger-admin-entrypoint.sh",  # nosec
                     "startup": "enabled",
                     "environment": {
                         "DB_NAME": "ranger-k8s_db",
@@ -159,6 +102,49 @@ class TestCharm(TestCase):
             harness.model.unit.status,
             MaintenanceStatus("replanning application"),
         )
+
+    def test_usersync_ready(self):
+        """The pebble plan is correctly generated when the charm is ready."""
+        harness = self.harness
+        simulate_lifecycle(harness)
+        harness.update_config({"charm-function": "usersync"})
+
+        # The plan is generated after pebble is ready.
+        want_plan = {
+            "services": {
+                "ranger": {
+                    "override": "replace",
+                    "summary": "ranger usersync",
+                    "command": "/home/ranger/scripts/ranger-usersync-entrypoint.sh",  # nosec
+                    "startup": "enabled",
+                     'environment': {'POLICY_MGR_URL': 'http://ranger-admin:6080',
+                     'RANGER_USERSYNC_PASSWORD': 'rangerR0cks!',
+                     'SYNC_GROUP_USER_MAP_SYNC_ENABLED': False,
+                     'SYNC_GROUP_SEARCH_BASE': None,
+                     'SYNC_INTERVAL': 3600000,
+                     'SYNC_LDAP_BIND_DN': 'cn=serviceuser,dc=glauth,dc=com',
+                     'SYNC_LDAP_BIND_PASSWORD': 'mysecret',
+                     'SYNC_LDAP_GROUP_OBJECT_CLASS': 'posixGroup',
+                     'SYNC_LDAP_GROUP_SEARCH_SCOPE': 'sub',
+                     'SYNC_LDAP_SEARCH_BASE': 'dc=glauth,dc=com',
+                     'SYNC_LDAP_USER_SEARCH_FILTER': None,
+                     'SYNC_LDAP_URL': 'ldap://glauth-k8s:3893',
+                     'SYNC_LDAP_USER_GROUP_NAME_ATTRIBUTE': 'uniqueMember',
+                     'SYNC_LDAP_USER_NAME_ATTRIBUTE': 'cn',
+                     'SYNC_LDAP_USER_OBJECT_CLASS': 'posixAccount',
+                     'SYNC_LDAP_USER_SEARCH_BASE': 'dc=glauth,dc=com',
+                     'SYNC_LDAP_USER_SEARCH_SCOPE': 'sub'},
+                }
+            },
+        }
+        got_plan = harness.get_container_pebble_plan("ranger").to_dict()
+        self.assertEqual(got_plan["services"], want_plan["services"])
+
+        # The service was started.
+        service = harness.model.unit.get_container("ranger").get_service(
+            "ranger"
+        )
+        self.assertTrue(service.is_running())
 
     def test_config_changed(self):
         """The pebble plan changes according to config changes."""
@@ -236,107 +222,6 @@ class TestCharm(TestCase):
             "policy_manager_url": "http://ranger-k8s:6080",
             "service_name": "trino-service",
         }
-
-    @mock.patch("charm.RangerProvider._create_ranger_service")
-    def test_user_group_configuration(self, _create_ranger_service):
-        """The user-group-configuration paramerter is validated."""
-        harness = self.harness
-        simulate_lifecycle(harness)
-        rel_id = harness.add_relation("policy", "trino-k8s")
-        harness.add_relation_unit(rel_id, "trino-k8s/0")
-
-        event = make_policy_relation_changed_event(rel_id)
-        harness.charm.provider._on_relation_changed(event)
-
-        # Unable to parse configuration file.
-        self.harness.update_config(
-            {"user-group-configuration": INCORRECTLY_FORMATTED_CONFIG}
-        )
-        self.assertEqual(
-            harness.model.unit.status,
-            BlockedStatus(
-                "The configuration file is improperly formatted, unable to parse."
-            ),
-        )
-        # Missing service name in configuration file.
-        self.harness.update_config(
-            {"user-group-configuration": MISSING_RELATION_CONFIG}
-        )
-        self.assertEqual(
-            harness.model.unit.status,
-            BlockedStatus(
-                "User management configuration file must have service keys."
-            ),
-        )
-
-        # Missing value `groups` in configuration file.
-        self.harness.update_config(
-            {"user-group-configuration": MISSING_VALUE_CONFIG}
-        )
-        self.assertEqual(
-            harness.model.unit.status,
-            BlockedStatus(
-                "Missing 'groups' values in the configuration file."
-            ),
-        )
-
-        # Correct configuration file.
-        self.harness.update_config(
-            {"user-group-configuration": GROUP_MANAGEMENT}
-        )
-        self.assertEqual(
-            harness.model.unit.status,
-            MaintenanceStatus("replanning application"),
-        )
-
-    def test_auth(self):
-        """Ranger API authentication is created as expected."""
-        harness = self.harness
-        self.harness.update_config({"ranger-admin-password": "ubuntuR0cks!"})
-        expected_auth = ("admin", "ubuntuR0cks!")
-        auth = harness.charm.group_manager._auth
-        self.assertEqual(auth, expected_auth)
-
-    @mock.patch("charm.RangerProvider._create_ranger_service")
-    @mock.patch("charm.RangerGroupManager._query_members")
-    @mock.patch("charm.RangerGroupManager._delete_members")
-    @mock.patch("charm.RangerGroupManager._create_members")
-    def test_update_relation_data(
-        self,
-        _delete_members,
-        _create_members,
-        mock_query_members,
-        _create_ranger_service,
-    ):
-        """The user-group-configuration file is synced and relation data updated."""
-        harness = self.harness
-        simulate_lifecycle(harness)
-
-        rel_id = harness.add_relation("policy", "trino-k8s")
-        harness.add_relation_unit(rel_id, "trino-k8s/0")
-
-        event = make_policy_relation_changed_event(rel_id)
-        harness.charm.provider._on_relation_changed(event)
-
-        # ActiveStatus following check
-        container = harness.model.unit.get_container("ranger")
-        container.get_check = mock.Mock(status="up")
-        container.get_check.return_value.status = CheckStatus.UP
-        harness.charm.on.update_status.emit()
-
-        # Mock _query_members
-        mock_response = mock.MagicMock()
-        mock_response.text = RANGER_GET_RESPONSE
-        mock_query_members.return_value = mock_response.text
-
-        # Update relation data with config
-        self.harness.update_config(
-            {"user-group-configuration": f"{GROUP_MANAGEMENT}"}
-        )
-
-        harness.charm.on.config_changed.emit()
-        relation_data = self.harness.get_relation_data(rel_id, "ranger-k8s")
-        assert relation_data.get("user-group-configuration") is not None
 
 
 def simulate_lifecycle(harness):

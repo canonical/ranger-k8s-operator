@@ -29,7 +29,7 @@ options:
       The url of the ldap to synchronize users from.
       In format `ldap://<host>:<port>`.
     type: string
-    default: ldap://openldap:3893
+    default: ldap://openldap-k8s:389
   sync-ldap-bind-dn:
     description: |
       The bind domain name for ldap synchronization.
@@ -49,7 +49,7 @@ options:
     description: |
       The object class corresponding to users for ldapsearch.
     type: string
-    default: posixAccount
+    default: person
   sync-group-object-class:
     description: |
       The object class corresponding to groups for ldapsearch.
@@ -64,7 +64,12 @@ options:
     description: |
       Set to true to sync groups without users.
     type: boolean
-    default: false
+    default: true
+  sync-group-search-enabled:
+    description: |
+      Set to true to sync groups without users.
+    type: boolean
+    default: true
   sync-group-search-base:
     description: |
       Search base for ldap groups.
@@ -91,13 +96,18 @@ options:
     description: |
       Attribute from user entry that would be treated as user name.
     type: string
-    default: cn
+    default: uid
+  sync-group-member-attribute-name:
+    description: |
+      The attribute in the Group which specifies members.
+    type: string
+    default: memberUid
   sync-ldap-user-group-name-attribute:
     description: |
       Attribute from user entry whose values would be treated as
       group values to be pushed into Policy Manager database.
     type: string
-    default: memberof,ismemberof
+    default: memberOf
   sync-interval:
     description: |
       The interval in ms to synchronize the users/groups from ldap.

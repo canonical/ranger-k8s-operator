@@ -48,6 +48,8 @@ class CharmConfig(BaseConfigModel):
     sync_group_object_class: Optional[str]
     sync_ldap_user_search_base: Optional[str]
     sync_group_user_map_sync_enabled: Optional[bool]
+    sync_group_search_enabled: Optional[bool]
+    sync_group_member_attribute_name: Optional[str]
     sync_group_search_base: Optional[str]
     sync_ldap_user_search_scope:Optional[str]
     sync_ldap_group_search_scope: Optional[str]

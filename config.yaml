@@ -29,28 +29,28 @@ options:
       The url of the ldap to synchronize users from.
       In format `ldap://<host>:<port>`.
     type: string
-    default: ldap://glauth-k8s:3893
+    default: ldap://openldap:3893
   sync-ldap-bind-dn:
     description: |
       The bind domain name for ldap synchronization.
     type: string
-    default: cn=serviceuser,dc=glauth,dc=com
+    default: cn=admin,dc=canonical,dc=dev,dc=com
   sync-ldap-bind-password:
     description: |
         The bind password for ldap synchronization.
     type: string
-    default: mysecret
+    default: admin
   sync-ldap-search-base:
     description: |
       Search base for ldap users and groups.
     type: string
-    default: dc=glauth,dc=com
+    default: dc=canonical,dc=dev,dc=com
   sync-ldap-user-object-class:
     description: |
       The object class corresponding to users for ldapsearch.
     type: string
     default: posixAccount
-  sync-ldap-group-object-class:
+  sync-group-object-class:
     description: |
       The object class corresponding to groups for ldapsearch.
     type: string
@@ -59,7 +59,7 @@ options:
     description: |
       Search base for ldap users.
     type: string
-    default: dc=glauth,dc=com
+    default: dc=canonical,dc=dev,dc=com
   sync-group-user-map-sync-enabled:
     description: |
       Set to true to sync groups without users.
@@ -70,6 +70,7 @@ options:
       Search base for ldap groups.
       If not specified this takes the value of `sync-ldap-search-base`.
     type: string
+    default: dc=canonical,dc=dev,dc=com
   sync-ldap-user-search-scope:
     description: |
       Search scope for the users.
@@ -96,13 +97,18 @@ options:
       Attribute from user entry whose values would be treated as
       group values to be pushed into Policy Manager database.
     type: string
-    default: uniqueMember
+    default: memberof,ismemberof
   sync-interval:
     description: |
       The interval in ms to synchronize the users/groups from ldap.
       Note: this can not be less than hourly (3600000) for LDAP.
     type: int
     default: 3600000
+  sync-ldap-deltasync:
+    description: |
+      Enable to incrementally sync as opposed to full sync after initial run.
+    type: boolean
+    default: true
   ranger-usersync-password:
     description: |
       The password for the Ranger usersync user.

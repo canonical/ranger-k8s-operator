@@ -13,8 +13,6 @@ import time
 from apache_ranger.exceptions import RangerServiceException
 from jinja2 import Environment, FileSystemLoader
 
-from literals import APPLICATION_PORT, ENDPOINT_MAPPING, LOCALHOST_URL
-
 
 def render(template_name, context):
     """Render the template with the given name using the given context dict.

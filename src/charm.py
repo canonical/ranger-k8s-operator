@@ -184,7 +184,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
 
         Returns:
             ADMIN_ENTRYPOINT: Entrypoint path for Ranger Admin startup.
-            context: Environement variables for pebble plan.
+            context: Environment variables for pebble plan.
         """
         db_conn = self._state.database_connection
         context = {
@@ -210,7 +210,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
 
         Returns:
             USERSYNC_ENTRYPOINT: Entrypoint path for Ranger Usersync startup.
-            context: Environement variables for pebble plan.
+            context: Environment variables for pebble plan.
         """
         context = {}
         for key, value in vars(self.config).items():

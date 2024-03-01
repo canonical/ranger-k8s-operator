@@ -43,7 +43,7 @@ class CharmConfig(BaseConfigModel):
     sync_ldap_url: Optional[str]
     sync_ldap_bind_dn: Optional[str]
     sync_ldap_bind_password: Optional[str]
-    sync_ldap_search_base:Optional[str]
+    sync_ldap_search_base: Optional[str]
     sync_ldap_user_object_class: Optional[str]
     sync_group_object_class: Optional[str]
     sync_ldap_user_search_base: Optional[str]
@@ -51,7 +51,7 @@ class CharmConfig(BaseConfigModel):
     sync_group_search_enabled: Optional[bool]
     sync_group_member_attribute_name: Optional[str]
     sync_group_search_base: Optional[str]
-    sync_ldap_user_search_scope:Optional[str]
+    sync_ldap_user_search_scope: Optional[str]
     sync_ldap_group_search_scope: Optional[str]
     sync_ldap_user_search_filter: Optional[str]
     sync_ldap_user_name_attribute: Optional[str]
@@ -61,7 +61,6 @@ class CharmConfig(BaseConfigModel):
     ranger_usersync_password: Optional[str]
     policy_mgr_url: Optional[str]
     charm_function: FunctionType
-
 
     @validator("*", pre=True)
     @classmethod

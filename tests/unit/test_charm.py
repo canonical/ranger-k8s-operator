@@ -19,6 +19,7 @@ from state import State
 
 logger = logging.getLogger(__name__)
 
+
 class TestCharm(TestCase):
     """Unit tests.
 
@@ -117,26 +118,28 @@ class TestCharm(TestCase):
                     "summary": "ranger usersync",
                     "command": "/home/ranger/scripts/ranger-usersync-entrypoint.sh",  # nosec
                     "startup": "enabled",
-                     'environment': {'POLICY_MGR_URL': 'http://ranger-admin:6080',
-                     'RANGER_USERSYNC_PASSWORD': 'rangerR0cks!',
-                     'SYNC_GROUP_USER_MAP_SYNC_ENABLED': True,
-                     'SYNC_GROUP_SEARCH_ENABLED': True,
-                     'SYNC_GROUP_SEARCH_BASE': 'dc=canonical,dc=dev,dc=com',
-                     'SYNC_GROUP_OBJECT_CLASS': 'posixGroup',
-                     'SYNC_INTERVAL': 3600000,
-                     'SYNC_LDAP_BIND_DN': 'cn=admin,dc=canonical,dc=dev,dc=com',
-                     'SYNC_LDAP_BIND_PASSWORD': 'admin',
-                     'SYNC_LDAP_GROUP_SEARCH_SCOPE': 'sub',
-                     'SYNC_LDAP_SEARCH_BASE': 'dc=canonical,dc=dev,dc=com',
-                     'SYNC_LDAP_USER_SEARCH_FILTER': None,
-                     'SYNC_LDAP_URL': 'ldap://openldap-k8s:3893',
-                     'SYNC_LDAP_USER_GROUP_NAME_ATTRIBUTE': 'memberOf',
-                     'SYNC_LDAP_USER_NAME_ATTRIBUTE': 'uid',
-                     'SYNC_LDAP_USER_OBJECT_CLASS': 'person',
-                     'SYNC_LDAP_USER_SEARCH_BASE': 'dc=canonical,dc=dev,dc=com',
-                     'SYNC_LDAP_USER_SEARCH_SCOPE': 'sub',
-                     'SYNC_GROUP_MEMBER_ATTRIBUTE_NAME': 'memberUid',
-                     'SYNC_LDAP_DELTASYNC': True},
+                    "environment": {
+                        "POLICY_MGR_URL": "http://ranger-admin:6080",
+                        "RANGER_USERSYNC_PASSWORD": "rangerR0cks!",
+                        "SYNC_GROUP_USER_MAP_SYNC_ENABLED": True,
+                        "SYNC_GROUP_SEARCH_ENABLED": True,
+                        "SYNC_GROUP_SEARCH_BASE": "dc=canonical,dc=dev,dc=com",
+                        "SYNC_GROUP_OBJECT_CLASS": "posixGroup",
+                        "SYNC_INTERVAL": 3600000,
+                        "SYNC_LDAP_BIND_DN": "cn=admin,dc=canonical,dc=dev,dc=com",
+                        "SYNC_LDAP_BIND_PASSWORD": "admin",
+                        "SYNC_LDAP_GROUP_SEARCH_SCOPE": "sub",
+                        "SYNC_LDAP_SEARCH_BASE": "dc=canonical,dc=dev,dc=com",
+                        "SYNC_LDAP_USER_SEARCH_FILTER": None,
+                        "SYNC_LDAP_URL": "ldap://openldap-k8s:3893",
+                        "SYNC_LDAP_USER_GROUP_NAME_ATTRIBUTE": "memberOf",
+                        "SYNC_LDAP_USER_NAME_ATTRIBUTE": "uid",
+                        "SYNC_LDAP_USER_OBJECT_CLASS": "person",
+                        "SYNC_LDAP_USER_SEARCH_BASE": "dc=canonical,dc=dev,dc=com",
+                        "SYNC_LDAP_USER_SEARCH_SCOPE": "sub",
+                        "SYNC_GROUP_MEMBER_ATTRIBUTE_NAME": "memberUid",
+                        "SYNC_LDAP_DELTASYNC": True,
+                    },
                 }
             },
         }

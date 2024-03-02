@@ -80,35 +80,6 @@ def log_event_handler(logger):
     return decorator
 
 
-def generate_random_string(length) -> str:
-    """Create a secure randomized string for use as external user passwords.
-
-    Args:
-        length: number of characters to generate
-
-    Returns:
-        String of randomized letter+digit characters
-    """
-    uppercase_letters = string.ascii_uppercase
-    lowercase_letters = string.ascii_lowercase
-    digits = string.digits
-
-    all_characters = uppercase_letters + lowercase_letters + digits
-
-    characters = [
-        secrets.choice(uppercase_letters)
-        + secrets.choice(lowercase_letters)
-        + secrets.choice(digits)
-    ]
-    characters.extend(
-        secrets.choice(all_characters) for _ in range(length - 3)
-    )
-    secrets.SystemRandom().shuffle(characters)
-    password = "".join(characters)
-
-    return password
-
-
 def retry(max_retries=3, delay=2, backoff=2):
     """Decorate function to retry executing upon failure.
 

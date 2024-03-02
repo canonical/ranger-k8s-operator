@@ -243,9 +243,6 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         if not self._state.is_ready():
             raise ValueError("peer relation not ready")
 
-        if self.config["application-name"] == "":
-            raise ValueError("invalid configuration of application-name")
-
         if self.config["charm-function"].value == "admin":
             self.postgres_relation_handler.validate()
 

@@ -39,7 +39,6 @@ class CharmConfig(BaseConfigModel):
     ranger_admin_password: str
     tls_secret_name: str
     external_hostname: str
-    application_name: str
     sync_ldap_url: Optional[str]
     sync_ldap_bind_dn: Optional[str]
     sync_ldap_bind_password: Optional[str]
@@ -59,7 +58,7 @@ class CharmConfig(BaseConfigModel):
     sync_ldap_deltasync: bool
     sync_interval: Optional[int]
     ranger_usersync_password: Optional[str]
-    policy_mgr_url: Optional[str]
+    policy_mgr_url: str
     charm_function: FunctionType
 
     @validator("*", pre=True)

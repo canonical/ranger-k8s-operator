@@ -172,13 +172,12 @@ class RangerProvider(Object):
         relation = self.charm.model.get_relation(
             self.relation_name, event.relation.id
         )
-        host = self.charm.config["application-name"]
         data = event.relation.data[event.app]
 
         if relation:
             relation.data[self.charm.app].update(
                 {
-                    "policy_manager_url": f"http://{host}:{APPLICATION_PORT}",
+                    "policy_manager_url": self.charm.config["policy-mgr-url"],
                     "service_name": data["name"],
                 }
             )

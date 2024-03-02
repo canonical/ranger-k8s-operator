@@ -18,18 +18,12 @@ options:
         Will default to the name of the deployed application.
     type: string
     default: ranger-k8s
-  application-name:
-    description: |
-      The internal host name used for communication with Ranger.
-      It should match the name of your charm deployment.
-    type: string
-    default: ranger-k8s
   sync-ldap-url:
     description: |
       The url of the ldap to synchronize users from.
       In format `ldap://<host>:<port>`.
     type: string
-    default: ldap://openldap-k8s:389
+    default: ldap://comsys-openldap-k8s:389
   sync-ldap-bind-dn:
     description: |
       The bind domain name for ldap synchronization.
@@ -127,7 +121,7 @@ options:
     default: rangerR0cks!
   policy-mgr-url:
     type: string
-    default: http://ranger-admin:6080
+    default: http://ranger-k8s:6080
   charm-function:
     description: |
       The function the charm should provide, either `admin` or `usersync`.

@@ -1,15 +1,20 @@
 # Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Charm scaling integration test."""
+"""Charm policy integration test."""
 
 import logging
 
 import pytest
-from helpers import TRINO_SERVICE, APP_NAME, TRINO_NAME
-from pytest_operator.plugin import OpsTest
 from apache_ranger.client import ranger_client
-from helpers import get_unit_url, RANGER_AUTH
+from helpers import (
+    APP_NAME,
+    RANGER_AUTH,
+    TRINO_NAME,
+    TRINO_SERVICE,
+    get_unit_url,
+)
+from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
 

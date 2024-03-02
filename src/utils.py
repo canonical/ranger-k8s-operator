@@ -6,8 +6,6 @@
 import functools
 import logging
 import os
-import secrets
-import string
 import time
 
 from apache_ranger.exceptions import RangerServiceException

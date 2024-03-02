@@ -19,16 +19,16 @@ from ops.model import (
 from ops.pebble import CheckStatus
 
 from literals import (
+    ADMIN_ENTRYPOINT,
     APP_NAME,
     APPLICATION_PORT,
-    ADMIN_ENTRYPOINT,
     USERSYNC_ENTRYPOINT,
 )
 from relations.postgres import PostgresRelationHandler
 from relations.provider import RangerProvider
 from state import State
-from utils import log_event_handler, render
 from structured_config import CharmConfig
+from utils import log_event_handler, render
 
 # Log messages can be retrieved using juju debug-log
 logger = logging.getLogger(__name__)

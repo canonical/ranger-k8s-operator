@@ -4,9 +4,9 @@
 
 """Structured configuration for the Superset charm."""
 import logging
+import re
 from enum import Enum
 from typing import Optional
-import re
 
 from charms.data_platform_libs.v0.data_models import BaseConfigModel
 from pydantic import validator

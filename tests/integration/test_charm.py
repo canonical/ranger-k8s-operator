@@ -8,14 +8,7 @@ import logging
 import pytest
 import requests
 from conftest import deploy  # noqa: F401, pylint: disable=W0611
-from helpers import (
-    APP_NAME,
-    NGINX_NAME,
-    METADATA,
-    POSTGRES_NAME,
-    get_unit_url,
-    get_application_url,
-)
+from helpers import APP_NAME, METADATA, NGINX_NAME, POSTGRES_NAME, get_unit_url
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)

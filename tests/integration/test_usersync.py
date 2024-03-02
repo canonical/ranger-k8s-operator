@@ -1,19 +1,18 @@
 # Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Charm scaling integration test."""
+"""Charm usersync integration test."""
 
 import logging
-import pytest
-import pytest_asyncio
 
+import pytest
 from helpers import (
     APP_NAME,
-    USERSYNC_NAME,
     LDAP_NAME,
     METADATA,
-    get_unit_url,
+    USERSYNC_NAME,
     get_memberships,
+    get_unit_url,
 )
 from pytest_operator.plugin import OpsTest
 

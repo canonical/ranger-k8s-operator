@@ -12,6 +12,8 @@ jobs:
           - integration-charm
           - integration-scaling
           - integration-upgrades
+          - integration-policy
+          - integration-usersync
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

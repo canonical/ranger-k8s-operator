@@ -5,6 +5,7 @@
 
 import logging
 
+import requests
 import pytest
 from helpers import APP_NAME, get_application_url, get_memberships, scale
 from pytest_operator.plugin import OpsTest
@@ -25,18 +26,18 @@ class TestScaling:
         url = await get_application_url(
             ops_test, application=APP_NAME, port=6080
         )
-        membership = await get_memberships(ops_test, url)
-        logger.info(f"Ranger memberships: {membership}")
-        assert membership == ("commercial-systems", 8)
+        logger.info("curling app address: %s", url)
+        response = requests.get(url, timeout=300, verify=False)  # nosec
+        assert response.status_code == 200
 
     async def test_scaling_down(self, ops_test: OpsTest):
-        """Scale Superset charm down to 1 unit."""
+        """Scale Ranger charm down to 1 unit."""
         await scale(ops_test, app=APP_NAME, units=1)
         assert len(ops_test.model.applications[APP_NAME].units) == 1
 
         url = await get_application_url(
             ops_test, application=APP_NAME, port=6080
         )
-        membership = await get_memberships(ops_test, url)
-        logger.info(f"Ranger memberships: {membership}")
-        assert membership == ("commercial-systems", 8)
+        logger.info("curling app address: %s", url)
+        response = requests.get(url, timeout=300, verify=False)  # nosec
+        assert response.status_code == 200

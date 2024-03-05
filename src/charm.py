@@ -22,8 +22,10 @@ from literals import (
     ADMIN_ENTRYPOINT,
     APP_NAME,
     APPLICATION_PORT,
+    RELATION_VALUES,
     USERSYNC_ENTRYPOINT,
 )
+from relations.ldap import LDAPRelationHandler
 from relations.postgres import PostgresRelationHandler
 from relations.provider import RangerProvider
 from state import State
@@ -78,6 +80,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         )
         self.postgres_relation_handler = PostgresRelationHandler(self)
         self.provider = RangerProvider(self)
+        self.ldap = LDAPRelationHandler(self)
 
         # Handle Ingress
         self._require_nginx_route()
@@ -213,17 +216,20 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             context: Environment variables for pebble plan.
         """
         context = {}
+        ldap = self._state.ldap or {}
         for key, value in vars(self.config).items():
-            if key.startswith("sync"):
-                updated_key = key.upper().replace("-", "_")
-                context[updated_key] = value
+            if not key.startswith("sync"):
+                continue
+
+            if key in RELATION_VALUES:
+                value = ldap.get(key) or self.config[key]
+
+            updated_key = key.upper()
+            context[updated_key] = value
 
         context.update(
             {
                 "POLICY_MGR_URL": self.config["policy-mgr-url"],
-                "RANGER_USERSYNC_PASSWORD": self.config[
-                    "ranger-usersync-password"
-                ],
             }
         )
         config = render("ranger-usersync-config.jinja", context)
@@ -246,12 +252,18 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         if self.config["charm-function"].value == "admin":
             self.postgres_relation_handler.validate()
 
+        if self.config["charm-function"].value == "usersync":
+            self.ldap.validate()
+
     def update(self, event):
         """Update the Ranger server configuration and re-plan its execution.
 
         Args:
             event: The event triggered when the relation changed.
         """
+        if not self.unit.is_leader():
+            return
+
         try:
             self.validate()
         except ValueError as err:

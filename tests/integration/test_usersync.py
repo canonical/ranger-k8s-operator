@@ -53,6 +53,7 @@ class TestUserSync:
             config=ranger_config,
         )
 
+        await ops_test.model.integrate(USERSYNC_NAME, LDAP_NAME)
         await ops_test.model.set_config({"update-status-hook-interval": "5m"})
         await ops_test.model.wait_for_idle(
             apps=[USERSYNC_NAME, LDAP_NAME],

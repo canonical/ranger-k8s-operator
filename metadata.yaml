@@ -27,6 +27,8 @@ requires:
     limit: 1
   nginx-route:
     interface: nginx-route
+  ldap:
+    interface: ldap
 
 provides:
   policy:

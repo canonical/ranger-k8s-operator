@@ -34,8 +34,12 @@ The Charmed Ranger Operator makes use of [Ranger usersync](https://cwiki.apache.
 
 ```
 juju deploy ranger-k8s --config charm-function=usersync ranger-usersync-k8s
+
+#optional ldap relation
+juju deploy comsys-openldap-k8s --channel=edge
+juju relate ranger-usersync-k8s comsys-openldap-k8s
 ```
-This charm connects to the Ranger Admin and OpenLDAP via configuration values.
+This charm connects to the Ranger Admin and OpenLDAP via a relation but can also be directly configured.
 
 #### Group management in related application
 Related applications must have the Ranger plugin configured. The Ranger plugin schedules regular download of Ranger policies (every 3 minutes) storing these policies within the related application in a cache. On access request, the requesting user's group is used when comparing to Ranger group policies to determine access. Therefore the related application should have the same source for groups.

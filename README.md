@@ -30,7 +30,7 @@ juju relate ranger-k8s:db postgresql-k8s:database
 Refer to [CONTRIBUTING.md](./CONTRIBUTING.md) for details on building the charm and ranger image. 
 
 ### Group management with Apache Ranger
-The Charmed Ranger Operator makes use of [Ranger usersync](https://cwiki.apache.org/confluence/display/RANGER/Apache+Ranger+Usersync) to synchronize users, groups and memberships from a compatible LDAP server (openldap, ActiveDirectory) to Ranger admin. The usersync functionality can be configured on deployment of the Ranger Charm. While you can scale the Ranger admin application you should only have 1 Usersync deployed.
+The Charmed Ranger Operator makes use of [Ranger usersync](https://cwiki.apache.org/confluence/display/RANGER/Apache+Ranger+Usersync) to synchronize users, groups and memberships from a compatible LDAP server (eg. openldap, ActiveDirectory) to Ranger admin. The usersync functionality can be configured on deployment of the Ranger Charm. While you can scale the Ranger admin application, you should only have 1 Usersync deployed.
 
 ```
 juju deploy ranger-k8s --config charm-function=usersync ranger-usersync-k8s

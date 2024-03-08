@@ -4,6 +4,7 @@
 """Charm usersync integration test."""
 
 import logging
+import time
 
 import pytest
 from helpers import (
@@ -54,7 +55,7 @@ class TestUserSync:
         )
 
         await ops_test.model.integrate(USERSYNC_NAME, LDAP_NAME)
-        await ops_test.model.set_config({"update-status-hook-interval": "5m"})
+        time.sleep(100)  # Provide time for user synchronization to occur.
         await ops_test.model.wait_for_idle(
             apps=[USERSYNC_NAME, LDAP_NAME],
             status="active",

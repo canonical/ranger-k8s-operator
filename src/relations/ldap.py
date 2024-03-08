@@ -48,7 +48,10 @@ class LDAPRelationHandler(framework.Object):
         Args:
             event: The relation created event.
         """
-        if self.charm.config["charm-function"] != "usersync":
+        if not self.charm.unit.is_leader():
+            return
+
+        if self.charm.config["charm-function"].value != "usersync":
             return
 
         if event.relation:
@@ -61,7 +64,10 @@ class LDAPRelationHandler(framework.Object):
         Args:
             event: Relation changed event.
         """
-        if self.charm.config["charm-function"] != "usersync":
+        if not self.charm.unit.is_leader():
+            return
+
+        if self.charm.config["charm-function"].value != "usersync":
             return
 
         container = self.charm.model.unit.get_container(self.charm.name)
@@ -89,7 +95,10 @@ class LDAPRelationHandler(framework.Object):
         Args:
             event: Relation broken event.
         """
-        if self.charm.config["charm-function"] != "usersync":
+        if not self.charm.unit.is_leader():
+            return
+
+        if self.charm.config["charm-function"].value != "usersync":
             return
 
         container = self.charm.model.unit.get_container(self.charm.name)

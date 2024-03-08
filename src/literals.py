@@ -23,3 +23,13 @@ ENDPOINT_MAPPING = {
     "membership": "groupusers",
 }
 APP_NAME = "ranger-k8s"
+ADMIN_ENTRYPOINT = "/home/ranger/scripts/ranger-admin-entrypoint.sh"
+USERSYNC_ENTRYPOINT = "/home/ranger/scripts/ranger-usersync-entrypoint.sh"
+RELATION_VALUES = [
+    "sync_ldap_bind_dn",
+    "sync_ldap_bind_password",
+    "sync_ldap_search_base",
+    "sync_ldap_user_search_base",
+    "sync_group_search_base",
+    "sync_ldap_url",
+]

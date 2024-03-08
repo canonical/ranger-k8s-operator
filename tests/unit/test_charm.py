@@ -19,60 +19,19 @@ from state import State
 
 logger = logging.getLogger(__name__)
 
-GROUP_MANAGEMENT = """\
-    trino-service:
-        users:
-          - name: user1
-            firstname: One
-            lastname: User
-            email: user1@canonical.com
-        memberships:
-          - groupname: commercial-systems
-            users: [user1]
-        groups:
-          - name: commercial-systems
-            description: commercial systems team
-"""
-MISSING_RELATION_CONFIG = """\
-        users:
-          - name: user1
-            firstname: One
-            lastname: User
-            email: user1@canonical.com
-"""
-INCORRECTLY_FORMATTED_CONFIG = """\
-            users:
-          - name: user1
-            firstname: One
-            lastname: User
-            email: user1@canonical.com
-"""
-RELATION_DOES_NOT_EXIST_CONFIG = """\
-    relation_1:
-        users:
-          - name: user1
-            firstname: One
-            lastname: User
-            email: user1@canonical.com
-        memberships:
-          - groupname: commercial-systems
-            users: [user1]
-        groups:
-          - name: commercial-systems
-            description: commercial systems team
-"""
-MISSING_VALUE_CONFIG = """\
-    trino-service:
-        users:
-          - name: user1
-            firstname: One
-            lastname: User
-            email: user1@canonical.com
-"""
-RANGER_GET_RESPONSE = {
-    "vXUsers": [{"id": 1, "name": "user1"}],
-    "vXGroups": [{"id": 1, "name": "public"}],
-    "vXGroupUsers": [{"id": 3, "name": "hr", "userId": 1}],
+LDAP_RELATION_CHANGED_DATA = {
+    "admin_password": "huedw7uiedw7",
+    "base_dn": "dc=canonical,dc=dev,dc=com",
+    "ldap_url": "ldap://comsys-openldap-k8s:389",
+}
+LDAP_RELATION_BROKEN_DATA: dict = {"comsys-openldap-k8s": {}}
+USERSYNC_CONFIG_VALUES = {
+    "sync-ldap-url": "ldap://config-openldap-k8s:389",
+    "sync-ldap-bind-password": "admin",
+    "sync-ldap-search-base": "dc=canonical,dc=dev,dc=com",
+    "sync-ldap-bind-dn": "dc=canonical,dc=dev,dc=com",
+    "sync-ldap-user-search-base": "dc=canonical,dc=dev,dc=com",
+    "sync-group-search-base": "dc=canonical,dc=dev,dc=com",
 }
 
 
@@ -120,18 +79,18 @@ class TestCharm(TestCase):
             BlockedStatus("peer relation not ready"),
         )
 
-    def test_ready(self):
+    def test_admin_ready(self):
         """The pebble plan is correctly generated when the charm is ready."""
         harness = self.harness
-        simulate_lifecycle(harness)
+        simulate_admin_lifecycle(harness)
 
         # The plan is generated after pebble is ready.
         want_plan = {
             "services": {
                 "ranger": {
                     "override": "replace",
-                    "summary": "ranger server",
-                    "command": "/tmp/entrypoint.sh",  # nosec
+                    "summary": "ranger admin",
+                    "command": "/home/ranger/scripts/ranger-admin-entrypoint.sh",  # nosec
                     "startup": "enabled",
                     "environment": {
                         "DB_NAME": "ranger-k8s_db",
@@ -160,10 +119,57 @@ class TestCharm(TestCase):
             MaintenanceStatus("replanning application"),
         )
 
+    def test_usersync_ready(self):
+        """The pebble plan is correctly generated when the charm is ready."""
+        harness = self.harness
+        simulate_usersync_lifecycle(harness)
+        harness.update_config({"charm-function": "usersync"})
+
+        # The plan is generated after pebble is ready.
+        want_plan = {
+            "services": {
+                "ranger": {
+                    "override": "replace",
+                    "summary": "ranger usersync",
+                    "command": "/home/ranger/scripts/ranger-usersync-entrypoint.sh",  # nosec
+                    "startup": "enabled",
+                    "environment": {
+                        "POLICY_MGR_URL": "http://ranger-k8s:6080",
+                        "SYNC_GROUP_USER_MAP_SYNC_ENABLED": True,
+                        "SYNC_GROUP_SEARCH_ENABLED": True,
+                        "SYNC_GROUP_SEARCH_BASE": "dc=canonical,dc=dev,dc=com",
+                        "SYNC_GROUP_OBJECT_CLASS": "posixGroup",
+                        "SYNC_INTERVAL": 3600000,
+                        "SYNC_LDAP_BIND_DN": "cn=admin,dc=canonical,dc=dev,dc=com",
+                        "SYNC_LDAP_BIND_PASSWORD": "huedw7uiedw7",
+                        "SYNC_LDAP_GROUP_SEARCH_SCOPE": "sub",
+                        "SYNC_LDAP_SEARCH_BASE": "dc=canonical,dc=dev,dc=com",
+                        "SYNC_LDAP_USER_SEARCH_FILTER": None,
+                        "SYNC_LDAP_URL": "ldap://comsys-openldap-k8s:389",
+                        "SYNC_LDAP_USER_GROUP_NAME_ATTRIBUTE": "memberOf",
+                        "SYNC_LDAP_USER_NAME_ATTRIBUTE": "uid",
+                        "SYNC_LDAP_USER_OBJECT_CLASS": "person",
+                        "SYNC_LDAP_USER_SEARCH_BASE": "dc=canonical,dc=dev,dc=com",
+                        "SYNC_LDAP_USER_SEARCH_SCOPE": "sub",
+                        "SYNC_GROUP_MEMBER_ATTRIBUTE_NAME": "memberUid",
+                        "SYNC_LDAP_DELTASYNC": True,
+                    },
+                }
+            },
+        }
+        got_plan = harness.get_container_pebble_plan("ranger").to_dict()
+        self.assertEqual(got_plan["services"], want_plan["services"])
+
+        # The service was started.
+        service = harness.model.unit.get_container("ranger").get_service(
+            "ranger"
+        )
+        self.assertTrue(service.is_running())
+
     def test_config_changed(self):
         """The pebble plan changes according to config changes."""
         harness = self.harness
-        simulate_lifecycle(harness)
+        simulate_admin_lifecycle(harness)
 
         # Update the config.
         self.harness.update_config({"ranger-admin-password": "secure-pass"})
@@ -186,7 +192,7 @@ class TestCharm(TestCase):
         """The charm relates correctly to the nginx ingress charm."""
         harness = self.harness
 
-        simulate_lifecycle(harness)
+        simulate_admin_lifecycle(harness)
 
         nginx_route_relation_id = harness.add_relation(
             "nginx-route", "ingress"
@@ -208,7 +214,7 @@ class TestCharm(TestCase):
         """The charm updates the unit status to active based on UP status."""
         harness = self.harness
 
-        simulate_lifecycle(harness)
+        simulate_admin_lifecycle(harness)
 
         container = harness.model.unit.get_container("ranger")
         container.get_check = mock.Mock(status="up")
@@ -223,7 +229,7 @@ class TestCharm(TestCase):
     def test_provider(self, _create_ranger_service):
         """The charm relates correctly to the nginx ingress charm."""
         harness = self.harness
-        simulate_lifecycle(harness)
+        simulate_admin_lifecycle(harness)
 
         rel_id = harness.add_relation("policy", "trino-k8s")
         harness.add_relation_unit(rel_id, "trino-k8s/0")
@@ -237,109 +243,75 @@ class TestCharm(TestCase):
             "service_name": "trino-service",
         }
 
-    @mock.patch("charm.RangerProvider._create_ranger_service")
-    def test_user_group_configuration(self, _create_ranger_service):
-        """The user-group-configuration paramerter is validated."""
+    def test_ldap_relation_changed(self):
+        """The charm uses the configuration values from ldap relation."""
         harness = self.harness
-        simulate_lifecycle(harness)
-        rel_id = harness.add_relation("policy", "trino-k8s")
-        harness.add_relation_unit(rel_id, "trino-k8s/0")
+        simulate_usersync_lifecycle(harness)
 
-        event = make_policy_relation_changed_event(rel_id)
-        harness.charm.provider._on_relation_changed(event)
-
-        # Unable to parse configuration file.
-        self.harness.update_config(
-            {"user-group-configuration": INCORRECTLY_FORMATTED_CONFIG}
+        got_plan = harness.get_container_pebble_plan("ranger").to_dict()
+        self.assertEqual(
+            got_plan["services"]["ranger"]["environment"]["SYNC_LDAP_URL"],
+            "ldap://comsys-openldap-k8s:389",
         )
         self.assertEqual(
-            harness.model.unit.status,
-            BlockedStatus(
-                "The configuration file is improperly formatted, unable to parse."
-            ),
-        )
-        # Missing service name in configuration file.
-        self.harness.update_config(
-            {"user-group-configuration": MISSING_RELATION_CONFIG}
-        )
-        self.assertEqual(
-            harness.model.unit.status,
-            BlockedStatus(
-                "User management configuration file must have service keys."
-            ),
+            got_plan["services"]["ranger"]["environment"][
+                "SYNC_GROUP_OBJECT_CLASS"
+            ],
+            "posixGroup",
         )
 
-        # Missing value `groups` in configuration file.
-        self.harness.update_config(
-            {"user-group-configuration": MISSING_VALUE_CONFIG}
-        )
-        self.assertEqual(
-            harness.model.unit.status,
-            BlockedStatus(
-                "Missing 'groups' values in the configuration file."
-            ),
-        )
-
-        # Correct configuration file.
-        self.harness.update_config(
-            {"user-group-configuration": GROUP_MANAGEMENT}
-        )
-        self.assertEqual(
-            harness.model.unit.status,
-            MaintenanceStatus("replanning application"),
-        )
-
-    def test_auth(self):
-        """Ranger API authentication is created as expected."""
+    def test_ldap_relation_broken(self):
+        """The charm enters a blocked state if no LDAP parameters."""
         harness = self.harness
-        self.harness.update_config({"ranger-admin-password": "ubuntuR0cks!"})
-        expected_auth = ("admin", "ubuntuR0cks!")
-        auth = harness.charm.group_manager._auth
-        self.assertEqual(auth, expected_auth)
+        rel_id = simulate_usersync_lifecycle(harness)
 
-    @mock.patch("charm.RangerProvider._create_ranger_service")
-    @mock.patch("charm.RangerGroupManager._query_members")
-    @mock.patch("charm.RangerGroupManager._delete_members")
-    @mock.patch("charm.RangerGroupManager._create_members")
-    def test_update_relation_data(
-        self,
-        _delete_members,
-        _create_members,
-        mock_query_members,
-        _create_ranger_service,
-    ):
-        """The user-group-configuration file is synced and relation data updated."""
-        harness = self.harness
-        simulate_lifecycle(harness)
-
-        rel_id = harness.add_relation("policy", "trino-k8s")
-        harness.add_relation_unit(rel_id, "trino-k8s/0")
-
-        event = make_policy_relation_changed_event(rel_id)
-        harness.charm.provider._on_relation_changed(event)
-
-        # ActiveStatus following check
-        container = harness.model.unit.get_container("ranger")
-        container.get_check = mock.Mock(status="up")
-        container.get_check.return_value.status = CheckStatus.UP
-        harness.charm.on.update_status.emit()
-
-        # Mock _query_members
-        mock_response = mock.MagicMock()
-        mock_response.text = RANGER_GET_RESPONSE
-        mock_query_members.return_value = mock_response.text
-
-        # Update relation data with config
-        self.harness.update_config(
-            {"user-group-configuration": f"{GROUP_MANAGEMENT}"}
+        data = LDAP_RELATION_BROKEN_DATA
+        event = make_ldap_relation_event(rel_id, data)
+        harness.charm.ldap._on_relation_broken(event)
+        self.assertEqual(
+            harness.model.unit.status,
+            BlockedStatus("Add an LDAP relation or update config values."),
         )
 
-        harness.charm.on.config_changed.emit()
-        relation_data = self.harness.get_relation_data(rel_id, "ranger-k8s")
-        assert relation_data.get("user-group-configuration") is not None
+    def test_ldap_config_updated(self):
+        """The charm uses the configuration values from config relation."""
+        harness = self.harness
+        self.test_ldap_relation_broken()
+        harness.update_config(USERSYNC_CONFIG_VALUES)
+        got_plan = harness.get_container_pebble_plan("ranger").to_dict()
+        self.assertEqual(
+            got_plan["services"]["ranger"]["environment"]["SYNC_LDAP_URL"],
+            "ldap://config-openldap-k8s:389",
+        )
 
 
-def simulate_lifecycle(harness):
+def simulate_usersync_lifecycle(harness):
+    """Simulate a healthy charm life-cycle.
+
+    Args:
+        harness: ops.testing.Harness object used to simulate charm lifecycle.
+
+    Returns:
+        rel_id: ldap relation id to be used for subsequent testing.
+    """
+    # Simulate peer relation readiness.
+    harness.add_relation("peer", "ranger")
+
+    # Simulate pebble readiness.
+    container = harness.model.unit.get_container("ranger")
+    harness.charm.on.ranger_pebble_ready.emit(container)
+
+    harness.update_config({"charm-function": "usersync"})
+
+    # Simulate LDAP readiness.
+    rel_id = harness.add_relation("ldap", "comsys-openldap-k8s")
+    harness.add_relation_unit(rel_id, "comsys-openldap-k8s/0")
+    event = make_ldap_relation_event(rel_id, LDAP_RELATION_CHANGED_DATA)
+    harness.charm.ldap._on_relation_changed(event)
+    return rel_id
+
+
+def simulate_admin_lifecycle(harness):
     """Simulate a healthy charm life-cycle.
 
     Args:
@@ -355,6 +327,35 @@ def simulate_lifecycle(harness):
     # Simulate database readiness.
     event = make_database_changed_event()
     harness.charm.postgres_relation_handler._on_database_changed(event)
+
+
+def make_ldap_relation_event(rel_id, data):
+    """Create and return a mock policy created event.
+
+        The event is generated by the relation with postgresql_db
+
+    Args:
+        rel_id: relation id.
+        data: relation data.
+
+    Returns:
+        Event dict.
+    """
+    return type(
+        "Event",
+        (),
+        {
+            "app": "comsys-openldap-k8s",
+            "relation": type(
+                "Relation",
+                (),
+                {
+                    "data": {"comsys-openldap-k8s": data},
+                    "id": rel_id,
+                },
+            ),
+        },
+    )
 
 
 def make_policy_relation_changed_event(rel_id):

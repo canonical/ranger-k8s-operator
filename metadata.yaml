@@ -27,6 +27,8 @@ requires:
     limit: 1
   nginx-route:
     interface: nginx-route
+  ldap:
+    interface: ldap
 
 provides:
   policy:
@@ -40,4 +42,4 @@ resources:
   ranger-image:
     type: oci-image
     description: OCI image for Apache Ranger
-    upstream-source: ghcr.io/canonical/ranger@sha256:5d16d515c7ca8d5d0647b1459dc3091f559b2c3df0863b1aebf06a1c7dc260bd
+    upstream-source: ghcr.io/canonical/charmed-ranger-rock:2.4.0-22.04-edge

@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 METADATA = yaml.safe_load(Path("./metadata.yaml").read_text())
 POSTGRES_NAME = "postgresql-k8s"
 APP_NAME = "ranger-k8s"
+USERSYNC_NAME = "ranger-usersync-k8s"
 NGINX_NAME = "nginx-ingress-integrator"
 TRINO_SERVICE = "trino-service"
 TRINO_NAME = "trino-k8s"
@@ -26,21 +27,8 @@ HEADERS = {
     "Accept": "application/json",
     "Content-Type": "application/json",
 }
-GROUP_MANAGEMENT = """\
-    trino-service:
-        users:
-          - name: user1
-            firstname: One
-            lastname: User
-            email: user1@canonical.com
-        memberships:
-          - groupname: commercial-systems
-            users: [user1]
-        groups:
-          - name: commercial-systems
-            description: commercial systems team
-"""
 SECURE_PWD = "ubuntuR0cks!"  # nosec
+LDAP_NAME = "comsys-openldap-k8s"
 
 
 async def get_unit_url(

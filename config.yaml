@@ -18,14 +18,101 @@ options:
         Will default to the name of the deployed application.
     type: string
     default: ranger-k8s
-  application-name:
+  sync-ldap-url:
     description: |
-      The internal host name used for communication with Ranger.
-      It should match the name of your charm deployment.
+      The url of the ldap to synchronize users from.
+      In format `ldap://<host>:<port>`.
     type: string
-    default: ranger-k8s 
-  user-group-configuration:
+  sync-ldap-bind-dn:
     description: |
-      Yaml formatted user, group and membership definitions
-      to be created in Ranger admin for policy enforcement.
+      The bind domain name for ldap synchronization.
     type: string
+  sync-ldap-bind-password:
+    description: |
+        The bind password for ldap synchronization.
+    type: string
+    default: admin
+  sync-ldap-search-base:
+    description: |
+      Search base for ldap users and groups.
+    type: string
+  sync-ldap-user-object-class:
+    description: |
+      The object class corresponding to users for ldapsearch.
+    type: string
+    default: person
+  sync-group-object-class:
+    description: |
+      The object class corresponding to groups for ldapsearch.
+    type: string
+    default: posixGroup
+  sync-ldap-user-search-base:
+    description: |
+      Search base for ldap users.
+    type: string
+  sync-group-user-map-sync-enabled:
+    description: |
+      Set to true to sync groups without users.
+    type: boolean
+    default: true
+  sync-group-search-enabled:
+    description: |
+      Set to true to sync groups without users.
+    type: boolean
+    default: true
+  sync-group-search-base:
+    description: |
+      Search base for ldap groups.
+      If not specified this takes the value of `sync-ldap-search-base`.
+    type: string
+  sync-ldap-user-search-scope:
+    description: |
+      Search scope for the users.
+      Allowed values: `base`, `one` and `sub`.
+    type: string
+    default: sub
+  sync-ldap-group-search-scope:
+    description: |
+      Search scope for the groups.
+      Allowed values: `base`, `one` and `sub`.
+    type: string
+    default: sub
+  sync-ldap-user-search-filter:
+    description: |
+      Optional additional filter constraining the users selected for syncing.
+    type: string
+  sync-ldap-user-name-attribute:
+    description: |
+      Attribute from user entry that would be treated as user name.
+    type: string
+    default: uid
+  sync-group-member-attribute-name:
+    description: |
+      The attribute in the Group which specifies members.
+    type: string
+    default: memberUid
+  sync-ldap-user-group-name-attribute:
+    description: |
+      Attribute from user entry whose values would be treated as
+      group values to be pushed into Policy Manager database.
+    type: string
+    default: memberOf
+  sync-interval:
+    description: |
+      The interval in ms to synchronize the users/groups from ldap.
+      Note: this can not be less than hourly (3600000) for LDAP.
+    type: int
+    default: 3600000
+  sync-ldap-deltasync:
+    description: |
+      Enable to incrementally sync as opposed to full sync after initial run.
+    type: boolean
+    default: true
+  policy-mgr-url:
+    type: string
+    default: http://ranger-k8s:6080
+  charm-function:
+    description: |
+      The function the charm should provide, either `admin` or `usersync`.
+    type: string
+    default: admin

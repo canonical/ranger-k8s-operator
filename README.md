@@ -23,49 +23,29 @@ Therefore, its deployment requires a relation with the Postgres charm:
 
 ```bash
 # this will be blocked until the relation with Postgres is created 
-juju deploy ./ranger-k8s_ubuntu-20.04-amd64.charm --resource ranger-image=localhost:32000/ranger:2.4.0
+juju deploy ranger-k8s
 juju deploy postgresql-k8s --channel 14/stable --trust
 juju relate ranger-k8s:db postgresql-k8s:database
 ```
 Refer to [CONTRIBUTING.md](./CONTRIBUTING.md) for details on building the charm and ranger image. 
 
 ### Group management with Apache Ranger
-The Charmed Ranger Operator makes use of the [Ranger API](https://ranger.apache.org/apidocs/index.html) and [apache-ranger PyPi package](https://pypi.org/project/apache-ranger/) to manage users and groups. The source of users and group memberships is a `user-group-configuration.yaml` file provided to the charm as a configuration value `user-group-configuration`. 
+The Charmed Ranger Operator makes use of [Ranger usersync](https://cwiki.apache.org/confluence/display/RANGER/Apache+Ranger+Usersync) to synchronize users, groups and memberships from a compatible LDAP server (eg. openldap, ActiveDirectory) to Ranger admin. The usersync functionality can be configured on deployment of the Ranger Charm. While you can scale the Ranger admin application, you should only have 1 Usersync deployed.
 
-An example of this file is here: 
 ```
-ranger-k8s:
-   user-group-configuration: |
-      trino-service:
-         users:
-            - name: user1
-              firstname: One
-              lastname: User
-              email: user1@canonical.com
-            - name: user2
-              firstname: Two
-              lastname: User
-              email: user2@canonical.com
+juju deploy ranger-k8s --config charm-function=usersync ranger-usersync-k8s
 
-         groups:
-            - name: developers
-              description: users with developer level access.
-            - name: users
-              description: users with select only access.
-
-         memberships:
-            - groupname: users
-              users: [user1, user2]
-            - groupname: developers
-              users: [user2]
+#optional ldap relation
+juju deploy comsys-openldap-k8s --channel=edge
+juju relate ranger-usersync-k8s comsys-openldap-k8s
 ```
-The charm will automatically sync users and groups from the configuration file to Ranger admin. Removing groups and group memberships where not present in the configuration file. This means that you should not create groups and user associations directly in the UI as they will be removed if not present in the file.
+This charm connects to the Ranger Admin and OpenLDAP via a relation but can also be directly configured.
 
 #### Group management in related application
-Related applications must have the Ranger plugin configured. The Ranger plugin schedules regular download of Ranger policies (every 3 minutes) storing these policies within the related application in a cache. On access request, the requesting user's UNIX group is used when comparing to Ranger group policies to determine access. 
+Related applications must have the Ranger plugin configured. The Ranger plugin schedules regular download of Ranger policies (every 3 minutes) storing these policies within the related application in a cache. On access request, the requesting user's group is used when comparing to Ranger group policies to determine access. Therefore the related application should have the same source for groups.
 
 #### Service name
-Before relation of an application to the Ranger charm, the application's `ranger-service-name` configuration parameter should be set. This will be the name of the Ranger service created for the application. When creating the `user-group-configuration.yaml` this service name should be used as the key for user and group data. Users will automatically be synchronized with the related charm matching the service name.
+Before relation of an application to the Ranger charm, the application's `ranger-service-name` configuration parameter should be set. This will be the name of the Ranger service created for the application.
 
 #### Trino relation
 The configuration of these groups is done automatically on relation with the Ranger charm in the [Trino K8s charm](https://charmhub.io/trino-k8s).

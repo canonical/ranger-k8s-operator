@@ -6,14 +6,10 @@
 import functools
 import logging
 import os
-import secrets
-import string
 import time
 
 from apache_ranger.exceptions import RangerServiceException
 from jinja2 import Environment, FileSystemLoader
-
-from literals import APPLICATION_PORT, ENDPOINT_MAPPING, LOCALHOST_URL
 
 
 def render(template_name, context):
@@ -80,35 +76,6 @@ def log_event_handler(logger):
         return decorated
 
     return decorator
-
-
-def generate_random_string(length) -> str:
-    """Create a secure randomized string for use as external user passwords.
-
-    Args:
-        length: number of characters to generate
-
-    Returns:
-        String of randomized letter+digit characters
-    """
-    uppercase_letters = string.ascii_uppercase
-    lowercase_letters = string.ascii_lowercase
-    digits = string.digits
-
-    all_characters = uppercase_letters + lowercase_letters + digits
-
-    characters = [
-        secrets.choice(uppercase_letters)
-        + secrets.choice(lowercase_letters)
-        + secrets.choice(digits)
-    ]
-    characters.extend(
-        secrets.choice(all_characters) for _ in range(length - 3)
-    )
-    secrets.SystemRandom().shuffle(characters)
-    password = "".join(characters)
-
-    return password
 
 
 def retry(max_retries=3, delay=2, backoff=2):
@@ -206,18 +173,3 @@ def raise_service_error(func):
             raise
 
     return wrapper
-
-
-def create_xusers_url(member_type):
-    """Create Ranger API xusers URL.
-
-    Args:
-        member_type: The type of Ranger member (group, user or membership).
-
-    Returns:
-        url: The Ranger API URL for xusers.
-    """
-    endpoint = ENDPOINT_MAPPING[member_type]
-    ranger_url = f"{LOCALHOST_URL}:{APPLICATION_PORT}"
-    url = f"{ranger_url}/service/xusers/{endpoint}"
-    return url

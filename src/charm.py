@@ -8,6 +8,7 @@ import logging
 
 import ops
 from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
+from charms.data_platform_libs.v0.data_models import TypedCharmBase
 from charms.nginx_ingress_integrator.v0.nginx_route import require_nginx_route
 from ops.model import (
     ActiveStatus,
@@ -17,23 +18,33 @@ from ops.model import (
 )
 from ops.pebble import CheckStatus
 
-from groups import RangerGroupManager
-from literals import APP_NAME, APPLICATION_PORT
+from literals import (
+    ADMIN_ENTRYPOINT,
+    APP_NAME,
+    APPLICATION_PORT,
+    RELATION_VALUES,
+    USERSYNC_ENTRYPOINT,
+)
+from relations.ldap import LDAPRelationHandler
 from relations.postgres import PostgresRelationHandler
 from relations.provider import RangerProvider
 from state import State
+from structured_config import CharmConfig
 from utils import log_event_handler, render
 
 # Log messages can be retrieved using juju debug-log
 logger = logging.getLogger(__name__)
 
 
-class RangerK8SCharm(ops.CharmBase):
+class RangerK8SCharm(TypedCharmBase[CharmConfig]):
     """Charm the service.
 
     Attributes:
         external_hostname: DNS listing used for external connections.
+        config_type: the charm structured config
     """
+
+    config_type = CharmConfig
 
     @property
     def external_hostname(self):
@@ -69,7 +80,7 @@ class RangerK8SCharm(ops.CharmBase):
         )
         self.postgres_relation_handler = PostgresRelationHandler(self)
         self.provider = RangerProvider(self)
-        self.group_manager = RangerGroupManager(self)
+        self.ldap = LDAPRelationHandler(self)
 
         # Handle Ingress
         self._require_nginx_route()
@@ -135,6 +146,11 @@ class RangerK8SCharm(ops.CharmBase):
         if not self._state.is_ready():
             return
 
+        charm_function = self.config["charm-function"].value
+        if charm_function == "usersync":
+            self.unit.status = ActiveStatus("Status check: UP")
+            return
+
         if not self._state.database_connection:
             return
 
@@ -163,6 +179,67 @@ class RangerK8SCharm(ops.CharmBase):
         event.set_results({"result": "ranger successfully restarted"})
         self.unit.status = ActiveStatus()
 
+    def _configure_ranger_admin(self, container):
+        """Prepare Ranger Admin install.properties file.
+
+        Args:
+            container: The application container.
+
+        Returns:
+            ADMIN_ENTRYPOINT: Entrypoint path for Ranger Admin startup.
+            context: Environment variables for pebble plan.
+        """
+        db_conn = self._state.database_connection
+        context = {
+            "DB_NAME": db_conn["dbname"],
+            "DB_HOST": db_conn["host"],
+            "DB_PORT": db_conn["port"],
+            "DB_USER": db_conn["user"],
+            "DB_PWD": db_conn["password"],
+            "RANGER_ADMIN_PWD": self.config["ranger-admin-password"],
+            "JAVA_OPTS": "-Duser.timezone=UTC0",
+        }
+        config = render("admin-config.jinja", context)
+        container.push(
+            "/usr/lib/ranger/admin/install.properties", config, make_dirs=True
+        )
+        return ADMIN_ENTRYPOINT, context
+
+    def _configure_ranger_usersync(self, container):
+        """Prepare Ranger Usersync install.properties file.
+
+        Args:
+            container: The application container.
+
+        Returns:
+            USERSYNC_ENTRYPOINT: Entrypoint path for Ranger Usersync startup.
+            context: Environment variables for pebble plan.
+        """
+        context = {}
+        ldap = self._state.ldap or {}
+        for key, value in vars(self.config).items():
+            if not key.startswith("sync"):
+                continue
+
+            if key in RELATION_VALUES:
+                value = ldap.get(key) or self.config[key]
+
+            updated_key = key.upper()
+            context[updated_key] = value
+
+        context.update(
+            {
+                "POLICY_MGR_URL": self.config["policy-mgr-url"],
+            }
+        )
+        config = render("ranger-usersync-config.jinja", context)
+        container.push(
+            "/usr/lib/ranger/usersync/install.properties",
+            config,
+            make_dirs=True,
+        )
+        return USERSYNC_ENTRYPOINT, context
+
     def validate(self):
         """Validate that configuration and relations are valid and ready.
 
@@ -172,13 +249,11 @@ class RangerK8SCharm(ops.CharmBase):
         if not self._state.is_ready():
             raise ValueError("peer relation not ready")
 
-        if self.config["application-name"] == "":
-            raise ValueError("invalid configuration of application-name")
+        if self.config["charm-function"].value == "admin":
+            self.postgres_relation_handler.validate()
 
-        if self.config.get("user-group-configuration"):
-            self.group_manager._validate()
-
-        self.postgres_relation_handler.validate()
+        if self.config["charm-function"].value == "usersync":
+            self.ldap.validate()
 
     def update(self, event):
         """Update the Ranger server configuration and re-plan its execution.
@@ -197,54 +272,41 @@ class RangerK8SCharm(ops.CharmBase):
             event.defer()
             return
 
-        self.model.unit.open_port(port=APPLICATION_PORT, protocol="tcp")
+        charm_function = self.config["charm-function"].value
+        logger.info("configuring ranger %s", charm_function)
 
-        if self.config.get(
-            "user-group-configuration"
-        ) and self.unit.status == ActiveStatus("Status check: UP"):
-            self.group_manager._handle_synchronize_file(event)
+        if charm_function == "admin":
+            self.model.unit.open_port(port=APPLICATION_PORT, protocol="tcp")
+            command, context = self._configure_ranger_admin(container)
 
-        logger.info("configuring ranger")
-        db_conn = self._state.database_connection
-        context = {
-            "DB_NAME": db_conn["dbname"],
-            "DB_HOST": db_conn["host"],
-            "DB_PORT": db_conn["port"],
-            "DB_USER": db_conn["user"],
-            "DB_PWD": db_conn["password"],
-            "RANGER_ADMIN_PWD": self.config["ranger-admin-password"],
-            "JAVA_OPTS": "-Duser.timezone=UTC0",
-        }
+        if charm_function == "usersync":
+            command, context = self._configure_ranger_usersync(container)
 
-        config = render("config.jinja", context)
-        container.push(
-            "/usr/lib/ranger/install.properties", config, make_dirs=True
-        )
-
-        logger.info("planning ranger execution")
+        logger.info("planning ranger %s execution", charm_function)
         pebble_layer = {
-            "summary": "ranger server layer",
+            "summary": f"ranger {charm_function} layer",
             "services": {
                 self.name: {
-                    "summary": "ranger server",
-                    "command": "/tmp/entrypoint.sh",  # nosec
+                    "summary": f"ranger {charm_function}",
+                    "command": command,
                     "startup": "enabled",
                     "override": "replace",
                     "environment": context,
                 }
             },
         }
-        pebble_layer.update(
-            {
-                "checks": {
-                    "up": {
-                        "override": "replace",
-                        "period": "10s",
-                        "http": {"url": "http://localhost:6080/"},
+        if charm_function == "admin":
+            pebble_layer.update(
+                {
+                    "checks": {
+                        "up": {
+                            "override": "replace",
+                            "period": "10s",
+                            "http": {"url": "http://localhost:6080/"},
+                        }
                     }
-                }
-            },
-        )
+                },
+            )
         container.add_layer(self.name, pebble_layer, combine=True)
         container.replan()
 

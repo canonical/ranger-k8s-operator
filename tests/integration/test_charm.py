@@ -7,17 +7,8 @@ import logging
 
 import pytest
 import requests
-from apache_ranger.client import ranger_client
 from conftest import deploy  # noqa: F401, pylint: disable=W0611
-from helpers import (
-    APP_NAME,
-    METADATA,
-    POSTGRES_NAME,
-    RANGER_AUTH,
-    TRINO_SERVICE,
-    get_memberships,
-    get_unit_url,
-)
+from helpers import APP_NAME, METADATA, NGINX_NAME, POSTGRES_NAME, get_unit_url
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
@@ -38,27 +29,27 @@ class TestDeployment:
         response = requests.get(url, timeout=300, verify=False)  # nosec
         assert response.status_code == 200
 
-    async def test_service_created(self, ops_test: OpsTest):
-        """Validate the service `trino-service` has been created."""
-        url = await get_unit_url(
-            ops_test, application=APP_NAME, unit=0, port=6080
+    async def test_ingress(self, ops_test: OpsTest):
+        """Integrate Ranger with Ingress."""
+        await ops_test.model.deploy(NGINX_NAME, trust=True)
+        await ops_test.model.wait_for_idle(
+            apps=[NGINX_NAME],
+            status="waiting",
+            raise_on_blocked=False,
+            timeout=1500,
         )
-        ranger = ranger_client.RangerClient(url, RANGER_AUTH)
 
-        new_service = ranger.get_service(TRINO_SERVICE)
-        logger.info(f"service: {new_service}")
-        name = new_service.get("name")
-        service_id = new_service.get("id")
-        assert name == TRINO_SERVICE and service_id == 1
-
-    async def test_group_membership(self, ops_test: OpsTest):
-        """Validate `user-group-configuration` value has been synchronized."""
-        url = await get_unit_url(
-            ops_test, application=APP_NAME, unit=0, port=6080
+        await ops_test.model.integrate(APP_NAME, NGINX_NAME)
+        await ops_test.model.wait_for_idle(
+            apps=[NGINX_NAME, APP_NAME],
+            status="active",
+            raise_on_blocked=False,
+            timeout=1000,
         )
-        membership = await get_memberships(ops_test, url)
-
-        assert membership == ("commercial-systems", 8)
+        assert (
+            ops_test.model.applications[NGINX_NAME].units[0].workload_status
+            == "active"
+        )
 
     async def test_simulate_crash(self, ops_test: OpsTest):
         """Simulate the crash of the Ranger charm.
@@ -105,7 +96,3 @@ class TestDeployment:
         )
         response = requests.get(url, timeout=300, verify=False)  # nosec
         assert response.status_code == 200
-
-        membership = await get_memberships(ops_test, url)
-        logger.info(f"Ranger memberships: {membership}")
-        assert membership == ("commercial-systems", 8)

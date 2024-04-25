@@ -33,3 +33,7 @@ RELATION_VALUES = [
     "sync_group_search_base",
     "sync_ldap_url",
 ]
+
+# Observability literals
+METRICS_PORT = 6080
+LOG_FILES = ["/usr/lib/ranger/admin/ews/logs/ranger-admin-ranger-k8s-0-.log"]

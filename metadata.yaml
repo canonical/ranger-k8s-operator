@@ -29,10 +29,18 @@ requires:
     interface: nginx-route
   ldap:
     interface: ldap
+  log-proxy:
+    interface: loki_push_api
+    optional: true
+    limit: 1
 
 provides:
   policy:
     interface: ranger_client
+  metrics-endpoint:
+    interface: prometheus_scrape
+  grafana-dashboard:
+    interface: grafana_dashboard
 
 containers:
   ranger:

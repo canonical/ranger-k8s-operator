@@ -7,6 +7,9 @@ Avoid using this README file for information that is maintained or published els
 
 Use links instead.
 -->
+[![Charmhub Badge](https://charmhub.io/ranger-k8s/badge.svg)](https://charmhub.io/ranger-k8s)
+[![Release Edge](https://github.com/canonical/ranger-k8s-operator/actions/workflows/test_and_publish_charm.yaml/badge.svg)](https://github.com/canonical/ranger-k8s-operator/actions/workflows/test_and_publish_charm.yaml)
+
 
 # Ranger K8s Operator
 

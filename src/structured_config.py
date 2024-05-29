@@ -109,7 +109,7 @@ class CharmConfig(BaseConfigModel):
         Raises:
             ValueError: in the case when the value incorrectly formatted.
         """
-        ldap_url_pattern = r"^ldap://.*:\d+$"
+        ldap_url_pattern = r"^ldaps?://.*:\d+$"
         if re.match(ldap_url_pattern, value) is not None:
             return value
         raise ValueError("Value incorrectly formatted.")

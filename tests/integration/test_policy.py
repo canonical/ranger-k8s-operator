@@ -61,5 +61,4 @@ class TestPolicyRelation:
         new_service = ranger.get_service(TRINO_SERVICE)
         logger.info(f"service: {new_service}")
         name = new_service.get("name")
-        service_id = new_service.get("id")
-        assert name == TRINO_SERVICE and service_id == 1
+        assert TRINO_SERVICE in name

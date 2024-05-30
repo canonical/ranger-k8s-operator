@@ -303,12 +303,16 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         charm_function = self.config["charm-function"].value
         logger.info("configuring ranger %s", charm_function)
 
-        if charm_function == "admin":
-            self.model.unit.open_port(port=APPLICATION_PORT, protocol="tcp")
-            command, context = self._configure_ranger_admin(container)
+        self.model.unit.close_port(port=APPLICATION_PORT, protocol="tcp")
 
         if charm_function == "usersync":
             command, context = self._configure_ranger_usersync(container)
+        elif charm_function == "admin":
+            self.model.unit.open_port(port=APPLICATION_PORT, protocol="tcp")
+            command, context = self._configure_ranger_admin(container)
+        else:
+            self.unit.status = BlockedStatus("Missing charm-function.")
+            return
 
         logger.info("planning ranger %s execution", charm_function)
         pebble_layer = {

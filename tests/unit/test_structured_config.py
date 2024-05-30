@@ -45,7 +45,7 @@ def test_string_values(_harness) -> None:
 
     # sync-ldap-url
     check_invalid_values(_harness, "sync-ldap-url", erroneus_values)
-    accepted_values = ["ldap://ldap-k8s:3893", "ldap://example-host:636"]
+    accepted_values = ["ldap://ldap-k8s:3893", "ldaps://example-host:636"]
     check_valid_values(_harness, "sync-ldap-url", accepted_values)
 
 

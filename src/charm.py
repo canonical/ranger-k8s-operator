@@ -305,13 +305,12 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
 
         if charm_function == "usersync":
             command, context = self._configure_ranger_usersync(container)
+            self.model.unit.close_port(port=APPLICATION_PORT, protocol="tcp")
         elif charm_function == "admin":
             self.model.unit.open_port(port=APPLICATION_PORT, protocol="tcp")
             command, context = self._configure_ranger_admin(container)
         else:
-            logger.error(
-                "Programmer error, please add your 'charm_function' to the logic."
-            )
+            self.unit.status = BlockedStatus("Missing charm-function.")
             return
 
         logger.info("planning ranger %s execution", charm_function)

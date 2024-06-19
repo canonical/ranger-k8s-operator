@@ -60,6 +60,7 @@ class CharmConfig(BaseConfigModel):
     ranger_usersync_password: Optional[str]
     policy_mgr_url: str
     charm_function: FunctionType
+    lookup_timeout: int
 
     @validator("*", pre=True)
     @classmethod
@@ -113,3 +114,22 @@ class CharmConfig(BaseConfigModel):
         if re.match(ldap_url_pattern, value) is not None:
             return value
         raise ValueError("Value incorrectly formatted.")
+
+    @validator("lookup_timeout")
+    @classmethod
+    def lookup_timeout_validator(cls, value: str) -> Optional[int]:
+        """Check validity of `lookup_timeout` field.
+
+        Args:
+            value: timeout value
+
+        Returns:
+            int_value: integer for service configuration
+
+        Raises:
+            ValueError: in the case when the value is out of range
+        """
+        int_value = int(value)
+        if 1000 <= int_value <= 10000:
+            return int_value
+        raise ValueError("Value out of range.")

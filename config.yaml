@@ -116,3 +116,9 @@ options:
       The function the charm should provide, either `admin` or `usersync`.
     type: string
     default: admin
+  lookup-timeout:
+    description: |
+      The default timeout for the resource auto-complete
+      functionality for Ranger service in ms.
+    type: int
+    default: 3000

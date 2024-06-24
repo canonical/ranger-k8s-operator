@@ -144,6 +144,9 @@ class RangerProvider(Object):
         )
         service.configs = {
             "username": f"relation_id_{event.relation.id}",
+            "resource.lookup.timeout.value.in.ms": self.charm.config[
+                "lookup-timeout"
+            ],
         }
         for key, value in data.items():
             if key not in ["name", "type"]:

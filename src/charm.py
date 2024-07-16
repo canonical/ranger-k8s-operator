@@ -31,6 +31,7 @@ from literals import (
     USERSYNC_ENTRYPOINT,
 )
 from relations.ldap import LDAPRelationHandler
+from relations.opensearch import OpensearchRelationHandler
 from relations.postgres import PostgresRelationHandler
 from relations.provider import RangerProvider
 from state import State
@@ -86,6 +87,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         self.postgres_relation_handler = PostgresRelationHandler(self)
         self.provider = RangerProvider(self)
         self.ldap = LDAPRelationHandler(self)
+        self.opensearch = OpensearchRelationHandler(self)
 
         # Handle Ingress
         self._require_nginx_route()
@@ -218,15 +220,23 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             context: Environment variables for pebble plan.
         """
         db_conn = self._state.database_connection
+        opensearch = self._state.opensearch or {}
         context = {
             "DB_NAME": db_conn["dbname"],
             "DB_HOST": db_conn["host"],
             "DB_PORT": db_conn["port"],
             "DB_USER": db_conn["user"],
             "DB_PWD": db_conn["password"],
+            "OPENSEARCH_INDEX": opensearch.get("index"),
+            "OPENSEARCH_HOST": opensearch.get("host"),
+            "OPENSEARCH_PORT": opensearch.get("port"),
+            "OPENSEARCH_PASSWORD": opensearch.get("password"),
+            "OPENSEARCH_USER": opensearch.get("username"),
+            "OPENSEARCH_ENABLED": opensearch.get("is_enabled"),
             "RANGER_ADMIN_PWD": self.config["ranger-admin-password"],
             "JAVA_OPTS": "-Duser.timezone=UTC0",
         }
+
         config = render("admin-config.jinja", context)
         container.push(
             "/usr/lib/ranger/admin/install.properties", config, make_dirs=True

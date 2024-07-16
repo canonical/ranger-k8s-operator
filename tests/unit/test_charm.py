@@ -10,7 +10,12 @@ import json
 import logging
 from unittest import TestCase, mock
 
-from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
+from ops.model import (
+    ActiveStatus,
+    BlockedStatus,
+    MaintenanceStatus,
+    WaitingStatus,
+)
 from ops.pebble import CheckStatus
 from ops.testing import Harness
 
@@ -32,6 +37,19 @@ USERSYNC_CONFIG_VALUES = {
     "sync-ldap-bind-dn": "dc=canonical,dc=dev,dc=com",
     "sync-ldap-user-search-base": "dc=canonical,dc=dev,dc=com",
     "sync-group-search-base": "dc=canonical,dc=dev,dc=com",
+}
+
+OPENSEARCH_RELATION_CHANGED_DATA = {
+    "password": "thiahuid",
+    "username": "relation_1",
+    "endpoints": "opensearch-host:port",
+}
+OPENSEARCH_RELATION_BROKEN_DATA: dict = {"opensearch": {}}
+POLICY_RELATION_DATA = {
+    "name": "trino-service",
+    "type": "trino",
+    "jdbc.driverClassName": "io.trino.jdbc.TrinoDriver",
+    "jdbc.url": "jdbc:trino://trino-k8s:8080",
 }
 
 
@@ -100,6 +118,12 @@ class TestCharm(TestCase):
                         "DB_PWD": "admin",
                         "RANGER_ADMIN_PWD": "rangerR0cks!",
                         "JAVA_OPTS": "-Duser.timezone=UTC0",
+                        "OPENSEARCH_ENABLED": None,
+                        "OPENSEARCH_HOST": None,
+                        "OPENSEARCH_INDEX": None,
+                        "OPENSEARCH_PASSWORD": None,
+                        "OPENSEARCH_PORT": None,
+                        "OPENSEARCH_USER": None,
                     },
                 }
             },
@@ -234,7 +258,8 @@ class TestCharm(TestCase):
         rel_id = harness.add_relation("policy", "trino-k8s")
         harness.add_relation_unit(rel_id, "trino-k8s/0")
 
-        event = make_policy_relation_changed_event(rel_id)
+        data = POLICY_RELATION_DATA
+        event = make_relation_event(rel_id, "trino-k8s", data)
         harness.charm.provider._on_relation_changed(event)
 
         relation_data = self.harness.get_relation_data(rel_id, "ranger-k8s")
@@ -266,7 +291,7 @@ class TestCharm(TestCase):
         rel_id = simulate_usersync_lifecycle(harness)
 
         data = LDAP_RELATION_BROKEN_DATA
-        event = make_ldap_relation_event(rel_id, data)
+        event = make_relation_event(rel_id, "comsys-openldap-k8s", data)
         harness.charm.ldap._on_relation_broken(event)
         self.assertEqual(
             harness.model.unit.status,
@@ -282,6 +307,48 @@ class TestCharm(TestCase):
         self.assertEqual(
             got_plan["services"]["ranger"]["environment"]["SYNC_LDAP_URL"],
             "ldap://config-openldap-k8s:389",
+        )
+
+    def opensearch_setup(self, harness, data):
+        """Common setup for Openseatch relation changed and broken tests."""
+        simulate_admin_lifecycle(harness)
+        rel_id = harness.add_relation("opensearch", "opensearch-app")
+        harness.add_relation_unit(rel_id, "opensearch-app/0")
+        harness.handle_exec("ranger", ["keytool"], result=0)
+        event = make_relation_event(rel_id, "opensearch", data)
+        harness.charm.opensearch._on_relation_changed(event)
+        return rel_id
+
+    def test_on_relation_changed(self):
+        """Test handling of opensearch relation changed events."""
+        harness = self.harness
+        self.opensearch_setup(harness, OPENSEARCH_RELATION_CHANGED_DATA)
+
+        self.assertEqual(
+            harness.model.unit.status,
+            MaintenanceStatus("replanning application"),
+        )
+        got_plan = harness.get_container_pebble_plan("ranger").to_dict()
+        self.assertEqual(
+            got_plan["services"]["ranger"]["environment"]["OPENSEARCH_HOST"],
+            "opensearch-host",
+        )
+
+    def test_on_relation_broken(self):
+        """Test handling of broken relations with opensearch."""
+        harness = self.harness
+        rel_id = self.opensearch_setup(
+            harness, OPENSEARCH_RELATION_CHANGED_DATA
+        )
+        data = OPENSEARCH_RELATION_BROKEN_DATA
+        event = make_relation_event(rel_id, "opensearch", data)
+        self.harness.charm.opensearch._on_relation_broken(event)
+        got_plan = harness.get_container_pebble_plan("ranger").to_dict()
+        self.assertEqual(
+            got_plan["services"]["ranger"]["environment"][
+                "OPENSEARCH_ENABLED"
+            ],
+            False,
         )
 
 
@@ -306,7 +373,9 @@ def simulate_usersync_lifecycle(harness):
     # Simulate LDAP readiness.
     rel_id = harness.add_relation("ldap", "comsys-openldap-k8s")
     harness.add_relation_unit(rel_id, "comsys-openldap-k8s/0")
-    event = make_ldap_relation_event(rel_id, LDAP_RELATION_CHANGED_DATA)
+    event = make_relation_event(
+        rel_id, "comsys-openldap-k8s", LDAP_RELATION_CHANGED_DATA
+    )
     harness.charm.ldap._on_relation_changed(event)
     return rel_id
 
@@ -329,14 +398,13 @@ def simulate_admin_lifecycle(harness):
     harness.charm.postgres_relation_handler._on_database_changed(event)
 
 
-def make_ldap_relation_event(rel_id, data):
-    """Create and return a mock policy created event.
-
-        The event is generated by the relation with postgresql_db
+def make_relation_event(rel_id, app_name, data):
+    """Create and return a mock relation event.
 
     Args:
-        rel_id: relation id.
-        data: relation data.
+        rel_id: The relation id.
+        app_name: The name of the application.
+        data: The relation data.
 
     Returns:
         Event dict.
@@ -345,47 +413,12 @@ def make_ldap_relation_event(rel_id, data):
         "Event",
         (),
         {
-            "app": "comsys-openldap-k8s",
+            "app": app_name,
             "relation": type(
                 "Relation",
                 (),
                 {
-                    "data": {"comsys-openldap-k8s": data},
-                    "id": rel_id,
-                },
-            ),
-        },
-    )
-
-
-def make_policy_relation_changed_event(rel_id):
-    """Create and return a mock database changed event.
-
-    The event is generated by the relation with ranger-k8s
-
-    Args:
-        rel_id: the relation id.
-
-    Returns:
-        Event dict.
-    """
-    return type(
-        "Event",
-        (),
-        {
-            "app": "trino-k8s",
-            "relation": type(
-                "Relation",
-                (),
-                {
-                    "data": {
-                        "trino-k8s": {
-                            "name": "trino-service",
-                            "type": "trino",
-                            "jdbc.driverClassName": "io.trino.jdbc.TrinoDriver",
-                            "jdbc.url": "jdbc:trino://trino-k8s:8080",
-                        }
-                    },
+                    "data": {app_name: data},
                     "id": rel_id,
                 },
             ),

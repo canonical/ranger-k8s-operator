@@ -34,6 +34,11 @@ RELATION_VALUES = [
     "sync_ldap_url",
 ]
 
+JAVA_ENV = {
+    "JAVA_HOME": "/usr/lib/jvm/java-11-openjdk-amd64",
+    "PATH": "$JAVA_HOME/bin:$PATH",
+}
+
 # Observability literals
 METRICS_PORT = 6080
 LOG_FILES = ["/usr/lib/ranger/admin/ews/logs/ranger-admin-ranger-k8s-0-.log"]

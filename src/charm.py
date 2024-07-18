@@ -7,7 +7,10 @@
 import logging
 
 import ops
-from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
+from charms.data_platform_libs.v0.data_interfaces import (
+    DatabaseRequires,
+    OpenSearchRequires,
+)
 from charms.data_platform_libs.v0.data_models import TypedCharmBase
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LogProxyConsumer
@@ -19,12 +22,13 @@ from ops.model import (
     MaintenanceStatus,
     WaitingStatus,
 )
-from ops.pebble import CheckStatus
+from ops.pebble import CheckStatus, ExecError
 
 from literals import (
     ADMIN_ENTRYPOINT,
     APP_NAME,
     APPLICATION_PORT,
+    JAVA_HOME,
     LOG_FILES,
     METRICS_PORT,
     RELATION_VALUES,
@@ -36,7 +40,7 @@ from relations.postgres import PostgresRelationHandler
 from relations.provider import RangerProvider
 from state import State
 from structured_config import CharmConfig
-from utils import log_event_handler, render
+from utils import generate_password, log_event_handler, render
 
 # Log messages can be retrieved using juju debug-log
 logger = logging.getLogger(__name__)
@@ -87,7 +91,13 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         self.postgres_relation_handler = PostgresRelationHandler(self)
         self.provider = RangerProvider(self)
         self.ldap = LDAPRelationHandler(self)
-        self.opensearch = OpensearchRelationHandler(self)
+        self.opensearch_relation = OpenSearchRequires(
+            self,
+            relation_name="opensearch",
+            index="ranger_audits",
+            extra_user_roles="admin",
+        )
+        self.opensearch_relation_handler = OpensearchRelationHandler(self)
 
         # Handle Ingress
         self._require_nginx_route()
@@ -209,6 +219,27 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         event.set_results({"result": "ranger successfully restarted"})
         self.unit.status = ActiveStatus()
 
+    def set_truststore_password(self, container):
+        """Update the truststore password to the randomly generated one.
+
+        Args:
+            container: The application container.
+        """
+        command = [
+            f"{JAVA_HOME}/bin/keytool",
+            "-storepass",
+            "changeit",
+            "-storepasswd",
+            "-new",
+            self._state.truststore_pwd,
+            "-keystore",
+            f"{JAVA_HOME}/lib/security/cacerts",
+        ]
+        try:
+            container.exec(command).wait()
+        except ExecError as e:
+            logger.debug(f"Truststore password is already updated: {e.stderr}")
+
     def _configure_ranger_admin(self, container):
         """Prepare Ranger Admin install.properties file.
 
@@ -220,7 +251,16 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             context: Environment variables for pebble plan.
         """
         db_conn = self._state.database_connection
+        self._state.truststore_pwd = (
+            self._state.truststore_pwd or generate_password()
+        )
+        self.set_truststore_password(container)
         opensearch = self._state.opensearch or {}
+        if opensearch.get("is_enabled") and not container.exists(
+            "/opensearch.crt"
+        ):
+            self.opensearch_relation_handler.update_certificates()
+
         context = {
             "DB_NAME": db_conn["dbname"],
             "DB_HOST": db_conn["host"],
@@ -230,13 +270,13 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             "OPENSEARCH_INDEX": opensearch.get("index"),
             "OPENSEARCH_HOST": opensearch.get("host"),
             "OPENSEARCH_PORT": opensearch.get("port"),
-            "OPENSEARCH_PASSWORD": opensearch.get("password"),
+            "OPENSEARCH_PWD": opensearch.get("password"),
             "OPENSEARCH_USER": opensearch.get("username"),
             "OPENSEARCH_ENABLED": opensearch.get("is_enabled"),
             "RANGER_ADMIN_PWD": self.config["ranger-admin-password"],
-            "JAVA_OPTS": "-Duser.timezone=UTC0",
+            "JAVA_OPTS": f"-Duser.timezone=UTC0 -Djavax.net.ssl.trustStorePassword={self._state.truststore_pwd}",
         }
-
+        logger.info(context)
         config = render("admin-config.jinja", context)
         container.push(
             "/usr/lib/ranger/admin/install.properties", config, make_dirs=True

@@ -21,6 +21,12 @@ tox run -e unit          # unit tests
 tox run -e integration   # integration tests
 tox                      # runs 'format', 'lint', and 'unit' environments
 ```
+To run the cross-controller openserach integration test, you first need to have a k8s and a lxd controller
+bootstrapped, and communicate their names using environment variables:
+
+```shell
+K8S_CONTROLLER="k8s-controller" LXD_CONTROLLER="lxd-controller" tox -e integration-openserach
+```
 
 ## Set up your development environment
 ### Install Microk8s
@@ -71,19 +77,6 @@ juju model-config logging-config="<root>=INFO;unit=DEBUG"
 # Check progress:
 juju status
 juju debug-log
-
-## Building Ranger image 
-
-Given that an official Ranger image is not available yet, you are required to build it manually.
-To do so, clone the following repository in a temporary location and build image using docker build:
-```bash
-git clone https://github.com/canonical/kafka-ranger-poc.git
-cd kafka-ranger-poc/ranger
-# note that the prefix localhost:32000 is there so that we can push it to the microk8s registry
-docker build -t localhost:32000/ranger:2.4.0 .
-
-# push it to the microk8s registry
-docker push localhost:32000/ranger:2.4.0
 ```
 
 ## Build the charm

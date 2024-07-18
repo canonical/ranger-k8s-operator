@@ -8,14 +8,10 @@
 
 import json
 import logging
+import re
 from unittest import TestCase, mock
 
-from ops.model import (
-    ActiveStatus,
-    BlockedStatus,
-    MaintenanceStatus,
-    WaitingStatus,
-)
+from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
 from ops.pebble import CheckStatus
 from ops.testing import Harness
 
@@ -51,6 +47,18 @@ POLICY_RELATION_DATA = {
     "jdbc.driverClassName": "io.trino.jdbc.TrinoDriver",
     "jdbc.url": "jdbc:trino://trino-k8s:8080",
 }
+USER_SECRET_CONTENT = {
+    "username": "testuser",
+    "password": "testpassword",
+    "tls-ca": """-----BEGIN CERTIFICATE-----
+    MIIC+DCCAeCgAwIBAgIJAKJdWfG2zRAQMA0GCSqGSIb3DQEBCwUAMIGPMQswCQYD
+    -----END CERTIFICATE-----
+    -----BEGIN CERTIFICATE-----
+    AIBC+LCCAuCgAPIBAgIuAKJdWWG2zRAQMA0GFSqGSIP3DQEBCiUAMIGPMQswCQYC
+    -----END CERTIFICATE-----""",
+}
+
+JAVA_HOME = "/usr/lib/jvm/java-11-openjdk-amd64"
 
 
 class TestCharm(TestCase):
@@ -117,11 +125,11 @@ class TestCharm(TestCase):
                         "DB_USER": "postgres_user",
                         "DB_PWD": "admin",
                         "RANGER_ADMIN_PWD": "rangerR0cks!",
-                        "JAVA_OPTS": "-Duser.timezone=UTC0",
+                        "JAVA_OPTS": "-Duser.timezone=UTC0 -Djavax.net.ssl.trustStorePassword=***",
                         "OPENSEARCH_ENABLED": None,
                         "OPENSEARCH_HOST": None,
                         "OPENSEARCH_INDEX": None,
-                        "OPENSEARCH_PASSWORD": None,
+                        "OPENSEARCH_PWD": None,
                         "OPENSEARCH_PORT": None,
                         "OPENSEARCH_USER": None,
                     },
@@ -129,6 +137,10 @@ class TestCharm(TestCase):
             },
         }
         got_plan = harness.get_container_pebble_plan("ranger").to_dict()
+        java_ops = got_plan["services"]["ranger"]["environment"]["JAVA_OPTS"]
+        got_plan["services"]["ranger"]["environment"]["JAVA_OPTS"] = re.sub(
+            r"=[^=]*$", "=***", java_ops
+        )
         self.assertEqual(got_plan["services"], want_plan["services"])
 
         # The service was started.
@@ -206,7 +218,7 @@ class TestCharm(TestCase):
 
         self.assertEqual(got_admin_password, want_admin_password)
 
-        # The ActiveStatus is set with replan message.
+        # The Maintenance Status is set with replan message.
         self.assertEqual(
             harness.model.unit.status,
             MaintenanceStatus("replanning application"),
@@ -309,20 +321,42 @@ class TestCharm(TestCase):
             "ldap://config-openldap-k8s:389",
         )
 
-    def opensearch_setup(self, harness, data):
-        """Common setup for Openseatch relation changed and broken tests."""
+    @mock.patch("charm.OpensearchRelationHandler.get_secret_content")
+    @mock.patch("charm.OpensearchRelationHandler.add_opensearch_schema")
+    def opensearch_setup(
+        self,
+        mock_add_opensearch_schema,
+        mock_get_secret_content,
+        harness,
+        data,
+    ):
+        """Common setup for Openseatch relation changed and broken tests.
+
+        Args:
+            mock_add_opensearch_schema: the mocked method for schema setup.
+            mock_get_secret_content: the mocked method for accessing juju secrets.
+            harness: ops.testing.Harness object used to simulate charm lifecycle.
+            data: the opensearch relation data.
+
+        Returns:
+            rel_id: the opensearch relation id.
+        """
+        mock_get_secret_content.return_value = USER_SECRET_CONTENT
+
         simulate_admin_lifecycle(harness)
         rel_id = harness.add_relation("opensearch", "opensearch-app")
         harness.add_relation_unit(rel_id, "opensearch-app/0")
-        harness.handle_exec("ranger", ["keytool"], result=0)
+
         event = make_relation_event(rel_id, "opensearch", data)
-        harness.charm.opensearch._on_relation_changed(event)
+        harness.charm.opensearch_relation_handler._on_index_created(event)
         return rel_id
 
-    def test_on_relation_changed(self):
+    def test_on_opensearch_index_created(self):
         """Test handling of opensearch relation changed events."""
         harness = self.harness
-        self.opensearch_setup(harness, OPENSEARCH_RELATION_CHANGED_DATA)
+        self.opensearch_setup(
+            harness=harness, data=OPENSEARCH_RELATION_CHANGED_DATA
+        )
 
         self.assertEqual(
             harness.model.unit.status,
@@ -334,15 +368,17 @@ class TestCharm(TestCase):
             "opensearch-host",
         )
 
-    def test_on_relation_broken(self):
+    def test_on_opensearch_relation_broken(self):
         """Test handling of broken relations with opensearch."""
         harness = self.harness
         rel_id = self.opensearch_setup(
-            harness, OPENSEARCH_RELATION_CHANGED_DATA
+            harness=harness, data=OPENSEARCH_RELATION_CHANGED_DATA
         )
         data = OPENSEARCH_RELATION_BROKEN_DATA
         event = make_relation_event(rel_id, "opensearch", data)
-        self.harness.charm.opensearch._on_relation_broken(event)
+        self.harness.charm.opensearch_relation_handler._on_relation_broken(
+            event
+        )
         got_plan = harness.get_container_pebble_plan("ranger").to_dict()
         self.assertEqual(
             got_plan["services"]["ranger"]["environment"][
@@ -392,6 +428,8 @@ def simulate_admin_lifecycle(harness):
     # Simulate pebble readiness.
     container = harness.model.unit.get_container("ranger")
     harness.charm.on.ranger_pebble_ready.emit(container)
+
+    harness.handle_exec("ranger", [f"{JAVA_HOME}/bin/keytool"], result=0)
 
     # Simulate database readiness.
     event = make_database_changed_event()

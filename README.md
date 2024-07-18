@@ -27,7 +27,7 @@ juju deploy ranger-k8s
 juju deploy postgresql-k8s --channel 14/stable --trust
 juju relate ranger-k8s:db postgresql-k8s:database
 ```
-Refer to [CONTRIBUTING.md](./CONTRIBUTING.md) for details on building the charm and ranger image. 
+Refer to [CONTRIBUTING.md](./CONTRIBUTING.md) for details on bootstrapping a juju controller for microk8s.
 
 ### Group management with Apache Ranger
 The Charmed Ranger Operator makes use of [Ranger usersync](https://cwiki.apache.org/confluence/display/RANGER/Apache+Ranger+Usersync) to synchronize users, groups and memberships from a compatible LDAP server (eg. openldap, ActiveDirectory) to Ranger admin. The usersync functionality can be configured on deployment of the Ranger Charm. While you can scale the Ranger admin application, you should only have 1 Usersync deployed.
@@ -47,7 +47,7 @@ Related applications must have the Ranger plugin configured. The Ranger plugin s
 #### Service name
 Before relation of an application to the Ranger charm, the application's `ranger-service-name` configuration parameter should be set. This will be the name of the Ranger service created for the application.
 
-#### Trino relation
+#### Charmed Trino relation
 The configuration of these groups is done automatically on relation with the Ranger charm in the [Trino K8s charm](https://charmhub.io/trino-k8s).
 
 ```
@@ -60,6 +60,65 @@ juju status --relations
 # provide the ranger configuration file:
 juju config ranger-k8s --file=user-group-configuration.yaml
 ```
+
+### Charmed OpenSearch relation
+[Charmed OpenSearch](https://charmhub.io/opensearch) should be integrated with the Ranger admin charm to enable auditing functionality for data access.
+
+Charmed OpenSearch is a machine charm, unlike Charmed Ranger which is a K8s charm. As such we will need to bootstrap a LXD controller and implement a cross-controller relation. This can be achieved by:
+
+```
+# Bootstrap a LXD controller
+juju bootstrap lxd lxd-controller
+
+# Add a Model for OpenSearch
+juju add-model opensearch
+
+# Configure system settings required by OpenSearch
+cat <<EOF > cloudinit-userdata.yaml
+cloudinit-userdata: |
+  postruncmd:
+    - [ 'echo', 'vm.max_map_count=262144', '>>', '/etc/sysctl.conf' ]
+    - [ 'echo', 'vm.swappiness=0', '>>', '/etc/sysctl.conf' ]
+    - [ 'echo', 'net.ipv4.tcp_retries2=5', '>>', '/etc/sysctl.conf' ]
+    - [ 'echo', 'fs.file-max=1048576', '>>', '/etc/sysctl.conf' ]
+    - [ 'sysctl', '-p' ]
+EOF
+
+sudo tee -a /etc/sysctl.conf > /dev/null <<EOT
+vm.max_map_count=262144
+vm.swappiness=0
+net.ipv4.tcp_retries2=5
+fs.file-max=1048576
+EOT
+
+sudo sysctl -p
+
+juju model-config --file=./cloudinit-userdata.yaml
+
+# Deploy OpenSearch
+juju deploy ch:opensearch --channel=2/edge
+
+# Deploy self-signed-certificates operator for enabling TLS
+juju deploy self-signed-certificates --channel=latest/stable
+
+# Enable TLS via relation
+juju integrate self-signed-certificates opensearch
+
+# Scale OpenSearch to 3 units
+juju add-unit opensearch -n 2
+
+# Offer the `opensearch-client` endpoint for consumption
+juju offer opensearch:opensearch-client
+
+# Switch back to your K8s controller and consume offer
+juju switch ranger-controller
+juju consume lxd-controller:admin/opensearch.opensearch
+
+# Finally, relate the applications
+juju relate ranger-k8s opensearch
+```
+
+More details on the setup process can be found [here](https://charmhub.io/opensearch/docs/t-overview).
 
 ### Ingress
 The Ranger operator exposes its ports using the Nginx Ingress Integrator operator. You must first make sure to have an Nginx Ingress Controller deployed. To enable TLS connections, you must have a TLS certificate stored as a k8s secret (default name is "ranger-tls"). A self-signed certificate for development purposes can be created as follows:

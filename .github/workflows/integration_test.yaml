@@ -27,3 +27,36 @@ jobs:
           channel: 1.25-strict/stable
       - name: Run integration tests
         run: tox -e ${{ matrix.tox-environments }}
+  integration-test-cross-controller:
+    name: Integration tests (microk8s & lxd)
+    strategy:
+      matrix:
+        tox-environments:
+          - integration-opensearch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Setup K8s environment
+        uses: charmed-kubernetes/actions-operator@main
+        with:
+          juju-channel: 3.1/stable
+          provider: microk8s
+          microk8s-addons: "ingress storage dns rbac registry"
+          channel: 1.25-strict/stable
+      - name: Save K8s controller name
+        id: k8s-controller
+        run: echo "name=$CONTROLLER_NAME" >> $GITHUB_OUTPUT
+      - name: Setup LXD environment
+        uses: charmed-kubernetes/actions-operator@main
+        with:
+          juju-channel: 3.0/stable
+          provider: lxd
+      - name: Save LXD controller name
+        id: lxd-controller
+        run: echo "name=$CONTROLLER_NAME" >> $GITHUB_OUTPUT
+      - name: Run integration tests
+        run: tox -e ${{ matrix.tox-environments }}
+        env:
+          K8S_CONTROLLER: ${{ steps.k8s-controller.outputs.name }}
+          LXD_CONTROLLER: ${{ steps.lxd-controller.outputs.name }}

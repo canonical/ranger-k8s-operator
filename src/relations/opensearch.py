@@ -198,7 +198,7 @@ class OpensearchRelationHandler(framework.Object):
                 json=OPENSEARCH_SCHEMA,
                 verify=False,
                 timeout=60,
-            )
+            )  # nosec
         except requests.exceptions.RequestException as e:
             logger.error(
                 f"An exception has occurred while adding the audit schema: {e}"

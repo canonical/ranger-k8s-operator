@@ -251,9 +251,10 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             context: Environment variables for pebble plan.
         """
         db_conn = self._state.database_connection
-        self._state.truststore_pwd = (
-            self._state.truststore_pwd or generate_password()
-        )
+        if self.unit.is_leader():
+            self._state.truststore_pwd = (
+                self._state.truststore_pwd or generate_password()
+            )
         self.set_truststore_password(container)
         opensearch = self._state.opensearch or {}
         if opensearch.get("is_enabled") and not container.exists(

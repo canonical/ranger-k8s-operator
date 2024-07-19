@@ -99,7 +99,7 @@ async def deploy_opensearch(lxd_model: Model):
         lxd_model: The LXD model.
     """
     await asyncio.gather(
-        lxd_model.deploy("ch:opensearch", num_units=1, channel="2/edge"),
+        lxd_model.deploy("ch:opensearch", num_units=3, channel="2/edge"),
         lxd_model.deploy(
             "self-signed-certificates", num_units=1, channel="edge"
         ),

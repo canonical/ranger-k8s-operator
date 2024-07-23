@@ -99,7 +99,7 @@ async def deploy_opensearch(lxd_model: Model):
         lxd_model: The LXD model.
     """
     await asyncio.gather(
-        lxd_model.deploy("ch:opensearch", num_units=1, channel="2/edge"),
+        lxd_model.deploy("ch:opensearch", num_units=2, channel="2/edge"),
         lxd_model.deploy(
             "self-signed-certificates", num_units=1, channel="edge"
         ),
@@ -140,6 +140,7 @@ async def deploy_ranger(
             charm, resources=resources, application_name=APP_NAME
         ),
     )
+    logger.info("Integrating Ranger and Postgresql")
     await k8s_model.integrate(APP_NAME, POSTGRES_NAME)
     await k8s_model.consume(
         f"admin/{lxd_model.name}.opensearch",
@@ -151,6 +152,7 @@ async def deploy_ranger(
         raise_on_blocked=False,
         timeout=1500,
     )
+    logger.info("Integrating Ranger and OpenSearch")
     await k8s_model.integrate(APP_NAME, "opensearch")
     async with ops_test.fast_forward():
         await k8s_model.wait_for_idle(

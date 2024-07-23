@@ -99,7 +99,7 @@ async def deploy_opensearch(lxd_model: Model):
         lxd_model: The LXD model.
     """
     await asyncio.gather(
-        lxd_model.deploy("ch:opensearch", num_units=1, channel="2/edge"),
+        lxd_model.deploy("ch:opensearch", num_units=2, channel="2/edge"),
         lxd_model.deploy(
             "self-signed-certificates", num_units=1, channel="edge"
         ),
@@ -146,18 +146,19 @@ async def deploy_ranger(
         controller_name=lxd_controller_name,
     )
     await k8s_model.wait_for_idle(
-        apps=[APP_NAME, POSTGRES_NAME],
+        apps=[POSTGRES_NAME],
         status="active",
         raise_on_blocked=False,
         timeout=1500,
     )
     await k8s_model.integrate(APP_NAME, "opensearch")
-    await k8s_model.wait_for_idle(
-        apps=[APP_NAME],
-        status="active",
-        raise_on_blocked=False,
-        timeout=1500,
-    )
+    async with ops_test.fast_forward():
+        await k8s_model.wait_for_idle(
+            apps=[APP_NAME],
+            status="active",
+            raise_on_blocked=False,
+            timeout=1500,
+        )
 
 
 @pytest.mark.abort_on_fail
@@ -170,7 +171,8 @@ class TestOpenSearch:
         url = await get_unit_url(
             ops_test, application=APP_NAME, unit=0, port=6080
         )
-        logger.info("curling app address: %s", url)
+        audit_url = f"{url}/service/assets/accessAudit"
+        logger.info("curling app address: %s", audit_url)
 
-        response = requests.get(url, timeout=300, verify=False)  # nosec
+        response = requests.get(audit_url, timeout=300, verify=False)  # nosec
         assert response.status_code == 200

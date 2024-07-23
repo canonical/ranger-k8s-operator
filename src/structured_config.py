@@ -136,7 +136,7 @@ class CharmConfig(BaseConfigModel):
 
     @validator("ranger_admin_password", "ranger_usersync_password")
     @classmethod
-    def password_validator(cls, value: str) -> Optional[str]:
+    def password_validator(cls, value: str) -> str:
         """Validate if the password meets the following requirements.
 
         - Minimum 8 characters in length

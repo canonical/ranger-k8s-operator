@@ -140,18 +140,20 @@ async def deploy_ranger(
             charm, resources=resources, application_name=APP_NAME
         ),
     )
-    logger.info("Integrating Ranger and Postgresql")
-    await k8s_model.integrate(APP_NAME, POSTGRES_NAME)
-    await k8s_model.consume(
-        f"admin/{lxd_model.name}.opensearch",
-        controller_name=lxd_controller_name,
-    )
     await k8s_model.wait_for_idle(
         apps=[POSTGRES_NAME],
         status="active",
         raise_on_blocked=False,
         timeout=1500,
     )
+
+    logger.info("Integrating Ranger and Postgresql")
+    await k8s_model.integrate(APP_NAME, POSTGRES_NAME)
+    await k8s_model.consume(
+        f"admin/{lxd_model.name}.opensearch",
+        controller_name=lxd_controller_name,
+    )
+
     logger.info("Integrating Ranger and OpenSearch")
     await k8s_model.integrate(APP_NAME, "opensearch")
     async with ops_test.fast_forward():

@@ -99,6 +99,7 @@ class TestCharm(TestCase):
                         "DB_USER": "postgres_user",
                         "DB_PWD": "admin",
                         "RANGER_ADMIN_PWD": "rangerR0cks!",
+                        "RANGER_USERSYNC_PWD": "rangerR0cks!",
                         "JAVA_OPTS": "-Duser.timezone=UTC0",
                     },
                 }
@@ -135,6 +136,7 @@ class TestCharm(TestCase):
                     "startup": "enabled",
                     "environment": {
                         "POLICY_MGR_URL": "http://ranger-k8s:6080",
+                        "RANGER_USERSYNC_PWD": "rangerR0cks!",
                         "SYNC_GROUP_USER_MAP_SYNC_ENABLED": True,
                         "SYNC_GROUP_SEARCH_ENABLED": True,
                         "SYNC_GROUP_SEARCH_BASE": "dc=canonical,dc=dev,dc=com",
@@ -172,10 +174,10 @@ class TestCharm(TestCase):
         simulate_admin_lifecycle(harness)
 
         # Update the config.
-        self.harness.update_config({"ranger-admin-password": "secure-pass"})
+        self.harness.update_config({"ranger-admin-password": "s3cure-pass"})
 
         # The new plan reflects the change.
-        want_admin_password = "secure-pass"  # nosec
+        want_admin_password = "rangerR0cks!"  # nosec
         got_admin_password = harness.get_container_pebble_plan(
             "ranger"
         ).to_dict()["services"]["ranger"]["environment"]["RANGER_ADMIN_PWD"]
@@ -185,7 +187,10 @@ class TestCharm(TestCase):
         # The ActiveStatus is set with replan message.
         self.assertEqual(
             harness.model.unit.status,
-            MaintenanceStatus("replanning application"),
+            BlockedStatus(
+                "value of 'ranger-admin-password' config cannot be changed after deployment. "
+                "Value should be rangerR0cks!"
+            ),
         )
 
     def test_ingress(self):

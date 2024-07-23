@@ -225,6 +225,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             "DB_USER": db_conn["user"],
             "DB_PWD": db_conn["password"],
             "RANGER_ADMIN_PWD": self.config["ranger-admin-password"],
+            "RANGER_USERSYNC_PWD": self.config["ranger-usersync-password"],
             "JAVA_OPTS": "-Duser.timezone=UTC0",
         }
         config = render("admin-config.jinja", context)
@@ -258,6 +259,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         context.update(
             {
                 "POLICY_MGR_URL": self.config["policy-mgr-url"],
+                "RANGER_USERSYNC_PWD": self.config["ranger-usersync-password"],
             }
         )
         config = render("ranger-usersync-config.jinja", context)
@@ -267,6 +269,29 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             make_dirs=True,
         )
         return USERSYNC_ENTRYPOINT, context
+
+    def _validate_password(self, password, config_key, state_key):
+        """Validate that the admin and usersync passwords are not changed after deployment.
+
+        Args:
+            password: the deployment password.
+            config_key: the config key for the password.
+            state_key: the key the password is stored in state.
+
+        Raises:
+            ValueError: in case the password has been changed.
+        """
+        if password is None:
+            if self.unit.is_leader():
+                setattr(self._state, state_key, self.config[config_key])
+                logger.info(self._state.ranger_admin_password)
+        elif password != self.config[config_key]:
+            message = (
+                f"value of '{config_key}' config cannot be changed after deployment. "
+                f"Value should be {password}"
+            )
+            logger.error(message)
+            raise ValueError(message)
 
     def validate(self):
         """Validate that configuration and relations are valid and ready.
@@ -282,6 +307,21 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
 
         if self.config["charm-function"].value == "usersync":
             self.ldap.validate()
+
+        ranger_admin_password = self._state.ranger_admin_password
+        ranger_usersync_password = self._state.ranger_usersync_password
+
+        logger.info(ranger_admin_password)
+        self._validate_password(
+            ranger_admin_password,
+            "ranger-admin-password",
+            "ranger_admin_password",
+        )
+        self._validate_password(
+            ranger_usersync_password,
+            "ranger-usersync-password",
+            "ranger_usersync_password",
+        )
 
     def update(self, event):
         """Update the Ranger server configuration and re-plan its execution.

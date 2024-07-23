@@ -31,6 +31,7 @@ class TestUserSync:
 
         ranger_config = {
             "charm-function": "usersync",
+            "ranger-usersync-password": "P@ssw0rd1234",
         }
 
         charm = await ops_test.build_charm(".")

@@ -225,6 +225,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             "DB_USER": db_conn["user"],
             "DB_PWD": db_conn["password"],
             "RANGER_ADMIN_PWD": self.config["ranger-admin-password"],
+            "RANGER_USERSYNC_PWD": self.config["ranger-usersync-password"],
             "JAVA_OPTS": "-Duser.timezone=UTC0",
         }
         config = render("admin-config.jinja", context)
@@ -258,6 +259,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         context.update(
             {
                 "POLICY_MGR_URL": self.config["policy-mgr-url"],
+                "RANGER_USERSYNC_PWD": self.config["ranger-usersync-password"],
             }
         )
         config = render("ranger-usersync-config.jinja", context)

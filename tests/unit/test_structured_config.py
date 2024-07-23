@@ -49,6 +49,33 @@ def test_string_values(_harness) -> None:
     check_valid_values(_harness, "sync-ldap-url", accepted_values)
 
 
+def test_password_fields(_harness) -> None:
+    """Test password fields validation."""
+    erroneous_passwords = [
+        "onlyletters",  # No numbers
+        "12345678",  # No letters
+        "NoSpecialChar123",  # No special characters
+        "Short1!",  # Too short
+    ]
+
+    valid_passwords = [
+        "Valid1Pass!",
+        "AnotherValid2#Password",
+        "Password1$",
+        "P@ssw0rd1234",
+    ]
+
+    check_invalid_values(
+        _harness, "ranger-admin-password", erroneous_passwords
+    )
+    check_valid_values(_harness, "ranger-admin-password", valid_passwords)
+
+    check_invalid_values(
+        _harness, "ranger-usersync-password", erroneous_passwords
+    )
+    check_valid_values(_harness, "ranger-usersync-password", valid_passwords)
+
+
 def check_valid_values(_harness, field: str, accepted_values: list) -> None:
     """Check the correctness of the passed values for a field.
 

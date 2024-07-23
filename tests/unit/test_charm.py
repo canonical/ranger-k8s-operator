@@ -177,7 +177,7 @@ class TestCharm(TestCase):
         self.harness.update_config({"ranger-admin-password": "s3cure-pass"})
 
         # The new plan reflects the change.
-        want_admin_password = "s3cure-pass"  # nosec
+        want_admin_password = "rangerR0cks!"  # nosec
         got_admin_password = harness.get_container_pebble_plan(
             "ranger"
         ).to_dict()["services"]["ranger"]["environment"]["RANGER_ADMIN_PWD"]
@@ -187,7 +187,10 @@ class TestCharm(TestCase):
         # The ActiveStatus is set with replan message.
         self.assertEqual(
             harness.model.unit.status,
-            MaintenanceStatus("replanning application"),
+            BlockedStatus(
+                "value of 'ranger-admin-password' config cannot be changed after deployment. "
+                "Value should be rangerR0cks!"
+            ),
         )
 
     def test_ingress(self):

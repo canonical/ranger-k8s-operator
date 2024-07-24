@@ -144,13 +144,6 @@ async def integrate_ranger_opensearch(
             raise_on_blocked=False,
             timeout=1500,
         )
-        await lxd_model.wait_for_idle(
-            apps=["opensearch"],
-            status="active",
-            raise_on_blocked=False,
-            timeout=1500,
-        )
-
 
 @pytest.mark.abort_on_fail
 @pytest.mark.usefixtures("deploy-opensearch")

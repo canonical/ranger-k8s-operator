@@ -19,7 +19,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
       - name: Setup operator environment
-        uses: charmed-kubernetes/actions-operator@main
+        uses: canonical/operator-workflows/.github/workflows/integration_test.yaml@main
         with:
           juju-channel: 3.1/stable
           provider: microk8s
@@ -40,7 +40,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
       - name: Setup K8s environment
-        uses: charmed-kubernetes/actions-operator@main
+        uses: canonical/operator-workflows/.github/workflows/integration_test.yaml@main
         with:
           juju-channel: 3.1/stable
           provider: microk8s
@@ -52,7 +52,7 @@ jobs:
         id: k8s-controller
         run: echo "name=$CONTROLLER_NAME" >> $GITHUB_OUTPUT
       - name: Setup LXD environment
-        uses: charmed-kubernetes/actions-operator@main
+        uses: canonical/operator-workflows/.github/workflows/integration_test.yaml@main
         with:
           juju-channel: 3.0/stable
           provider: lxd

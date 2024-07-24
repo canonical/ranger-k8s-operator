@@ -60,8 +60,9 @@ async def test_setup_models(ops_test: OpsTest):
         ops_test, lxd_controller, lxd_model_name
     )
     await lxd_model.set_config(LXD_MODEL_CONFIG)
-    await deploy_ranger(ops_test, k8s_model)
     await deploy_opensearch(lxd_model)
+    await deploy_ranger(ops_test, k8s_model)
+
     await integrate_ranger_opensearch(
         ops_test, k8s_model, lxd_model, lxd_controller_name
     )
@@ -74,19 +75,15 @@ async def deploy_opensearch(lxd_model: Model):
         lxd_model: The LXD model.
     """
     logger.info("deploying opensearch")
-    await lxd_model.deploy("ch:opensearch", num_units=2, channel="2/edge")
-    await lxd_model.wait_for_idle(
-        apps=["opensearch"],
-        status="active",
-        raise_on_blocked=False,
-        timeout=3000,
-    )
-    await lxd_model.deploy(
-        "self-signed-certificates", num_units=1, channel="edge"
+    await asyncio.gather(
+        lxd_model.deploy("ch:opensearch", num_units=2, channel="2/edge"),
+        lxd_model.deploy(
+            "self-signed-certificates", num_units=1, channel="edge"
+        ),
     )
     await lxd_model.add_relation("self-signed-certificates", "opensearch")
     await lxd_model.wait_for_idle(
-        apps=["opensearch"],
+        apps=["opensearch", "self-signed-certificates"],
         status="active",
         raise_on_blocked=False,
         timeout=3000,

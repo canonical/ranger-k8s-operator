@@ -36,64 +36,23 @@ async def test_setup_models(ops_test: OpsTest):
     lxd_controller_name = os.environ["LXD_CONTROLLER"]
     k8s_controller_name = os.environ["K8S_CONTROLLER"]
 
-    _, lxd_model = await setup_lxd_controller_and_model(
-        ops_test, lxd_controller_name
-    )
-    _, k8s_model = await setup_k8s_controller_and_model(
-        ops_test, k8s_controller_name
-    )
-    await deploy_ranger(ops_test, k8s_model)
+    k8s_model_name = lxd_model_name = ops_test.model_name
+
+    lxd_controller = Controller()
+    await lxd_controller.connect(lxd_controller_name)
+    lxd_model = await get_or_add_model(ops_test, lxd_controller, lxd_model_name)
+    await lxd_model.set_config(LXD_MODEL_CONFIG)
     await deploy_opensearch(lxd_model)
+
+    k8s_controller = Controller()
+    await k8s_controller.connect(k8s_controller_name)
+    k8s_model = await get_or_add_model(ops_test, k8s_controller, k8s_model_name)
+    await k8s_model.set_config({"logging-config": "<root>=WARNING; unit=DEBUG"})
+    await deploy_ranger(ops_test, k8s_model)
+    
     await integrate_ranger_opensearch(
         ops_test, k8s_model, lxd_model, lxd_controller_name
     )
-
-
-async def setup_lxd_controller_and_model(
-    ops_test: OpsTest, lxd_controller_name: str
-):
-    """Setup LXD controller and model.
-
-    Args:
-        ops_test: PyTest object.
-        lxd_controller_name: The LXD controller name.
-
-    Returns:
-        lxd_controller: The LXD controller.
-        lxd_model: The LXD model.
-    """
-    lxd_controller = Controller()
-    await lxd_controller.connect(lxd_controller_name)
-    lxd_model = await get_or_add_model(
-        ops_test, lxd_controller, ops_test.model_name
-    )
-    await lxd_model.set_config(LXD_MODEL_CONFIG)
-    return lxd_controller, lxd_model
-
-
-async def setup_k8s_controller_and_model(
-    ops_test: OpsTest, k8s_controller_name: str
-):
-    """Setup K8s controller and model.
-
-    Args:
-        ops_test: PyTest object.
-        k8s_controller_name: The name of the K8s controller.
-
-    Returns:
-        k8s_controller: The K8s controller.
-        K8s_model: The K8s model.
-    """
-    k8s_controller = Controller()
-    await k8s_controller.connect(k8s_controller_name)
-    k8s_model = await get_or_add_model(
-        ops_test, k8s_controller, ops_test.model_name
-    )
-    await k8s_model.set_config(
-        {"logging-config": "<root>=WARNING; unit=DEBUG"}
-    )
-    return k8s_controller, k8s_model
-
 
 async def deploy_opensearch(lxd_model: Model):
     """Deploy OpenSearch and related components.
@@ -150,7 +109,12 @@ async def deploy_ranger(
 
     logger.info("Integrating Ranger and Postgresql")
     await k8s_model.integrate(APP_NAME, POSTGRES_NAME)
-
+    await k8s_model.wait_for_idle(
+        apps=[POSTGRES_NAME, APP_NAME],
+        status="active",
+        raise_on_blocked=False,
+        timeout=1500,
+    )
 
 async def integrate_ranger_opensearch(
     ops_test: OpsTest,
@@ -172,7 +136,12 @@ async def integrate_ranger_opensearch(
             raise_on_blocked=False,
             timeout=1500,
         )
-
+        await lxd_model.wait_for_idle(
+            apps=["opensearch"],
+            status="active",
+            raise_on_blocked=False,
+            timeout=1500,
+        )
 
 @pytest.mark.abort_on_fail
 @pytest.mark.usefixtures("deploy-opensearch")
@@ -180,7 +149,7 @@ class TestOpenSearch:
     """Integration tests for auditing Ranger charm."""
 
     async def test_ranger_audits(self, ops_test: OpsTest):
-        """Perform GET request on the Trino UI host."""
+        """Perform GET request on the Ranger audits endpoint."""
         url = await get_unit_url(
             ops_test, application=APP_NAME, unit=0, port=6080
         )

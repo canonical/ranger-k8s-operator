@@ -25,6 +25,8 @@ jobs:
           provider: microk8s
           microk8s-addons: "ingress storage dns rbac registry"
           channel: 1.25-strict/stable
+          self-hosted-runner: true
+          self-hosted-runner-label: "xlarge"
       - name: Run integration tests
         run: tox -e ${{ matrix.tox-environments }}
   integration-test-cross-controller:
@@ -44,6 +46,8 @@ jobs:
           provider: microk8s
           microk8s-addons: "ingress storage dns rbac registry"
           channel: 1.25-strict/stable
+          self-hosted-runner: true
+          self-hosted-runner-label: "xlarge"
       - name: Save K8s controller name
         id: k8s-controller
         run: echo "name=$CONTROLLER_NAME" >> $GITHUB_OUTPUT

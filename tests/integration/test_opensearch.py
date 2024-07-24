@@ -92,20 +92,16 @@ async def deploy_ranger(
     Args:
         ops_test: PyTest object.
         k8s_model: The K8s model for Ranger deployment.
-        lxd_model: The LXD model for OpenSearch deployment.
-        lxd_controller_name: The name of the LXD controller.
     """
+    await k8s_model.deploy(POSTGRES_NAME, channel="14", trust=True)
     charm = await ops_test.build_charm(".")
     resources = {
         "ranger-image": METADATA["resources"]["ranger-image"][
             "upstream-source"
         ]
     }
-    await asyncio.gather(
-        k8s_model.deploy(POSTGRES_NAME, channel="14", trust=True),
-        k8s_model.deploy(
-            charm, resources=resources, application_name=APP_NAME
-        ),
+    await k8s_model.deploy(
+        charm, resources=resources, application_name=APP_NAME
     )
     await k8s_model.wait_for_idle(
         apps=[POSTGRES_NAME],
@@ -130,6 +126,14 @@ async def integrate_ranger_opensearch(
     lxd_model: Model,
     lxd_controller_name: str,
 ):
+    """Integrate Ranegr and OpenSearch.
+
+    Args:
+        ops_test: PyTest object.
+        k8s_model: The K8s model for Ranger deployment.
+        lxd_model: The LXD model for OpenSearch deployment.
+        lxd_controller_name: The name of the LXD controller.
+    """
     await k8s_model.consume(
         f"admin/{lxd_model.name}.opensearch",
         controller_name=lxd_controller_name,
@@ -144,6 +148,7 @@ async def integrate_ranger_opensearch(
             raise_on_blocked=False,
             timeout=1500,
         )
+
 
 @pytest.mark.abort_on_fail
 @pytest.mark.usefixtures("deploy-opensearch")

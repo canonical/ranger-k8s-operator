@@ -76,7 +76,9 @@ async def deploy_opensearch(lxd_model: Model):
     """
     logger.info("deploying opensearch")
     await asyncio.gather(
-        lxd_model.deploy("ch:opensearch", num_units=2, channel="2/edge", revision=118),
+        lxd_model.deploy(
+            "ch:opensearch", num_units=2, channel="2/edge", revision=118
+        ),
         lxd_model.deploy(
             "self-signed-certificates", num_units=1, channel="edge"
         ),

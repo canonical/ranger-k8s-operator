@@ -4,7 +4,10 @@
 options:
   ranger-admin-password:
     description: |
-      Password used for the policy manager (Web interface)
+      The password for Ranger Admin user.
+      Password can not be changed using this property after initial deployment. 
+      It can be changed in the UI.
+      Password should be minimum 8 characters with min one alphabet and one numeric.
     default: "rangerR0cks!"
     type: string
   tls-secret-name:
@@ -116,3 +119,17 @@ options:
       The function the charm should provide, either `admin` or `usersync`.
     type: string
     default: admin
+  lookup-timeout:
+    description: |
+      The default timeout for the resource auto-complete
+      functionality for Ranger service in ms.
+    type: int
+    default: 3000
+  ranger-usersync-password:
+    description: |
+      The password for the user that synchronizes users and groups from LDAP to Ranger admin.
+      Password can not be changed using this property after initial deployment. 
+      It can be changed in the UI.
+      Password should be minimum 8 characters with min one alphabet and one numeric.
+    type: string
+    default: rangerR0cks!

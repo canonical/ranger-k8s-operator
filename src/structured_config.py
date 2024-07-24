@@ -57,9 +57,10 @@ class CharmConfig(BaseConfigModel):
     sync_ldap_user_group_name_attribute: Optional[str]
     sync_ldap_deltasync: bool
     sync_interval: Optional[int]
-    ranger_usersync_password: Optional[str]
+    ranger_usersync_password: str
     policy_mgr_url: str
     charm_function: FunctionType
+    lookup_timeout: int
 
     @validator("*", pre=True)
     @classmethod
@@ -113,3 +114,47 @@ class CharmConfig(BaseConfigModel):
         if re.match(ldap_url_pattern, value) is not None:
             return value
         raise ValueError("Value incorrectly formatted.")
+
+    @validator("lookup_timeout")
+    @classmethod
+    def lookup_timeout_validator(cls, value: str) -> Optional[int]:
+        """Check validity of `lookup_timeout` field.
+
+        Args:
+            value: timeout value
+
+        Returns:
+            int_value: integer for service configuration
+
+        Raises:
+            ValueError: in the case when the value is out of range
+        """
+        int_value = int(value)
+        if 1000 <= int_value <= 10000:
+            return int_value
+        raise ValueError("Value out of range.")
+
+    @validator("ranger_admin_password", "ranger_usersync_password")
+    @classmethod
+    def password_validator(cls, value: str) -> str:
+        """Validate if the password meets the following requirements.
+
+        - Minimum 8 characters in length
+        - Contains at least one alphabetic character
+        - Contains at least one numeric character
+
+        Args:
+            value: The password to validate.
+
+        Returns:
+            value: The validated password if it meets the requirements.
+
+        Raises:
+            ValueError: If the password does not meet the requirements.
+        """
+        pattern = re.compile(
+            r"^(?=.*[A-Za-z])(?=.*\d)(?=.*[\W_])[A-Za-z\d\W_]{8,}$"
+        )
+        if pattern.match(value):
+            return value
+        raise ValueError("Password does not match requirements.")

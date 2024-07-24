@@ -72,10 +72,10 @@ db_password={{ DB_PWD }}
 
 # change password. Password for below mentioned users can be changed only once using this property.
 #PLEASE NOTE :: Password should be minimum 8 characters with min one alphabet and one numeric.
-rangerAdmin_password={{ RANGER_ADMIN_PWD | default("rangerR0cks!") }}
-rangerTagsync_password={{ RANGER_ADMIN_PWD | default("rangerR0cks!") }}
-rangerUsersync_password={{ RANGER_ADMIN_PWD | default("rangerR0cks!") }}
-keyadmin_password={{ RANGER_ADMIN_PWD | default("rangerR0cks!") }}
+rangerAdmin_password={{ RANGER_ADMIN_PWD }}
+rangerTagsync_password={{ RANGER_ADMIN_PWD }}
+rangerUsersync_password={{ RANGER_USERSYNC_PWD }}
+keyadmin_password={{ RANGER_ADMIN_PWD }}
 
 
 #Source for Audit Store. Currently solr and elasticsearch are supported.

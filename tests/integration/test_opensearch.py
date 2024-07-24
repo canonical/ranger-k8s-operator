@@ -42,9 +42,12 @@ async def test_setup_models(ops_test: OpsTest):
     _, k8s_model = await setup_k8s_controller_and_model(
         ops_test, k8s_controller_name
     )
-    await deploy_ranger(ops_test, k8s_model, lxd_model, lxd_controller_name)
+    await deploy_ranger(ops_test, k8s_model)
     await deploy_opensearch(lxd_model)
-    await integrate_ranger_opensearch(ops_test, k8s_model)
+    await integrate_ranger_opensearch(
+        ops_test, k8s_model, lxd_model, lxd_controller_name
+    )
+
 
 async def setup_lxd_controller_and_model(
     ops_test: OpsTest, lxd_controller_name: str
@@ -117,8 +120,6 @@ async def deploy_opensearch(lxd_model: Model):
 async def deploy_ranger(
     ops_test: OpsTest,
     k8s_model: Model,
-    lxd_model: Model,
-    lxd_controller_name: str,
 ):
     """Deploy Ranger and integrate with OpenSearch.
 
@@ -149,12 +150,19 @@ async def deploy_ranger(
 
     logger.info("Integrating Ranger and Postgresql")
     await k8s_model.integrate(APP_NAME, POSTGRES_NAME)
+
+
+async def integrate_ranger_opensearch(
+    ops_test: OpsTest,
+    k8s_model: Model,
+    lxd_model: Model,
+    lxd_controller_name: str,
+):
     await k8s_model.consume(
         f"admin/{lxd_model.name}.opensearch",
         controller_name=lxd_controller_name,
     )
 
-async def integrate_ranger_opensearch(ops_test: OpsTest, k8s_model: Model):
     logger.info("Integrating Ranger and OpenSearch")
     await k8s_model.integrate(APP_NAME, "opensearch")
     async with ops_test.fast_forward():

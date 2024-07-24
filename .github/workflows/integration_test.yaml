@@ -19,17 +19,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
       - name: Setup operator environment
-        uses: canonical/operator-workflows/.github/workflows/integration_test.yaml@main
+        uses: charmed-kubernetes/actions-operator@main
         with:
           juju-channel: 3.1/stable
           provider: microk8s
           microk8s-addons: "ingress storage dns rbac registry"
           channel: 1.25-strict/stable
-          self-hosted-runner: true
-          self-hosted-runner-label: "xlarge"
       - name: Run integration tests
         run: tox -e ${{ matrix.tox-environments }}
   integration-test-cross-controller:
+    uses: canonical/operator-workflows/.github/workflows/integration_test.yaml@main
+    secrets: inherit
+    with:
+      channel: 1.28-strict/stable
+      modules: '["test_charm.py"]'
+      juju-channel: 3.4/stable
+      self-hosted-runner: true
+      self-hosted-runner-label: "xlarge"
+      microk8s-addons: "dns ingress rbac storage metallb:10.15.119.2-10.15.119.4 registry"
     name: Integration tests (microk8s & lxd)
     strategy:
       matrix:
@@ -40,19 +47,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
       - name: Setup K8s environment
-        uses: canonical/operator-workflows/.github/workflows/integration_test.yaml@main
+        uses: charmed-kubernetes/actions-operator@main
         with:
           juju-channel: 3.1/stable
           provider: microk8s
           microk8s-addons: "ingress storage dns rbac registry"
           channel: 1.25-strict/stable
-          self-hosted-runner: true
-          self-hosted-runner-label: "xlarge"
       - name: Save K8s controller name
         id: k8s-controller
         run: echo "name=$CONTROLLER_NAME" >> $GITHUB_OUTPUT
       - name: Setup LXD environment
-        uses: canonical/operator-workflows/.github/workflows/integration_test.yaml@main
+        uses: charmed-kubernetes/actions-operator@main
         with:
           juju-channel: 3.0/stable
           provider: lxd

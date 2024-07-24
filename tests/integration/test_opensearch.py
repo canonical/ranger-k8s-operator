@@ -74,20 +74,24 @@ async def deploy_opensearch(lxd_model: Model):
         lxd_model: The LXD model.
     """
     logger.info("deploying opensearch")
-    await asyncio.gather(
-        lxd_model.deploy("ch:opensearch", num_units=2, channel="2/edge"),
-        lxd_model.deploy(
-            "self-signed-certificates", num_units=1, channel="edge"
-        ),
-    )
-    await lxd_model.add_relation("self-signed-certificates", "opensearch")
-    await lxd_model.create_offer("opensearch:opensearch-client")
+    await lxd_model.deploy("ch:opensearch", num_units=2, channel="2/edge")
     await lxd_model.wait_for_idle(
         apps=["opensearch"],
         status="active",
         raise_on_blocked=False,
         timeout=3000,
     )
+    await lxd_model.deploy(
+        "self-signed-certificates", num_units=1, channel="edge"
+    )
+    await lxd_model.add_relation("self-signed-certificates", "opensearch")
+    await lxd_model.wait_for_idle(
+        apps=["opensearch"],
+        status="active",
+        raise_on_blocked=False,
+        timeout=3000,
+    )
+    await lxd_model.create_offer("opensearch:opensearch-client")
 
 
 async def deploy_ranger(

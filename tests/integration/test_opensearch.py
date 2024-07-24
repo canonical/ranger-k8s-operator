@@ -170,7 +170,7 @@ async def deploy_ranger(
 class TestOpenSearch:
     """Integration tests for auditing Ranger charm."""
 
-    async def test_ranger_ui(self, ops_test: OpsTest):
+    async def test_ranger_audits(self, ops_test: OpsTest):
         """Perform GET request on the Trino UI host."""
         url = await get_unit_url(
             ops_test, application=APP_NAME, unit=0, port=6080

@@ -33,7 +33,7 @@ jobs:
       matrix:
         tox-environments:
           - integration-opensearch
-    runs-on: ["self-hosted", "linux", "X64", "jammy", "xlarge"]
+    runs-on: ["self-hosted", "linux", "X64", "jammy", "large"]
     timeout-minutes: 120
     steps:
       - name: Checkout

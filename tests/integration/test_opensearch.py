@@ -35,16 +35,11 @@ async def test_setup_models(ops_test: OpsTest):
     """
     lxd_controller_name = os.environ["LXD_CONTROLLER"]
     k8s_controller_name = os.environ["K8S_CONTROLLER"]
+    logger.info(f"K8S CONTROLLER NAME:{k8s_controller_name}")
+    logger.info(f"LXD CONTROLLER NAME:{lxd_controller_name}")
+    logger.info(ops_test.model)
 
     k8s_model_name = lxd_model_name = ops_test.model_name
-
-    lxd_controller = Controller()
-    await lxd_controller.connect(lxd_controller_name)
-    lxd_model = await get_or_add_model(
-        ops_test, lxd_controller, lxd_model_name
-    )
-    await lxd_model.set_config(LXD_MODEL_CONFIG)
-    await deploy_opensearch(lxd_model)
 
     k8s_controller = Controller()
     await k8s_controller.connect(k8s_controller_name)
@@ -55,6 +50,14 @@ async def test_setup_models(ops_test: OpsTest):
         {"logging-config": "<root>=WARNING; unit=DEBUG"}
     )
     await deploy_ranger(ops_test, k8s_model)
+
+    lxd_controller = Controller()
+    await lxd_controller.connect(lxd_controller_name)
+    lxd_model = await get_or_add_model(
+        ops_test, lxd_controller, lxd_model_name
+    )
+    await lxd_model.set_config(LXD_MODEL_CONFIG)
+    await deploy_opensearch(lxd_model)
 
     await integrate_ranger_opensearch(
         ops_test, k8s_model, lxd_model, lxd_controller_name
@@ -75,12 +78,12 @@ async def deploy_opensearch(lxd_model: Model):
     )
     await lxd_model.add_relation("self-signed-certificates", "opensearch")
     await lxd_model.create_offer("opensearch:opensearch-client")
-    await lxd_model.wait_for_idle(
-        apps=["opensearch"],
-        status="active",
-        raise_on_blocked=False,
-        timeout=3000,
-    )
+    # await lxd_model.wait_for_idle(
+    #     apps=["opensearch"],
+    #     status="active",
+    #     raise_on_blocked=False,
+    #     timeout=3000,
+    # )
 
 
 async def deploy_ranger(

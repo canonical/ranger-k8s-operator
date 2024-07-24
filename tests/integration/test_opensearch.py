@@ -35,30 +35,33 @@ async def test_setup_models(ops_test: OpsTest):
     """
     lxd_controller_name = os.environ["LXD_CONTROLLER"]
     k8s_controller_name = os.environ["K8S_CONTROLLER"]
-    logger.info(f"K8S CONTROLLER NAME:{k8s_controller_name}")
-    logger.info(f"LXD CONTROLLER NAME:{lxd_controller_name}")
-    logger.info(ops_test.model)
 
     k8s_model_name = lxd_model_name = ops_test.model_name
 
+    logger.info(
+        f"connecting to k8s controller and creating model {k8s_model_name}"
+    )
     k8s_controller = Controller()
     await k8s_controller.connect(k8s_controller_name)
     k8s_model = await get_or_add_model(
         ops_test, k8s_controller, k8s_model_name
     )
+    logger.info(k8s_model)
     await k8s_model.set_config(
         {"logging-config": "<root>=WARNING; unit=DEBUG"}
     )
-    await deploy_ranger(ops_test, k8s_model)
 
+    logger.info(
+        f"connecting to lxd controller and creating model {lxd_model_name}"
+    )
     lxd_controller = Controller()
     await lxd_controller.connect(lxd_controller_name)
     lxd_model = await get_or_add_model(
         ops_test, lxd_controller, lxd_model_name
     )
     await lxd_model.set_config(LXD_MODEL_CONFIG)
+    await deploy_ranger(ops_test, k8s_model)
     await deploy_opensearch(lxd_model)
-
     await integrate_ranger_opensearch(
         ops_test, k8s_model, lxd_model, lxd_controller_name
     )

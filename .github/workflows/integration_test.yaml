@@ -28,15 +28,6 @@ jobs:
       - name: Run integration tests
         run: tox -e ${{ matrix.tox-environments }}
   integration-test-cross-controller:
-    uses: canonical/operator-workflows/.github/workflows/integration_test.yaml@main
-    secrets: inherit
-    with:
-      channel: 1.28-strict/stable
-      modules: '["test_charm.py"]'
-      juju-channel: 3.4/stable
-      self-hosted-runner: true
-      self-hosted-runner-label: "xlarge"
-      microk8s-addons: "dns ingress rbac storage metallb:10.15.119.2-10.15.119.4 registry"
     name: Integration tests (microk8s & lxd)
     strategy:
       matrix:

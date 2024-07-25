@@ -156,5 +156,5 @@ async def get_or_add_model(
             model_name=model_name,
             keep=False,
         )
-
+        logger.info(f"model {model_name} created")
     return await controller.get_model(model_name)

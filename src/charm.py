@@ -278,7 +278,6 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             "JAVA_OPTS": f"-Duser.timezone=UTC0 -Djavax.net.ssl.trustStorePassword={self._state.truststore_pwd}",
             "RANGER_USERSYNC_PWD": self.config["ranger-usersync-password"],
         }
-        logger.info(context)
         config = render("admin-config.jinja", context)
         container.push(
             "/usr/lib/ranger/admin/install.properties", config, make_dirs=True

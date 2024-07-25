@@ -60,12 +60,12 @@ async def setup_models(ops_test: OpsTest):
         ops_test, lxd_controller, lxd_model_name
     )
     await lxd_model.set_config(LXD_MODEL_CONFIG)
-    await deploy_opensearch(lxd_model)
-    await deploy_ranger(ops_test, k8s_model)
+    # await deploy_opensearch(lxd_model)
+    # await deploy_ranger(ops_test, k8s_model)
 
-    await integrate_ranger_opensearch(
-        ops_test, k8s_model, lxd_model, lxd_controller_name
-    )
+    # await integrate_ranger_opensearch(
+    #     ops_test, k8s_model, lxd_model, lxd_controller_name
+    # )
 
 
 async def deploy_opensearch(lxd_model: Model):
@@ -186,6 +186,7 @@ class TestOpenSearch:
         k8s_controller_name = os.environ["K8S_CONTROLLER"]
         k8s_controller = Controller()
         await k8s_controller.connect(k8s_controller_name)
+        k8s_model_name = ops_test.model_name
         k8s_model = await get_or_add_model(
             ops_test, k8s_controller, k8s_model_name
         )

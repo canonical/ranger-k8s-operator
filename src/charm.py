@@ -334,7 +334,6 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         if password is None:
             if self.unit.is_leader():
                 setattr(self._state, state_key, self.config[config_key])
-                logger.info(self._state.ranger_admin_password)
         elif password != self.config[config_key]:
             message = (
                 f"value of '{config_key}' config cannot be changed after deployment. "
@@ -361,7 +360,6 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         ranger_admin_password = self._state.ranger_admin_password
         ranger_usersync_password = self._state.ranger_usersync_password
 
-        logger.info(ranger_admin_password)
         self._validate_password(
             ranger_admin_password,
             "ranger-admin-password",

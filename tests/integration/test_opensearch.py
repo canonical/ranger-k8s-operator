@@ -182,24 +182,32 @@ class TestOpenSearch:
     async def test_ranger_audits(self, ops_test: OpsTest):
         """Perform GET request on the Ranger audits endpoint."""
         logger.info("opensearch and ranger successfully related.")
-        # url = await get_unit_url(
-        #     ops_test, application=APP_NAME, unit=0, port=6080
-        # )
-        # audit_url = f"{url}/service/assets/accessAudit"
-        # logger.info("curling app address: %s", audit_url)
 
-        # response = requests.get(audit_url, timeout=300, verify=False)  # nosec
-        # assert response.status_code == 200
+        k8s_controller_name = os.environ["K8S_CONTROLLER"]
+        k8s_controller = Controller()
+        await k8s_controller.connect(k8s_controller_name)
+        k8s_model = await get_or_add_model(
+            ops_test, k8s_controller, k8s_model_name
+        )
 
+        status = await k8s_model.get_status()  # noqa: F821
+        logger.info(status)
+        address = status["applications"][application]["units"][
+            f"{APP_NAME}/0"
+        ]["address"]
+        url = f"{protocol}://{address}:{port}"
 
-    async def test_destroy(self, ops_test):
+        audit_url = f"{url}/service/assets/accessAudit"
+        logger.info("curling app address: %s", audit_url)
+
+        response = requests.get(audit_url, timeout=300, verify=False)  # nosec
+        assert response.status_code == 200
+
         logger.info("Removing Ranger and Saas")
         await asyncio.gather(
             k8s_model.remove_application(APP_NAME),
-            k8s_model.remove_application(POSTGRES_NAME)
+            k8s_model.remove_application(POSTGRES_NAME),
         )
-        await asyncio.gather(
-            k8s_model.remove_saas("opensearch")
-        )
+        await asyncio.gather(k8s_model.remove_saas("opensearch"))
         # Give it some time to settle, since we cannot block until complete.
         await asyncio.sleep(60)

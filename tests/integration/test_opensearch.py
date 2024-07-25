@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 @pytest.mark.skip_if_deployed
 @pytest_asyncio.fixture(name="deploy-opensearch", scope="module")
-async def test_setup_models(ops_test: OpsTest):
+async def setup_models(ops_test: OpsTest):
     """Setup controllers and models.
 
     Args:
@@ -190,3 +190,16 @@ class TestOpenSearch:
 
         # response = requests.get(audit_url, timeout=300, verify=False)  # nosec
         # assert response.status_code == 200
+
+
+    async def test_destroy(self, ops_test):
+        logger.info("Removing Ranger and Saas")
+        await asyncio.gather(
+            k8s_model.remove_application(APP_NAME),
+            k8s_model.remove_application(POSTGRES_NAME)
+        )
+        await asyncio.gather(
+            k8s_model.remove_saas("opensearch")
+        )
+        # Give it some time to settle, since we cannot block until complete.
+        await asyncio.sleep(60)

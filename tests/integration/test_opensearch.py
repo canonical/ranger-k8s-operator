@@ -16,7 +16,6 @@ from helpers import (
     METADATA,
     POSTGRES_NAME,
     get_or_add_model,
-    get_unit_url,
 )
 from juju.controller import Controller
 from juju.model import Model
@@ -193,16 +192,18 @@ class TestOpenSearch:
 
         status = await k8s_model.get_status()  # noqa: F821
         logger.info(status)
-        address = status["applications"][application]["units"][
-            f"{APP_NAME}/0"
-        ]["address"]
+        address = status["applications"][APP_NAME]["units"][f"{APP_NAME}/0"][
+            "address"
+        ]
         url = f"http://{address}:6080"
 
         audit_url = f"{url}/service/assets/accessAudit"
         logger.info("curling app address: %s", audit_url)
 
         try:
-            response = requests.get(audit_url, timeout=300, verify=False)  # nosec
+            response = requests.get(
+                audit_url, timeout=300, verify=False
+            )  # nosec
             assert response.status_code == 200
         except Exception as e:
             logger.debug(e)
@@ -213,5 +214,6 @@ class TestOpenSearch:
             k8s_model.remove_application(POSTGRES_NAME),
         )
         await asyncio.gather(k8s_model.remove_saas("opensearch"))
+
         # Give it some time to settle, since we cannot block until complete.
         await asyncio.sleep(60)

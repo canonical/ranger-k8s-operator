@@ -45,7 +45,6 @@ async def setup_models(ops_test: OpsTest):
     k8s_model = await get_or_add_model(
         ops_test, k8s_controller, k8s_model_name
     )
-    logger.info(k8s_model)
     await k8s_model.set_config(
         {"logging-config": "<root>=WARNING; unit=DEBUG"}
     )
@@ -215,5 +214,16 @@ class TestOpenSearch:
         )
         await asyncio.gather(k8s_model.remove_saas("opensearch"))
 
+        lxd_controller_name = os.environ["LXD_CONTROLLER"]
+        lxd_controller = Controller()
+        await lxd_controller.connect(lxd_controller_name)
+        lxd_model = await get_or_add_model(
+            ops_test, lxd_controller, ops_test.model_name
+        )
+
+        await asyncio.gather(
+            lxd_model.remove_application("opensearch"),
+            lxd_model.remove_application("self-signed-certificates"),
+        )
         # Give it some time to settle, since we cannot block until complete.
-        await asyncio.sleep(60)
+        await asyncio.sleep(180)

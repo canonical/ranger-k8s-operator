@@ -127,6 +127,12 @@ async def deploy_ranger(
         raise_on_blocked=False,
         timeout=1500,
     )
+    await k8s_model.wait_for_idle(
+        apps=[APP_NAME],
+        status="blocked",
+        raise_on_blocked=False,
+        timeout=1500,
+    )
 
     logger.info("Integrating Ranger and Postgresql")
     await k8s_model.integrate(APP_NAME, POSTGRES_NAME)

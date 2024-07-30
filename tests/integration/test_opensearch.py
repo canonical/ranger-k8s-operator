@@ -208,22 +208,26 @@ class TestOpenSearch:
             logger.debug(e)
 
         logger.info("Removing Ranger and Saas")
+        await k8s_model.applications[APP_NAME].remove_relation(f"{APP_NAME}:opensearch", "opensearch:opensearch-client")
+
+
         await asyncio.gather(
-            k8s_model.remove_application(APP_NAME),
-            k8s_model.remove_application(POSTGRES_NAME),
+            k8s_model.remove_application(APP_NAME, block_until_done=True),
+            k8s_model.remove_application(POSTGRES_NAME, block_until_done=True),
         )
         await asyncio.gather(k8s_model.remove_saas("opensearch"))
 
-        lxd_controller_name = os.environ["LXD_CONTROLLER"]
-        lxd_controller = Controller()
-        await lxd_controller.connect(lxd_controller_name)
-        lxd_model = await get_or_add_model(
-            ops_test, lxd_controller, ops_test.model_name
-        )
+        # logger.info("Removing Opensearch")
+        # lxd_controller_name = os.environ["LXD_CONTROLLER"]
+        # lxd_controller = Controller()
+        # await lxd_controller.connect(lxd_controller_name)
+        # lxd_model = await get_or_add_model(
+        #     ops_test, lxd_controller, ops_test.model_name
+        # )
 
-        await asyncio.gather(
-            lxd_model.remove_application("opensearch"),
-            lxd_model.remove_application("self-signed-certificates"),
-        )
-        # Give it some time to settle, since we cannot block until complete.
-        await asyncio.sleep(180)
+        # await asyncio.gather(
+        #     lxd_model.remove_application("opensearch"),
+        #     lxd_model.remove_application("self-signed-certificates"),
+        # )
+        # # Give it some time to settle, since we cannot block until complete.
+        # await asyncio.sleep(180)

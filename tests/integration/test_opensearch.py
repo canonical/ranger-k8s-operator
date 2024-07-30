@@ -1,0 +1,233 @@
+# Copyright 2023 Canonical Ltd.
+# See LICENSE file for licensing details.
+
+"""Opensearch cross-controller integration test."""
+
+import asyncio
+import logging
+import os
+
+import pytest
+import pytest_asyncio
+import requests
+from helpers import (
+    APP_NAME,
+    LXD_MODEL_CONFIG,
+    METADATA,
+    POSTGRES_NAME,
+    get_or_add_model,
+)
+from juju.controller import Controller
+from juju.model import Model
+from pytest_operator.plugin import OpsTest
+
+logger = logging.getLogger(__name__)
+
+
+@pytest.mark.skip_if_deployed
+@pytest_asyncio.fixture(name="deploy-opensearch", scope="module")
+async def setup_models(ops_test: OpsTest):
+    """Setup controllers and models.
+
+    Args:
+        ops_test: PyTest object.
+    """
+    lxd_controller_name = os.environ["LXD_CONTROLLER"]
+    k8s_controller_name = os.environ["K8S_CONTROLLER"]
+
+    k8s_model_name = lxd_model_name = ops_test.model_name
+
+    logger.info(
+        f"connecting to k8s controller and creating model {k8s_model_name}"
+    )
+    k8s_controller = Controller()
+    await k8s_controller.connect(k8s_controller_name)
+    k8s_model = await get_or_add_model(
+        ops_test, k8s_controller, k8s_model_name
+    )
+    await k8s_model.set_config(
+        {"logging-config": "<root>=WARNING; unit=DEBUG"}
+    )
+
+    logger.info(
+        f"connecting to lxd controller and creating model {lxd_model_name}"
+    )
+    lxd_controller = Controller()
+    await lxd_controller.connect(lxd_controller_name)
+    lxd_model = await get_or_add_model(
+        ops_test, lxd_controller, lxd_model_name
+    )
+    await lxd_model.set_config(LXD_MODEL_CONFIG)
+    await deploy_opensearch(lxd_model)
+    await deploy_ranger(ops_test, k8s_model)
+
+    await integrate_ranger_opensearch(
+        ops_test, k8s_model, lxd_model, lxd_controller_name
+    )
+
+
+async def deploy_opensearch(lxd_model: Model):
+    """Deploy OpenSearch and related components.
+
+    Args:
+        lxd_model: The LXD model.
+    """
+    logger.info("deploying opensearch")
+    await asyncio.gather(
+        lxd_model.deploy(
+            "ch:opensearch",
+            num_units=2,
+            channel="2/edge",
+        ),
+        lxd_model.deploy(
+            "self-signed-certificates", num_units=1, channel="edge"
+        ),
+    )
+    await lxd_model.wait_for_idle(
+        apps=["opensearch"],
+        status="blocked",
+        raise_on_blocked=False,
+        timeout=3000,
+    )
+    await lxd_model.add_relation("self-signed-certificates", "opensearch")
+    await lxd_model.wait_for_idle(
+        apps=["opensearch", "self-signed-certificates"],
+        status="active",
+        raise_on_blocked=False,
+        timeout=3000,
+    )
+    await lxd_model.create_offer("opensearch:opensearch-client")
+
+
+async def deploy_ranger(
+    ops_test: OpsTest,
+    k8s_model: Model,
+):
+    """Deploy Ranger and integrate with OpenSearch.
+
+    Args:
+        ops_test: PyTest object.
+        k8s_model: The K8s model for Ranger deployment.
+    """
+    await k8s_model.deploy(POSTGRES_NAME, channel="14", trust=True)
+    charm = await ops_test.build_charm(".")
+    resources = {
+        "ranger-image": METADATA["resources"]["ranger-image"][
+            "upstream-source"
+        ]
+    }
+    await k8s_model.deploy(
+        charm, resources=resources, application_name=APP_NAME
+    )
+    await k8s_model.wait_for_idle(
+        apps=[POSTGRES_NAME],
+        status="active",
+        raise_on_blocked=False,
+        timeout=1500,
+    )
+    await k8s_model.wait_for_idle(
+        apps=[APP_NAME],
+        status="blocked",
+        raise_on_blocked=False,
+        timeout=1500,
+    )
+
+    logger.info("Integrating Ranger and Postgresql")
+    await k8s_model.integrate(APP_NAME, POSTGRES_NAME)
+    await k8s_model.wait_for_idle(
+        apps=[POSTGRES_NAME, APP_NAME],
+        status="active",
+        raise_on_blocked=False,
+        timeout=1500,
+    )
+
+
+async def integrate_ranger_opensearch(
+    ops_test: OpsTest,
+    k8s_model: Model,
+    lxd_model: Model,
+    lxd_controller_name: str,
+):
+    """Integrate Ranegr and OpenSearch.
+
+    Args:
+        ops_test: PyTest object.
+        k8s_model: The K8s model for Ranger deployment.
+        lxd_model: The LXD model for OpenSearch deployment.
+        lxd_controller_name: The name of the LXD controller.
+    """
+    await k8s_model.consume(
+        f"admin/{lxd_model.name}.opensearch",
+        controller_name=lxd_controller_name,
+    )
+
+    logger.info("Integrating Ranger and OpenSearch")
+    await k8s_model.integrate(APP_NAME, "opensearch")
+    async with ops_test.fast_forward():
+        await k8s_model.wait_for_idle(
+            apps=[APP_NAME],
+            status="active",
+            raise_on_blocked=False,
+            timeout=1500,
+        )
+
+
+@pytest.mark.abort_on_fail
+@pytest.mark.usefixtures("deploy-opensearch")
+class TestOpenSearch:
+    """Integration tests for auditing Ranger charm."""
+
+    async def test_ranger_audits(self, ops_test: OpsTest):
+        """Perform GET request on the Ranger audits endpoint."""
+        logger.info("opensearch and ranger successfully related.")
+
+        k8s_controller_name = os.environ["K8S_CONTROLLER"]
+        k8s_controller = Controller()
+        await k8s_controller.connect(k8s_controller_name)
+        k8s_model_name = ops_test.model_name
+        k8s_model = await get_or_add_model(
+            ops_test, k8s_controller, k8s_model_name
+        )
+
+        status = await k8s_model.get_status()  # noqa: F821
+        logger.info(status)
+        address = status["applications"][APP_NAME]["units"][f"{APP_NAME}/0"][
+            "address"
+        ]
+        url = f"http://{address}:6080"
+
+        audit_url = f"{url}/service/assets/accessAudit"
+        logger.info("curling app address: %s", audit_url)
+
+        try:
+            response = requests.get(
+                audit_url, timeout=300, verify=False
+            )  # nosec
+            assert response.status_code == 200
+        except Exception as e:
+            logger.debug(e)
+
+        logger.info("Removing Ranger and Saas")
+        await k8s_model.applications[APP_NAME].remove_relation(f"{APP_NAME}:opensearch", "opensearch:opensearch-client")
+
+
+        await asyncio.gather(
+            k8s_model.remove_application(APP_NAME, block_until_done=True),
+            k8s_model.remove_application(POSTGRES_NAME, block_until_done=True),
+        )
+        await asyncio.gather(k8s_model.remove_saas("opensearch"))
+
+        # logger.info("Removing Opensearch")
+        # lxd_controller_name = os.environ["LXD_CONTROLLER"]
+        # lxd_controller = Controller()
+        # await lxd_controller.connect(lxd_controller_name)
+        # lxd_model = await get_or_add_model(
+        #     ops_test, lxd_controller, ops_test.model_name
+        # )
+
+        # await asyncio.gather(
+        #     lxd_model.remove_application("opensearch"),
+        #     lxd_model.remove_application("self-signed-certificates"),
+        # )
+        # # Give it some time to settle, since we cannot block until complete.
+        # await asyncio.sleep(180)

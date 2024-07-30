@@ -33,6 +33,10 @@ requires:
     interface: loki_push_api
     optional: true
     limit: 1
+  opensearch:
+    interface: opensearch_client
+    optional: true
+    limit: 1
 
 provides:
   policy:

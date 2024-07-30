@@ -6,6 +6,8 @@
 import functools
 import logging
 import os
+import secrets
+import string
 import time
 
 from apache_ranger.exceptions import RangerServiceException
@@ -173,3 +175,17 @@ def raise_service_error(func):
             raise
 
     return wrapper
+
+
+def generate_password():
+    """Create randomized string for use as truststore password.
+
+    Returns:
+        String of 32 randomized letter+digit characters
+    """
+    return "".join(
+        [
+            secrets.choice(string.ascii_letters + string.digits)
+            for _ in range(32)
+        ]
+    )

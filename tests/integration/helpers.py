@@ -30,6 +30,17 @@ HEADERS = {
 SECURE_PWD = "ubuntuR0cks!"  # nosec
 LDAP_NAME = "comsys-openldap-k8s"
 
+LXD_MODEL_CONFIG = {
+    "logging-config": "<root>=INFO;unit=DEBUG",
+    "update-status-hook-interval": "5m",
+    "cloudinit-userdata": """postruncmd:
+        - [ 'sysctl', '-w', 'vm.max_map_count=262144' ]
+        - [ 'sysctl', '-w', 'fs.file-max=1048576' ]
+        - [ 'sysctl', '-w', 'vm.swappiness=0' ]
+        - [ 'sysctl', '-w', 'net.ipv4.tcp_retries2=5' ]
+    """,
+}
+
 
 async def get_unit_url(
     ops_test: OpsTest, application, unit, port, protocol="http"

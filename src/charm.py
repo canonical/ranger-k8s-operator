@@ -5,9 +5,13 @@
 """Charm the service."""
 
 import logging
+import subprocess  # nosec B404
 
 import ops
-from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
+from charms.data_platform_libs.v0.data_interfaces import (
+    DatabaseRequires,
+    OpenSearchRequires,
+)
 from charms.data_platform_libs.v0.data_models import TypedCharmBase
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LogProxyConsumer
@@ -19,23 +23,25 @@ from ops.model import (
     MaintenanceStatus,
     WaitingStatus,
 )
-from ops.pebble import CheckStatus
+from ops.pebble import CheckStatus, ExecError
 
 from literals import (
     ADMIN_ENTRYPOINT,
     APP_NAME,
     APPLICATION_PORT,
+    JAVA_HOME,
     LOG_FILES,
     METRICS_PORT,
     RELATION_VALUES,
     USERSYNC_ENTRYPOINT,
 )
 from relations.ldap import LDAPRelationHandler
+from relations.opensearch import OpensearchRelationHandler
 from relations.postgres import PostgresRelationHandler
 from relations.provider import RangerProvider
 from state import State
 from structured_config import CharmConfig
-from utils import log_event_handler, render
+from utils import generate_password, log_event_handler, render
 
 # Log messages can be retrieved using juju debug-log
 logger = logging.getLogger(__name__)
@@ -86,6 +92,13 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         self.postgres_relation_handler = PostgresRelationHandler(self)
         self.provider = RangerProvider(self)
         self.ldap = LDAPRelationHandler(self)
+        self.opensearch_relation = OpenSearchRequires(
+            self,
+            relation_name="opensearch",
+            index="ranger_audits",
+            extra_user_roles="admin",
+        )
+        self.opensearch_relation_handler = OpensearchRelationHandler(self)
 
         # Handle Ingress
         self._require_nginx_route()
@@ -207,6 +220,31 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         event.set_results({"result": "ranger successfully restarted"})
         self.unit.status = ActiveStatus()
 
+    def set_truststore_password(self, container):
+        """Update the truststore password to the randomly generated one.
+
+        Args:
+            container: The application container.
+        """
+        command = [
+            f"{JAVA_HOME}/bin/keytool",
+            "-storepass",
+            "changeit",
+            "-storepasswd",
+            "-new",
+            self._state.truststore_pwd,
+            "-keystore",
+            f"{JAVA_HOME}/lib/security/cacerts",
+        ]
+        try:
+            container.exec(command).wait_output()
+        except (subprocess.CalledProcessError, ExecError) as e:
+            if e.stderr and "password was incorrect" in e.stderr:
+                return
+            if e.stderr and "Warning" in e.stderr:
+                return
+            logger.debug(f"Unable to update truststore password {e.stderr}")
+
     def _configure_ranger_admin(self, container):
         """Prepare Ranger Admin install.properties file.
 
@@ -218,15 +256,32 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             context: Environment variables for pebble plan.
         """
         db_conn = self._state.database_connection
+        if self.unit.is_leader():
+            self._state.truststore_pwd = (
+                self._state.truststore_pwd or generate_password()
+            )
+        self.set_truststore_password(container)
+        opensearch = self._state.opensearch or {}
+        if opensearch.get("is_enabled") and not container.exists(
+            "/opensearch.crt"
+        ):
+            self.opensearch_relation_handler.update_certificates()
+
         context = {
             "DB_NAME": db_conn["dbname"],
             "DB_HOST": db_conn["host"],
             "DB_PORT": db_conn["port"],
             "DB_USER": db_conn["user"],
             "DB_PWD": db_conn["password"],
+            "OPENSEARCH_INDEX": opensearch.get("index"),
+            "OPENSEARCH_HOST": opensearch.get("host"),
+            "OPENSEARCH_PORT": opensearch.get("port"),
+            "OPENSEARCH_PWD": opensearch.get("password"),
+            "OPENSEARCH_USER": opensearch.get("username"),
+            "OPENSEARCH_ENABLED": opensearch.get("is_enabled"),
             "RANGER_ADMIN_PWD": self.config["ranger-admin-password"],
+            "JAVA_OPTS": f"-Duser.timezone=UTC0 -Djavax.net.ssl.trustStorePassword={self._state.truststore_pwd}",
             "RANGER_USERSYNC_PWD": self.config["ranger-usersync-password"],
-            "JAVA_OPTS": "-Duser.timezone=UTC0",
         }
         config = render("admin-config.jinja", context)
         container.push(
@@ -284,7 +339,6 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         if password is None:
             if self.unit.is_leader():
                 setattr(self._state, state_key, self.config[config_key])
-                logger.info(self._state.ranger_admin_password)
         elif password != self.config[config_key]:
             message = (
                 f"value of '{config_key}' config cannot be changed after deployment. "
@@ -302,16 +356,19 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         if not self._state.is_ready():
             raise ValueError("peer relation not ready")
 
-        if self.config["charm-function"].value == "admin":
+        charm_function = self.config["charm-function"].value
+        if charm_function == "admin":
             self.postgres_relation_handler.validate()
 
-        if self.config["charm-function"].value == "usersync":
+        if charm_function == "usersync":
             self.ldap.validate()
+
+        if self._state.opensearch and charm_function != "admin":
+            raise ValueError("Only Ranger admin can relate to OpenSearch.")
 
         ranger_admin_password = self._state.ranger_admin_password
         ranger_usersync_password = self._state.ranger_usersync_password
 
-        logger.info(ranger_admin_password)
         self._validate_password(
             ranger_admin_password,
             "ranger-admin-password",

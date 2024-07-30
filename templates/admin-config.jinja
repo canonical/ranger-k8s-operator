@@ -83,13 +83,13 @@ keyadmin_password={{ RANGER_ADMIN_PWD }}
 audit_store=elasticsearch
 
 # * audit_solr_url Elasticsearch Host(s). E.g. 127.0.0.1
-audit_elasticsearch_urls=es01
-audit_elasticsearch_port=9200
-audit_elasticsearch_protocol=http
-audit_elasticsearch_user=elastic
-audit_elasticsearch_password=elasticsearch
-audit_elasticsearch_index=ranger_audits
-audit_elasticsearch_bootstrap_enabled=false
+audit_elasticsearch_urls={{ OPENSEARCH_HOST }}
+audit_elasticsearch_port={{ OPENSEARCH_PORT | default(9200) }}
+audit_elasticsearch_protocol=https
+audit_elasticsearch_user={{ OPENSEARCH_USER }}
+audit_elasticsearch_password={{ OPENSEARCH_PWD }}
+audit_elasticsearch_index={{ OPENSEARCH_INDEX | default(ranger_audits) }}
+audit_elasticsearch_bootstrap_enabled={{ OPENSEARCH_ENABLED | default( False )}}
 
 
 # * audit_solr_url URL to Solr. E.g. http://<solr_host>:6083/solr/ranger_audits

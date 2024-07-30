@@ -9,26 +9,24 @@ import re
 import requests
 from charms.data_platform_libs.v0.data_interfaces import IndexCreatedEvent
 from ops import framework
-from ops.model import BlockedStatus, WaitingStatus
+from ops.model import WaitingStatus
 from ops.pebble import ExecError
 from requests.auth import HTTPBasicAuth
 
-from literals import HEADERS, JAVA_HOME, OPENSEARCH_SCHEMA
+from literals import (
+    CERTIFICATE_NAME,
+    HEADERS,
+    INDEX_NAME,
+    JAVA_HOME,
+    OPENSEARCH_SCHEMA,
+)
 from utils import log_event_handler
 
 logger = logging.getLogger(__name__)
 
 
 class OpensearchRelationHandler(framework.Object):
-    """Client for ranger:postgresql relations.
-
-    Attributes:
-        INDEX_NAME: the opensearch index name.
-        CERTIFICATE_NAME: the name of the opensearch certificate
-    """
-
-    INDEX_NAME = "ranger_audits"
-    CERTIFICATE_NAME = "opensearch-ca"
+    """Client for ranger:postgresql relations."""
 
     def __init__(self, charm, relation_name="opensearch"):
         """Construct.
@@ -52,18 +50,16 @@ class OpensearchRelationHandler(framework.Object):
 
     @log_event_handler(logger)
     def _on_index_created(self, event: IndexCreatedEvent) -> None:
-        """Handle openserach relation changed events.
+        """Handle opensearch relation changed events.
 
         Args:
             event: The event triggered when the relation changed.
         """
-        if not self.charm.unit.is_leader():
+        if not self.charm._state.is_ready():
+            event.defer()
             return
 
-        if not self.charm.config["charm-function"] == "admin":
-            self.charm.unit.status = BlockedStatus(
-                "Only Ranger admin can relate to Opensearch"
-            )
+        if not self.charm.unit.is_leader():
             return
 
         self.charm.unit.status = WaitingStatus(
@@ -78,7 +74,7 @@ class OpensearchRelationHandler(framework.Object):
         Args:
             event: The event triggered when the relation changed.
         """
-        if not self.charm.config["charm-function"] == "admin":
+        if not self.charm._state.is_ready():
             return
 
         if self.charm.unit.is_leader():
@@ -92,6 +88,7 @@ class OpensearchRelationHandler(framework.Object):
         """
         container = self.charm.unit.get_container(self.charm.name)
         if not container.can_connect():
+            logger.debug(f"Unable to connect to {self.charm.name} container.")
             return
 
         certificate = self.charm._state.opensearch_certificate
@@ -107,7 +104,7 @@ class OpensearchRelationHandler(framework.Object):
                 "-file",
                 "/opensearch.crt",
                 "-alias",
-                self.CERTIFICATE_NAME,
+                CERTIFICATE_NAME,
                 "-storepass",
                 truststore_pwd,
                 "--no-prompt",
@@ -119,7 +116,7 @@ class OpensearchRelationHandler(framework.Object):
                 "-keystore",
                 f"{JAVA_HOME}/lib/security/cacerts",
                 "-alias",
-                self.CERTIFICATE_NAME,
+                CERTIFICATE_NAME,
                 "-storepass",
                 truststore_pwd,
             ]
@@ -172,7 +169,7 @@ class OpensearchRelationHandler(framework.Object):
 
         host, port = event_data.get("endpoints").split(",", 1)[0].split(":")
         return {
-            "index": OpensearchRelationHandler.INDEX_NAME,
+            "index": INDEX_NAME,
             "host": host,
             "port": port,
             "password": user_credentials["password"],

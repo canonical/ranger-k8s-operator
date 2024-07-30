@@ -73,7 +73,7 @@ juju bootstrap lxd lxd-controller
 # Add a Model for OpenSearch
 juju add-model opensearch
 
-# Configure system settings required by OpenSearch
+# Configure system settings of the host (required by OpenSearch)
 cat <<EOF > cloudinit-userdata.yaml
 cloudinit-userdata: |
   postruncmd:

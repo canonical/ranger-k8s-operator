@@ -10,8 +10,6 @@ from pathlib import Path
 
 import requests
 import yaml
-from juju.controller import Controller
-from juju.model import Model
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
@@ -132,29 +130,3 @@ async def get_memberships(ops_test: OpsTest, url):
     user_id = data["vXGroupUsers"][0].get("userId")
     membership = (group, user_id)
     return membership
-
-
-async def get_or_add_model(
-    ops_test: OpsTest, controller: Controller, model_name: str
-) -> Model:
-    """Add model if it does not exist and get model.
-
-    Args:
-        ops_test: PyTest object.
-        controller: Juju controller.
-        model_name: Juju model name.
-
-    Returns:
-        Juju model by name.
-    """
-    if model_name not in await controller.get_models():
-        await controller.add_model(model_name)
-        controller_name = controller.controller_name
-        await ops_test.track_model(
-            f"{controller_name}-{model_name}",
-            cloud_name=controller_name,
-            model_name=model_name,
-            keep=False,
-        )
-        logger.info(f"model {model_name} created")
-    return await controller.get_model(model_name)

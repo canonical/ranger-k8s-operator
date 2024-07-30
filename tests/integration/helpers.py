@@ -10,8 +10,6 @@ from pathlib import Path
 
 import requests
 import yaml
-from juju.controller import Controller
-from juju.model import Model
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)

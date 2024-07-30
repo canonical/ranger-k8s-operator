@@ -44,6 +44,9 @@ HEADERS = {
     "Content-Type": "application/json",
 }
 
+# OpenSearch literals
+INDEX_NAME = "ranger_audits"
+CERTIFICATE_NAME = "opensearch-ca"
 OPENSEARCH_SCHEMA = {
     "properties": {
         "_expire_at_": {"type": "date", "store": True, "doc_values": True},

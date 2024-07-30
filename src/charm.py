@@ -5,6 +5,7 @@
 """Charm the service."""
 
 import logging
+import subprocess  # nosec B404
 
 import ops
 from charms.data_platform_libs.v0.data_interfaces import (
@@ -236,9 +237,13 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             f"{JAVA_HOME}/lib/security/cacerts",
         ]
         try:
-            container.exec(command).wait()
-        except ExecError as e:
-            logger.debug(f"Truststore password is already updated: {e.stderr}")
+            container.exec(command).wait_output()
+        except (subprocess.CalledProcessError, ExecError) as e:
+            if e.stderr and "password was incorrect" in e.stderr:
+                return
+            if e.stderr and "Warning" in e.stderr:
+                return
+            logger.debug(f"Unable to update truststore password {e.stderr}")
 
     def _configure_ranger_admin(self, container):
         """Prepare Ranger Admin install.properties file.
@@ -334,7 +339,6 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         if password is None:
             if self.unit.is_leader():
                 setattr(self._state, state_key, self.config[config_key])
-                logger.info(self._state.ranger_admin_password)
         elif password != self.config[config_key]:
             message = (
                 f"value of '{config_key}' config cannot be changed after deployment. "
@@ -352,16 +356,19 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         if not self._state.is_ready():
             raise ValueError("peer relation not ready")
 
-        if self.config["charm-function"].value == "admin":
+        charm_function = self.config["charm-function"].value
+        if charm_function == "admin":
             self.postgres_relation_handler.validate()
 
-        if self.config["charm-function"].value == "usersync":
+        if charm_function == "usersync":
             self.ldap.validate()
+
+        if self._state.opensearch and charm_function != "admin":
+            raise ValueError("Only Ranger admin can relate to OpenSearch.")
 
         ranger_admin_password = self._state.ranger_admin_password
         ranger_usersync_password = self._state.ranger_usersync_password
 
-        logger.info(ranger_admin_password)
         self._validate_password(
             ranger_admin_password,
             "ranger-admin-password",

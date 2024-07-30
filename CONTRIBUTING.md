@@ -21,12 +21,6 @@ tox run -e unit          # unit tests
 tox run -e integration   # integration tests
 tox                      # runs 'format', 'lint', and 'unit' environments
 ```
-To run the cross-controller openserach integration test, you first need to have a k8s and a lxd controller
-bootstrapped, and communicate their names using environment variables:
-
-```shell
-K8S_CONTROLLER="k8s-controller" LXD_CONTROLLER="lxd-controller" tox -e integration-openserach
-```
 
 ## Set up your development environment
 ### Install Microk8s

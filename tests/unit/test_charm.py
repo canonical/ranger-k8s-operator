@@ -36,8 +36,8 @@ USERSYNC_CONFIG_VALUES = {
 }
 
 OPENSEARCH_RELATION_CHANGED_DATA = {
-    "password": "thiahuid",
-    "username": "relation_1",
+    "user-secret": "thiahuid",
+    "tls-secret": "relation_1",
     "endpoints": "opensearch-host:port",
 }
 OPENSEARCH_RELATION_BROKEN_DATA: dict = {"opensearch": {}}

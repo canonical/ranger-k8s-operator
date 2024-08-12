@@ -13,7 +13,12 @@ from ops.charm import CharmBase
 from ops.framework import Object
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
 
-from literals import ADMIN_USER, APPLICATION_PORT, LOCALHOST_URL
+from literals import (
+    ADMIN_USER,
+    APPLICATION_PORT,
+    DEFAULT_POLICIES,
+    LOCALHOST_URL,
+)
 from utils import log_event_handler
 
 logger = logging.getLogger(__name__)
@@ -72,7 +77,7 @@ class RangerProvider(Object):
         logger.info("creating service")
         try:
             ranger = self._create_ranger_client()
-            self._create_ranger_service(ranger, data, event)
+            created_service = self._create_ranger_service(ranger, data, event)
         except RangerServiceException:
             event.defer()
             logger.exception(
@@ -85,7 +90,10 @@ class RangerProvider(Object):
                 "An error occurred while creating the ranger service:"
             )
             return
+        services = self.charm._state.services or {}
+        services[f"relation_{event.relation.id}"] = created_service.id
 
+        self.charm._state.services = services
         self._set_policy_manager(event)
         self.charm.unit.status = ActiveStatus()
 
@@ -106,7 +114,7 @@ class RangerProvider(Object):
             service_id = self.charm._state.services[
                 f"relation_{event.relation.id}"
             ]
-            self._delete_ranger_service(service_id)
+            self._delete_ranger_service(service_id, event.relation.id)
         except RangerServiceException:
             logger.exception(
                 "A Ranger Service Exception has occurred while attempting to delete a service:"
@@ -130,6 +138,9 @@ class RangerProvider(Object):
             ranger: ranger client
             data: relation data
             event: relation event
+
+        Returns:
+            created_service: the object for the created service
         """
         service_name = data["name"]
         retrieved_service = ranger.get_service(service_name)
@@ -137,7 +148,7 @@ class RangerProvider(Object):
             logger.info(
                 f"Service {service_name!r} not created as it already exists."
             )
-            return
+            return None
 
         service = ranger_service.RangerService(
             {"name": service_name, "type": data["type"]}
@@ -158,13 +169,8 @@ class RangerProvider(Object):
         if new_service is None:
             logger.info("Service unable to be created, deferring event.")
             event.defer()
-            return
-
-        logger.info(f"Service {service_name!r} created successfully!")
-
-        services = self.charm._state.services or {}
-        services[f"relation_{event.relation.id}"] = created_service.id
-        self.charm._state.services = services
+            return None
+        return created_service
 
     def _set_policy_manager(self, event):
         """Set the policy manager url in the relation databag.
@@ -196,14 +202,46 @@ class RangerProvider(Object):
         ranger = ranger_client.RangerClient(ranger_url, ranger_auth)
         return ranger
 
-    def _delete_ranger_service(self, service_id):
+    def _delete_ranger_service(self, service_id, relation_id):
         """Delete service in Ranger.
 
         Args:
             service_id: the ID of the service to delete
+            relation_id: the id of the relation
         """
         ranger = self._create_ranger_client()
         retrieved_service = ranger.get_service_by_id(service_id)
 
-        if retrieved_service is not None:
-            ranger.delete_service_by_id(service_id)
+        if retrieved_service is None:
+            return
+
+        if self._has_custom_policies(
+            ranger, retrieved_service.name, relation_id
+        ):
+            logger.warning(
+                f"Service {retrieved_service.name} has non-default policies defined. Deletion aborted."
+            )
+            return
+        ranger.delete_service_by_id(service_id)
+
+    def _has_custom_policies(self, ranger, service_name, relation_id):
+        """Determine if the service has custom policies.
+
+        Args:
+            ranger: ranger client
+            service_name: the name of the ranger service
+            relation_id: the id of the relation
+
+        Returns:
+            bool: if the service contains custom policies
+        """
+        policies = ranger.get_policies_in_service(service_name)
+
+        for policy in policies:
+            if policy["name"] not in DEFAULT_POLICIES:
+                return True
+
+            for item in policy["policyItems"]:
+                if f"relation_id_{relation_id}" not in item["users"]:
+                    return True
+        return False

@@ -89,3 +89,14 @@ OPENSEARCH_SCHEMA = {
         "policyVersion": {"type": "long"},
     }
 }
+DEFAULT_POLICIES = [
+    "all - trinouser",
+    "all - catalog",
+    "all - function",
+    "all - catalog, sessionproperty",
+    "all - catalog, schema, procedure",
+    "all - catalog, schema, table",
+    "all - systemproperty",
+    "all - catalog, schema, table, column",
+    "all - catalog, schema",
+]

@@ -90,6 +90,10 @@ class RangerProvider(Object):
                 "An error occurred while creating the ranger service:"
             )
             return
+
+        if not created_service:
+            return
+
         services = self.charm._state.services or {}
         services[f"relation_{event.relation.id}"] = created_service.id
 

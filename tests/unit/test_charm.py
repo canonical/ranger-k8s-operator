@@ -346,7 +346,7 @@ class TestCharm(TestCase):
         harness.charm.provider._on_relation_changed(event)
         return harness, rel_id
 
-    def test_provider(self):
+    def test_policy_on_relation_changed(self):
         """Test that the provider correctly handles service creation and relation update."""
         harness, rel_id = self.policy_relation_setup()
         relation_data = harness.get_relation_data(rel_id, "ranger-k8s")

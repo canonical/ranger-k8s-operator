@@ -77,7 +77,9 @@ class RangerProvider(Object):
         logger.info("creating service")
         try:
             ranger = self._create_ranger_client()
-            created_service = self._create_ranger_service(ranger, data, event)
+            service, is_created = self._create_ranger_service(
+                ranger, data, event
+            )
         except RangerServiceException:
             event.defer()
             logger.exception(
@@ -91,12 +93,15 @@ class RangerProvider(Object):
             )
             return
 
-        if not created_service:
+        if not service:
+            logger.debug("Unable to create service, deferring event.")
+            event.defer()
+
+        if not is_created:
             return
 
         services = self.charm._state.services or {}
-        services[f"relation_{event.relation.id}"] = created_service.id
-
+        services[f"relation_{event.relation.id}"] = service.id
         self.charm._state.services = services
         self._set_policy_manager(event)
         self.charm.unit.status = ActiveStatus()
@@ -144,15 +149,18 @@ class RangerProvider(Object):
             event: relation event
 
         Returns:
-            created_service: the object for the created service
+            service: the object for the created service
+            is_created: a bool to signify if the service was created in this run.
         """
         service_name = data["name"]
-        retrieved_service = ranger.get_service(service_name)
-        if retrieved_service is not None:
+
+        existing_service = ranger.get_service(service_name)
+        if existing_service is not None:
             logger.info(
                 f"Service {service_name!r} not created as it already exists."
             )
-            return None
+            is_created = False
+            return (existing_service, is_created)
 
         service = ranger_service.RangerService(
             {"name": service_name, "type": data["type"]}
@@ -169,12 +177,12 @@ class RangerProvider(Object):
 
         created_service = ranger.create_service(service)
 
-        new_service = ranger.get_service(service_name)
-        if new_service is None:
-            logger.info("Service unable to be created, deferring event.")
-            event.defer()
-            return None
-        return created_service
+        if not ranger.get_service(service_name):
+            is_created = False
+            return (None, is_created)
+
+        is_created = True
+        return (created_service, is_created)
 
     def _set_policy_manager(self, event):
         """Set the policy manager url in the relation databag.

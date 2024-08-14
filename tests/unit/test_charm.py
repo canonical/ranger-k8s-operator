@@ -340,8 +340,9 @@ class TestCharm(TestCase):
         data = POLICY_RELATION_DATA
         event = make_relation_event(rel_id, "trino-k8s", data)
 
-        mock_create_ranger_service.return_value = MockService(
-            f"relation_{rel_id}", rel_id
+        mock_create_ranger_service.return_value = (
+            MockService(f"relation_{rel_id}", rel_id),
+            True,
         )
         harness.charm.provider._on_relation_changed(event)
         return harness, rel_id

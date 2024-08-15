@@ -61,6 +61,60 @@ USER_SECRET_CONTENT = {
 JAVA_HOME = "/usr/lib/jvm/java-11-openjdk-amd64"
 
 
+class MockService:
+    """Defines functionality for the Ranger MockService."""
+
+    def __init__(self, name, service_id):
+        """Construct MockService object.
+
+        Args:
+            name: Ranger service name.
+            service_id: Ranger service id.
+        """
+        self.name = name
+        self.id = service_id
+
+
+class MockRangerClient:
+    """Defines functionality for the Ranger MockRangerClient."""
+
+    def __init__(self):
+        """Construct MockRangerClient object."""
+        self.services = {}
+        self.policies = {}
+
+    def get_service_by_id(self, service_id):
+        """Mock of get_service_by_id method.
+
+        Args:
+            service_id: Id of the service to fetch.
+
+        Returns:
+            service object
+        """
+        return self.services.get(service_id)
+
+    def get_policies_in_service(self, service_name):
+        """Mock of get_policies_in_service.
+
+        Args:
+            service_name: The service from which to get policies.
+
+        Returns:
+            policies from the service.
+        """
+        return self.policies.get(service_name, [])
+
+    def delete_service_by_id(self, service_id):
+        """Mock of delete_service_by_id.
+
+        Args:
+            service_id: Id of the service to fetch.
+        """
+        if service_id in self.services:
+            del self.services[service_id]
+
+
 class TestCharm(TestCase):
     """Unit tests.
 
@@ -267,8 +321,16 @@ class TestCharm(TestCase):
         )
 
     @mock.patch("charm.RangerProvider._create_ranger_service")
-    def test_provider(self, _create_ranger_service):
-        """The charm relates correctly to the nginx ingress charm."""
+    def policy_relation_setup(self, mock_create_ranger_service):
+        """Setup the policy relation.
+
+        Args:
+            mock_create_ranger_service: mock create_ranger_service method.
+
+        Returns:
+            harness: harness test object.
+            rel_id: The Trino relation Id.
+        """
         harness = self.harness
         simulate_admin_lifecycle(harness)
 
@@ -277,13 +339,63 @@ class TestCharm(TestCase):
 
         data = POLICY_RELATION_DATA
         event = make_relation_event(rel_id, "trino-k8s", data)
-        harness.charm.provider._on_relation_changed(event)
 
-        relation_data = self.harness.get_relation_data(rel_id, "ranger-k8s")
-        assert relation_data == {
+        mock_create_ranger_service.return_value = (
+            MockService(f"relation_{rel_id}", rel_id),
+            True,
+        )
+        harness.charm.provider._on_relation_changed(event)
+        return harness, rel_id
+
+    def test_policy_on_relation_changed(self):
+        """Test that the provider correctly handles service creation and relation update."""
+        harness, rel_id = self.policy_relation_setup()
+        relation_data = harness.get_relation_data(rel_id, "ranger-k8s")
+        expected_data = {
             "policy_manager_url": "http://ranger-k8s:6080",
             "service_name": "trino-service",
         }
+        self.assertEqual(relation_data, expected_data)
+
+    @mock.patch("charm.RangerProvider._create_ranger_service")
+    @mock.patch("charm.RangerProvider._create_ranger_client")
+    def test_on_policy_relation_broken(
+        self, mock_create_ranger_client, mock_create_ranger_service
+    ):
+        """Test handling of broken policy relation and service deletion."""
+        harness, rel_id = self.policy_relation_setup()
+
+        # Set up mock Ranger client
+        mock_ranger_client = MockRangerClient()
+        mock_create_ranger_client.return_value = mock_ranger_client
+
+        # Set up a mock service
+        service_name = f"relation_{rel_id}"
+        mock_service = MockService(name=service_name, service_id=rel_id)
+        mock_ranger_client.services[rel_id] = mock_service
+
+        # Define custom policies for the service
+        mock_ranger_client.policies[service_name] = [
+            {
+                "name": "all - catalog",
+                "policyItems": [{"users": ["custom_user"]}],
+            }
+        ]
+
+        # Simulate relation broken event
+        event = make_relation_event(rel_id, "trino-k8s", {})
+
+        with self.assertLogs(level="WARNING") as log:
+            harness.charm.provider._on_relation_broken(event)
+
+        # Check that the specific warning message is in the logs
+        self.assertTrue(
+            any(
+                "Service relation_1 has non-default policies defined. Deletion aborted."
+                in message
+                for message in log.output
+            )
+        )
 
     def test_ldap_relation_changed(self):
         """The charm uses the configuration values from ldap relation."""

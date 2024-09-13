@@ -13,13 +13,7 @@ from ops.model import WaitingStatus
 from ops.pebble import ExecError
 from requests.auth import HTTPBasicAuth
 
-from literals import (
-    CERTIFICATE_NAME,
-    HEADERS,
-    INDEX_NAME,
-    JAVA_HOME,
-    OPENSEARCH_SCHEMA,
-)
+from literals import CERTIFICATE_NAME, HEADERS, INDEX_NAME, OPENSEARCH_SCHEMA
 from utils import log_event_handler
 
 logger = logging.getLogger(__name__)
@@ -97,10 +91,10 @@ class OpensearchRelationHandler(framework.Object):
         if not relation_broken and certificate:
             container.push("/opensearch.crt", certificate)
             command = [
-                f"{JAVA_HOME}/bin/keytool",
+                "keytool",
                 "-importcert",
                 "-keystore",
-                f"{JAVA_HOME}/lib/security/cacerts",
+                "$JAVA_HOME/lib/security/cacerts",
                 "-file",
                 "/opensearch.crt",
                 "-alias",
@@ -111,10 +105,10 @@ class OpensearchRelationHandler(framework.Object):
             ]
         else:
             command = [
-                f"{JAVA_HOME}/bin/keytool",
+                "keytool",
                 "-delete",
                 "-keystore",
-                f"{JAVA_HOME}/lib/security/cacerts",
+                "$JAVA_HOME/lib/security/cacerts",
                 "-alias",
                 CERTIFICATE_NAME,
                 "-storepass",

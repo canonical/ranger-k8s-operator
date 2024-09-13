@@ -58,8 +58,6 @@ USER_SECRET_CONTENT = {
     -----END CERTIFICATE-----""",
 }
 
-JAVA_HOME = "/usr/lib/jvm/java-11-openjdk-amd64"
-
 
 class MockService:
     """Defines functionality for the Ranger MockService."""
@@ -353,7 +351,6 @@ class TestCharm(TestCase):
         relation_data = harness.get_relation_data(rel_id, "ranger-k8s")
         expected_data = {
             "policy_manager_url": "http://ranger-k8s:6080",
-            "service_name": "trino-service",
         }
         self.assertEqual(relation_data, expected_data)
 
@@ -546,7 +543,7 @@ def simulate_admin_lifecycle(harness):
     container = harness.model.unit.get_container("ranger")
     harness.charm.on.ranger_pebble_ready.emit(container)
 
-    harness.handle_exec("ranger", [f"{JAVA_HOME}/bin/keytool"], result=0)
+    harness.handle_exec("ranger", ["keytool"], result=0)
 
     # Simulate database readiness.
     event = make_database_changed_event()

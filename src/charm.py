@@ -29,7 +29,6 @@ from literals import (
     ADMIN_ENTRYPOINT,
     APP_NAME,
     APPLICATION_PORT,
-    JAVA_HOME,
     LOG_FILES,
     METRICS_PORT,
     RELATION_VALUES,
@@ -227,14 +226,14 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             container: The application container.
         """
         command = [
-            f"{JAVA_HOME}/bin/keytool",
+            "keytool",
             "-storepass",
             "changeit",
             "-storepasswd",
             "-new",
             self._state.truststore_pwd,
             "-keystore",
-            f"{JAVA_HOME}/lib/security/cacerts",
+            "$JAVA_HOME/lib/security/cacerts",
         ]
         try:
             container.exec(command).wait_output()

@@ -5,7 +5,7 @@ Avoid using this README file for information that is maintained or published els
 * documentation > published on (or linked to from) Charmhub
 * detailed contribution guide > documentation or CONTRIBUTING.md
 
-Use links instead.
+Use hyperlinks instead.
 -->
 
 # Ranger K8s Operator

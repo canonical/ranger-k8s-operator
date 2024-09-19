@@ -54,4 +54,4 @@ resources:
   ranger-image:
     type: oci-image
     description: OCI image for Apache Ranger
-    upstream-source: ghcr.io/canonical/charmed-ranger-rock:2.4.0-22.04-edge
+    upstream-source: ghcr.io/canonical/charmed-ranger-rock@sha256:94f3ea2ceff0fe9c3271cbd3bb631275a3e2ab1ada8e52a4bdbeddf83586e81c

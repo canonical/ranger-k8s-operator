@@ -98,6 +98,7 @@ class RangerProvider(Object):
             event.defer()
 
         if not is_created:
+            self._set_policy_manager(event)
             return
 
         services = self.charm._state.services or {}

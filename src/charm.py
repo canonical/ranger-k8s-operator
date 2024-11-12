@@ -225,6 +225,11 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         Args:
             container: The application container.
         """
+        out, _ = container.exec(
+            ["/bin/sh", "-c", "echo $JAVA_HOME"]
+        ).wait_output()
+        java_home = out.strip()
+
         command = [
             "keytool",
             "-storepass",
@@ -233,7 +238,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             "-new",
             self._state.truststore_pwd,
             "-keystore",
-            "$JAVA_HOME/lib/security/cacerts",
+            f"{java_home}/lib/security/cacerts",
         ]
         try:
             container.exec(command).wait_output()

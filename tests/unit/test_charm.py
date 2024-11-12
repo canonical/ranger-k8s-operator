@@ -519,6 +519,9 @@ def simulate_usersync_lifecycle(harness):
     harness.charm.on.ranger_pebble_ready.emit(container)
 
     harness.update_config({"charm-function": "usersync"})
+    harness.handle_exec(
+        "ranger", ["/bin/sh"], result="/usr/lib/jvm/java-21-openjdk-amd64/"
+    )
 
     # Simulate LDAP readiness.
     rel_id = harness.add_relation("ldap", "comsys-openldap-k8s")
@@ -543,6 +546,9 @@ def simulate_admin_lifecycle(harness):
     container = harness.model.unit.get_container("ranger")
     harness.charm.on.ranger_pebble_ready.emit(container)
 
+    harness.handle_exec(
+        "ranger", ["/bin/sh"], result="/usr/lib/jvm/java-21-openjdk-amd64/"
+    )
     harness.handle_exec("ranger", ["keytool"], result=0)
 
     # Simulate database readiness.

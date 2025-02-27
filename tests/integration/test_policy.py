@@ -7,7 +7,7 @@ import logging
 
 import pytest
 from apache_ranger.client import ranger_client
-from helpers import (
+from integration.helpers import (
     APP_NAME,
     RANGER_AUTH,
     TRINO_NAME,

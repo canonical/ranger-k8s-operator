@@ -7,7 +7,7 @@ import logging
 
 import pytest
 import requests
-from helpers import APP_NAME, get_application_url, scale
+from integration.helpers import APP_NAME, get_application_url, scale
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)

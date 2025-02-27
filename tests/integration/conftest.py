@@ -7,7 +7,7 @@ import logging
 
 import pytest
 import pytest_asyncio
-from helpers import APP_NAME, METADATA, POSTGRES_NAME
+from integration.helpers import APP_NAME, METADATA, POSTGRES_NAME
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)

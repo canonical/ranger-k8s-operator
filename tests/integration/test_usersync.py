@@ -7,7 +7,7 @@ import logging
 import time
 
 import pytest
-from helpers import (
+from integration.helpers import (
     APP_NAME,
     LDAP_NAME,
     METADATA,

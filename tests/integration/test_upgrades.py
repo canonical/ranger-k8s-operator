@@ -26,10 +26,10 @@ logger = logging.getLogger(__name__)
 @pytest.fixture(scope="module", name="charm_image")
 def charm_image_fixture(request: FixtureRequest) -> str:
     """The OCI image for charm."""
-    charm_image = request.config.getoption("--ranger-image")
+    charm_image = request.config.getoption("--ranger-k8s-operator-image")
     assert (
         charm_image
-    ), "--ranger-image argument is required which should contain the name of the OCI image."
+    ), "--ranger-k8s-operator-image argument is required which should contain the name of the OCI image."
     return charm_image
 
 

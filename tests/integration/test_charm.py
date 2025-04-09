@@ -10,7 +10,6 @@ import requests
 from integration.conftest import deploy  # noqa: F401, pylint: disable=W0611
 from integration.helpers import (
     APP_NAME,
-    METADATA,
     NGINX_NAME,
     POSTGRES_NAME,
     get_unit_url,
@@ -57,11 +56,15 @@ class TestDeployment:
             == "active"
         )
 
-    async def test_simulate_crash(self, ops_test: OpsTest):
+    async def test_simulate_crash(
+        self, ops_test: OpsTest, charm: str, charm_image: str
+    ):
         """Simulate the crash of the Ranger charm.
 
         Args:
             ops_test: PyTest object.
+            charm: charm path.
+            charm_image: path to rock image to be used.
         """
         # Destroy charm
         await ops_test.model.applications[APP_NAME].destroy()
@@ -70,12 +73,7 @@ class TestDeployment:
         )
 
         # Deploy charm again
-        charm = await ops_test.build_charm(".")
-        resources = {
-            "ranger-image": METADATA["resources"]["ranger-image"][
-                "upstream-source"
-            ]
-        }
+        resources = {"ranger-image": charm_image}
         await ops_test.model.deploy(
             charm,
             resources=resources,

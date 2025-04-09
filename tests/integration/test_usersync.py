@@ -5,19 +5,44 @@
 
 import logging
 import time
+from pathlib import Path
 
 import pytest
+import pytest_asyncio
 from integration.helpers import (
     APP_NAME,
     LDAP_NAME,
-    METADATA,
     USERSYNC_NAME,
     get_memberships,
     get_unit_url,
 )
+from pytest import FixtureRequest
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
+
+
+@pytest.fixture(scope="module", name="charm_image")
+def charm_image_fixture(request: FixtureRequest) -> str:
+    """The OCI image for charm."""
+    charm_image = request.config.getoption("--ranger-image")
+    assert (
+        charm_image
+    ), "--ranger-image argument is required which should contain the name of the OCI image."
+    return charm_image
+
+
+@pytest_asyncio.fixture(scope="module", name="charm")
+async def charm_fixture(
+    request: FixtureRequest, ops_test: OpsTest
+) -> str | Path:
+    """Fetch the path to charm."""
+    charms = request.config.getoption("--charm-file")
+    if not charms:
+        charm = await ops_test.build_charm(".")
+        assert charm, "Charm not built"
+        return charm
+    return charms[0]
 
 
 @pytest.mark.abort_on_fail
@@ -25,7 +50,9 @@ logger = logging.getLogger(__name__)
 class TestUserSync:
     """Integration test Ranger usersync."""
 
-    async def test_user_sync(self, ops_test: OpsTest):
+    async def test_user_sync(
+        self, ops_test: OpsTest, charm: str, charm_image: str
+    ):
         """Validate users and groups have been synchronized from LDAP."""
         await ops_test.model.deploy(LDAP_NAME, channel="edge")
 
@@ -34,11 +61,8 @@ class TestUserSync:
             "ranger-usersync-password": "P@ssw0rd1234",
         }
 
-        charm = await ops_test.build_charm(".")
         resources = {
-            "ranger-image": METADATA["resources"]["ranger-image"][
-                "upstream-source"
-            ]
+            "ranger-image": charm_image,
         }
         action = (
             await ops_test.model.applications[LDAP_NAME]

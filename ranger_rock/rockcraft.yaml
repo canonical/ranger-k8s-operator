@@ -2,7 +2,7 @@
 # See LICENSE file for licensing details.
 ---
 
-name: ranger-k8s-operator
+name: ranger
 base: ubuntu@22.04
 version: 2.5.1-22.04-edge
 summary: Charmed ranger ROCK OCI

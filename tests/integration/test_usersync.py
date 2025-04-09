@@ -25,10 +25,10 @@ logger = logging.getLogger(__name__)
 @pytest.fixture(scope="module", name="charm_image")
 def charm_image_fixture(request: FixtureRequest) -> str:
     """The OCI image for charm."""
-    charm_image = request.config.getoption("--ranger-k8s-operator-image")
+    charm_image = request.config.getoption("--ranger-image")
     assert (
         charm_image
-    ), "--ranger-k8s-operator-image argument is required which should contain the name of the OCI image."
+    ), "--ranger-image argument is required which should contain the name of the OCI image."
     return charm_image
 
 
@@ -55,6 +55,13 @@ class TestUserSync:
     ):
         """Validate users and groups have been synchronized from LDAP."""
         await ops_test.model.deploy(LDAP_NAME, channel="edge")
+
+        await ops_test.model.wait_for_idle(
+            apps=[LDAP_NAME],
+            status="active",
+            raise_on_blocked=False,
+            timeout=600,
+        )
 
         ranger_config = {
             "charm-function": "usersync",

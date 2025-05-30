@@ -5,7 +5,7 @@ This repository contains the packaging metadata for creating a Charmed Ranger RO
 For more information on ROCKs, visit the [rockcraft Github](https://github.com/canonical/rockcraft).
 
 ## Building the ROCK
-The steps outlined below are based on the assumption that you are building the ROCK with the latest LTS of Ubuntu.
+The steps outlined below are based on the assumption that you are building the ROCK with Ubuntu 22.04.
 If you are using another version of Ubuntu or another operating system, the process may be different. 
 To avoid any issue with other operating systems you can simply build the image with [multipass](https://multipass.run/):
 ```bash
@@ -15,8 +15,8 @@ multipass shell rock-dev
 ```
 ### Clone Repository
 ```bash
-git clone https://github.com/canonical/charmed-ranger-rock.git
-cd charmed-ranger-rock
+git clone https://github.com/canonical/ranger-k8s-operator.git
+cd ranger_rock
 ```
 ### Installing & Configuring Prerequisites
 ```bash

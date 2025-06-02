@@ -34,4 +34,5 @@ header:
     - 'LICENSE'
     - 'trivy.yaml'
     - 'lib/**'
+    - 'ranger_rock/local-files/**'
   comment: on-failure

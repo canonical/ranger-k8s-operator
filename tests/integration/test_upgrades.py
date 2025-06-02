@@ -12,7 +12,6 @@ import requests
 import yaml
 from integration.helpers import (
     APP_NAME,
-    METADATA,
     POSTGRES_NAME,
     SECURE_PWD,
     get_unit_url,
@@ -63,13 +62,12 @@ async def deploy(ops_test: OpsTest):
 class TestUpgrade:
     """Integration test for Ranger charm upgrade from previous release."""
 
-    async def test_upgrade(self, ops_test: OpsTest):
+    async def test_upgrade(
+        self, ops_test: OpsTest, charm: str, charm_image: str
+    ):
         """Builds the current charm and refreshes the current deployment."""
-        charm = await ops_test.build_charm(".")
         resources = {
-            "ranger-image": METADATA["resources"]["ranger-image"][
-                "upstream-source"
-            ]
+            "ranger-image": charm_image,
         }
 
         await ops_test.model.applications[APP_NAME].refresh(

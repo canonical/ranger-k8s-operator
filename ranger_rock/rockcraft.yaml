@@ -1,0 +1,177 @@
+# Copyright 2023 Canonical Ltd.
+# See LICENSE file for licensing details.
+---
+
+name: ranger
+base: ubuntu@22.04
+version: 2.5.1-22.04-edge
+summary: Charmed ranger ROCK OCI
+description: |
+  Apache Ranger™ is a framework to enable, monitor and
+  manage comprehensive data security across the Hadoop platform.
+license: Apache-2.0
+
+platforms:
+  amd64:
+
+# Please refer to
+# https://discourse.ubuntu.com/t/unifying-user-identity-across-snaps-and-rocks/36469
+# for more information about shared user.
+run_user: _daemon_
+
+environment:
+  JAVA_HOME: /usr/lib/jvm/java-21-openjdk-amd64
+
+services:
+  ranger-admin:
+    override: replace
+    summary: "ranger admin service"
+    startup: disabled
+    command: "/home/ranger/scripts/ranger-admin-entrypoint.sh"
+    environment:
+      JAVA_OPTS: "-Duser.timezone=UTC0"
+  ranger-usersync:
+    override: replace
+    summary: "ranger usersync service"
+    startup: disabled
+    command: "/home/ranger/scripts/ranger-usersync-entrypoint.sh"
+
+parts:
+  base:
+    plugin: maven
+    maven-parameters: ["-DskipTests=true", "-Dmaven.test.skip=true", "-Drat.skip=true", "-Dpmd.skip=true", "-Dfindbugs.skip=true", "-Dspotbugs.skip=true", "-Dcheckstyle.skip=true", "-Dmaven.wagon.http.ssl.insecure=true", "-Dmaven.wagon.http.ssl.allowall=true", "-Dmaven.wagon.http.ssl.ignore.validity.dates=true"] # yamllint disable-line
+    source: https://github.com/canonical/ranger.git
+    source-branch: ranger-2.5
+    source-type: git
+    build-packages:
+      - build-essential
+      - curl
+      - git
+      - maven
+      - gcc
+      - openjdk-21-jdk-headless
+    build-environment:
+      - JAVA_HOME: /usr/lib/jvm/java-21-openjdk-amd64
+      - RANGER_DIST: /home/ranger/dist
+    override-build: |
+      craftctl default
+
+      # Move target directory
+      mv target ${CRAFT_PART_INSTALL}/target
+    organize:
+      target: home/ranger/dist/target
+    stage:
+      - home/ranger/dist/target/ranger-2.5.1-SNAPSHOT-admin.tar.gz
+      - home/ranger/dist/target/ranger-2.5.1-SNAPSHOT-usersync.tar.gz
+    prime:
+      - "-*"
+
+  admin:
+    after: [base]
+    plugin: nil
+    build-environment:
+      - VERSION: "2.5.1-SNAPSHOT"
+      - RANGER_TARGET: /home/ranger/dist/target
+      - RANGER_HOME: /usr/lib/ranger
+    override-build: |
+      craftctl default
+
+      # Create directories
+      mkdir -p \
+        ${CRAFT_PART_INSTALL}${RANGER_HOME}/admin \
+        ${CRAFT_PART_INSTALL}/var/run/ranger \
+        ${CRAFT_PART_INSTALL}/var/log/ranger \
+        ${CRAFT_PART_INSTALL}/usr/share/java
+
+      # Unpack admin tar
+      tar xvfz \
+        ${CRAFT_STAGE}${RANGER_TARGET}/ranger-${VERSION}-admin.tar.gz \
+        --directory=${CRAFT_PART_INSTALL}${RANGER_HOME}/admin \
+        --strip-components=1
+    stage:
+      - usr/lib/ranger/admin
+      - var/run/ranger
+      - var/log/ranger
+      - usr/share/java
+    permissions:
+      - path: usr/lib/ranger/admin
+        owner: 584792
+        group: 584792
+        mode: "755"
+      - path: var/run/ranger
+        owner: 584792
+        group: 584792
+        mode: "755"
+      - path: var/log/ranger
+        owner: 584792
+        group: 584792
+        mode: "755"
+      - path: usr/share/java
+        owner: 584792
+        group: 584792
+        mode: "755"
+
+  usersync:
+    after: [base]
+    plugin: nil
+    build-environment:
+      - VERSION: "2.5.1-SNAPSHOT"
+      - RANGER_TARGET: /home/ranger/dist/target
+      - RANGER_HOME: /usr/lib/ranger
+    override-build: |
+      craftctl default
+
+      # Create directories
+      mkdir -p \
+        ${CRAFT_PART_INSTALL}${RANGER_HOME}/usersync \
+        ${CRAFT_PART_INSTALL}/var/log/ranger/usersync \
+        ${CRAFT_PART_INSTALL}/etc/ranger
+
+      # Unpack usersync tar
+      tar xvfz \
+        ${CRAFT_STAGE}${RANGER_TARGET}/ranger-${VERSION}-usersync.tar.gz \
+        --directory=${CRAFT_PART_INSTALL}${RANGER_HOME}/usersync \
+        --strip-components=1
+    stage:
+      - usr/lib/ranger/usersync
+      - var/log/ranger/usersync
+      - etc/ranger
+    permissions:
+      - path: usr/lib/ranger/usersync
+        owner: 584792
+        group: 584792
+        mode: "755"
+      - path: var/log/ranger/usersync
+        owner: 584792
+        group: 584792
+        mode: "755"
+      - path: etc/ranger
+        owner: 584792
+        group: 584792
+        mode: "755"
+
+  local-files:
+    plugin: dump
+    source: ./local-files
+    organize:
+      admin-entrypoint.sh: home/ranger/scripts/ranger-admin-entrypoint.sh
+      usersync-entrypoint.sh: home/ranger/scripts/ranger-usersync-entrypoint.sh
+    stage:
+      - home/ranger/scripts/ranger-admin-entrypoint.sh
+      - home/ranger/scripts/ranger-usersync-entrypoint.sh
+    permissions:
+      - path: home/ranger/scripts
+        owner: 584792
+        group: 584792
+        mode: "755"
+
+  package-management:
+    plugin: nil
+    after: [admin, usersync]
+    overlay-packages:
+      - openjdk-21-jdk-headless
+      - ca-certificates
+      - python-is-python3
+    stage-packages:
+      - vim
+      - libpostgresql-jdbc-java

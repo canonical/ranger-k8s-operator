@@ -10,7 +10,6 @@ import pytest
 from integration.helpers import (
     APP_NAME,
     LDAP_NAME,
-    METADATA,
     USERSYNC_NAME,
     get_memberships,
     get_unit_url,
@@ -25,20 +24,26 @@ logger = logging.getLogger(__name__)
 class TestUserSync:
     """Integration test Ranger usersync."""
 
-    async def test_user_sync(self, ops_test: OpsTest):
+    async def test_user_sync(
+        self, ops_test: OpsTest, charm: str, charm_image: str
+    ):
         """Validate users and groups have been synchronized from LDAP."""
         await ops_test.model.deploy(LDAP_NAME, channel="edge")
+
+        await ops_test.model.wait_for_idle(
+            apps=[LDAP_NAME],
+            status="active",
+            raise_on_blocked=False,
+            timeout=600,
+        )
 
         ranger_config = {
             "charm-function": "usersync",
             "ranger-usersync-password": "P@ssw0rd1234",
         }
 
-        charm = await ops_test.build_charm(".")
         resources = {
-            "ranger-image": METADATA["resources"]["ranger-image"][
-                "upstream-source"
-            ]
+            "ranger-image": charm_image,
         }
         action = (
             await ops_test.model.applications[LDAP_NAME]

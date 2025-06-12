@@ -37,7 +37,7 @@ class CharmConfig(BaseConfigModel):
     """Manager for the structured configuration."""
 
     ranger_admin_password: str
-    tls_secret_name: str
+    tls_secret_name: Optional[str]
     external_hostname: str
     sync_ldap_url: Optional[str]
     sync_ldap_bind_dn: Optional[str]

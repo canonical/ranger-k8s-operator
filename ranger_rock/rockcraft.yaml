@@ -168,8 +168,19 @@ parts:
   package-management:
     plugin: nil
     after: [admin, usersync]
-    stage-packages:
+    overlay-packages:
       - openjdk-21-jdk-headless
       - ca-certificates
+    stage-packages:
       - vim
       - libpostgresql-jdbc-java
+
+  python-symlink:
+    plugin: nil
+    after: [package-management]
+    override-build: |
+      craftctl default
+      mkdir -p ${CRAFT_PART_INSTALL}/usr/bin
+      ln -sf python3 ${CRAFT_PART_INSTALL}/usr/bin/python
+    stage:
+      - usr/bin/python

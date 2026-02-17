@@ -176,3 +176,6 @@ parts:
       - python3-minimal
       - vim
       - libpostgresql-jdbc-java
+    override-prime: |
+      craftctl default
+      ln -sf /usr/bin/python3 "${CRAFT_PRIME}/usr/bin/python"

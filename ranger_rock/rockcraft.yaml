@@ -168,10 +168,8 @@ parts:
   package-management:
     plugin: nil
     after: [admin, usersync]
-    overlay-packages:
+    stage-packages:
       - openjdk-21-jdk-headless
       - ca-certificates
-      - python-is-python3
-    stage-packages:
       - vim
       - libpostgresql-jdbc-java

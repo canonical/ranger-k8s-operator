@@ -61,13 +61,14 @@ class TestUserSync:
         )
 
         await ops_test.model.integrate(USERSYNC_NAME, LDAP_NAME)
-        time.sleep(100)  # Provide time for user synchronization to occur.
         await ops_test.model.wait_for_idle(
             apps=[USERSYNC_NAME, LDAP_NAME],
             status="active",
             raise_on_blocked=False,
             timeout=1500,
         )
+        time.sleep(100)  # Provide time for user synchronization to occur.
+        
         url = await get_unit_url(
             ops_test, application=APP_NAME, unit=0, port=6080
         )

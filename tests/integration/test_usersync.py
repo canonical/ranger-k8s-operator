@@ -68,7 +68,7 @@ class TestUserSync:
             timeout=1500,
         )
         time.sleep(100)  # Provide time for user synchronization to occur.
-        
+
         url = await get_unit_url(
             ops_test, application=APP_NAME, unit=0, port=6080
         )

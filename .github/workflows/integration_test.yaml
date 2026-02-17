@@ -13,9 +13,9 @@ jobs:
     uses: canonical/operator-workflows/.github/workflows/integration_test.yaml@main
     secrets: inherit
     with:
-      channel: 1.28-strict/stable
+      channel: 1.35-strict/stable
       modules: '["test_charm.py", "test_policy.py", "test_usersync.py", "test_scaling.py", "test_upgrades.py"]'
-      juju-channel: 3.4/stable
+      juju-channel: 3/stable
       microk8s-addons: "dns ingress rbac storage metallb:10.15.119.2-10.15.119.4 registry"
       self-hosted-runner: true
       self-hosted-runner-label: "self-hosted-linux-amd64-noble-xlarge"

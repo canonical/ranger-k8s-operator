@@ -21,14 +21,14 @@ from state import State
 logger = logging.getLogger(__name__)
 
 LDAP_RELATION_CHANGED_DATA = {
-    "admin_password": "huedw7uiedw7",
+    "admin_password": "huedw7uiedw7",  # nosec
     "base_dn": "dc=canonical,dc=dev,dc=com",
     "ldap_url": "ldap://comsys-openldap-k8s:389",
 }
 LDAP_RELATION_BROKEN_DATA: dict = {"comsys-openldap-k8s": {}}
 USERSYNC_CONFIG_VALUES = {
     "sync-ldap-url": "ldap://config-openldap-k8s:389",
-    "sync-ldap-bind-password": "admin",
+    "sync-ldap-bind-password": "admin",  # nosec
     "sync-ldap-search-base": "dc=canonical,dc=dev,dc=com",
     "sync-ldap-bind-dn": "dc=canonical,dc=dev,dc=com",
     "sync-ldap-user-search-base": "dc=canonical,dc=dev,dc=com",
@@ -49,7 +49,7 @@ POLICY_RELATION_DATA = {
 }
 USER_SECRET_CONTENT = {
     "username": "testuser",
-    "password": "testpassword",
+    "password": "testpassword",  # nosec
     "tls-ca": """-----BEGIN CERTIFICATE-----
     MIIC+DCCAeCgAwIBAgIJAKJdWfG2zRAQMA0GCSqGSIb3DQEBCwUAMIGPMQswCQYD
     -----END CERTIFICATE-----
@@ -175,8 +175,8 @@ class TestCharm(TestCase):
                         "DB_HOST": "myhost",
                         "DB_PORT": "5432",
                         "DB_USER": "postgres_user",
-                        "DB_PWD": "admin",
-                        "RANGER_ADMIN_PWD": "rangerR0cks!",
+                        "DB_PWD": "admin",  # nosec
+                        "RANGER_ADMIN_PWD": "rangerR0cks!",  # nosec
                         "JAVA_OPTS": "-Duser.timezone=UTC0 -Djavax.net.ssl.trustStorePassword=***",
                         "OPENSEARCH_ENABLED": None,
                         "OPENSEARCH_HOST": None,
@@ -184,7 +184,7 @@ class TestCharm(TestCase):
                         "OPENSEARCH_PWD": None,
                         "OPENSEARCH_PORT": None,
                         "OPENSEARCH_USER": None,
-                        "RANGER_USERSYNC_PWD": "rangerR0cks!",
+                        "RANGER_USERSYNC_PWD": "rangerR0cks!",  # nosec
                     },
                 }
             },
@@ -224,14 +224,14 @@ class TestCharm(TestCase):
                     "startup": "enabled",
                     "environment": {
                         "POLICY_MGR_URL": "http://ranger-k8s:6080",
-                        "RANGER_USERSYNC_PWD": "rangerR0cks!",
+                        "RANGER_USERSYNC_PWD": "rangerR0cks!",  # nosec
                         "SYNC_GROUP_USER_MAP_SYNC_ENABLED": True,
                         "SYNC_GROUP_SEARCH_ENABLED": True,
                         "SYNC_GROUP_SEARCH_BASE": "dc=canonical,dc=dev,dc=com",
                         "SYNC_GROUP_OBJECT_CLASS": "posixGroup",
                         "SYNC_INTERVAL": 3600000,
                         "SYNC_LDAP_BIND_DN": "cn=admin,dc=canonical,dc=dev,dc=com",
-                        "SYNC_LDAP_BIND_PASSWORD": "huedw7uiedw7",
+                        "SYNC_LDAP_BIND_PASSWORD": "huedw7uiedw7",  # nosec
                         "SYNC_LDAP_GROUP_SEARCH_SCOPE": "sub",
                         "SYNC_LDAP_SEARCH_BASE": "dc=canonical,dc=dev,dc=com",
                         "SYNC_LDAP_USER_SEARCH_FILTER": None,
@@ -262,7 +262,9 @@ class TestCharm(TestCase):
         simulate_admin_lifecycle(harness)
 
         # Update the config.
-        self.harness.update_config({"ranger-admin-password": "s3cure-pass"})
+        self.harness.update_config(
+            {"ranger-admin-password": "s3cure-pass"}
+        )  # nosec
 
         # The new plan reflects the change.
         want_admin_password = "rangerR0cks!"  # nosec
@@ -598,7 +600,7 @@ def make_database_changed_event():
         {
             "endpoints": "myhost:5432",
             "username": "postgres_user",
-            "password": "admin",
+            "password": "admin",  # nosec
             "database": "ranger-k8s_db",
             "relation": type("Relation", (), {"name": "postgresql_db"}),
         },

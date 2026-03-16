@@ -4,7 +4,7 @@
 
 name: ranger
 base: ubuntu@22.04
-version: 2.5.1-22.04-edge
+version: 2.8.1-22.04-edge
 summary: Charmed ranger ROCK OCI
 description: |
   Apache Ranger™ is a framework to enable, monitor and
@@ -41,7 +41,7 @@ parts:
     plugin: maven
     maven-parameters: ["-DskipTests=true", "-Dmaven.test.skip=true", "-Drat.skip=true", "-Dpmd.skip=true", "-Dfindbugs.skip=true", "-Dspotbugs.skip=true", "-Dcheckstyle.skip=true", "-Dmaven.wagon.http.ssl.insecure=true", "-Dmaven.wagon.http.ssl.allowall=true", "-Dmaven.wagon.http.ssl.ignore.validity.dates=true"] # yamllint disable-line
     source: https://github.com/canonical/ranger.git
-    source-branch: ranger-2.5
+    source-branch: ranger-2.8
     source-type: git
     build-packages:
       - build-essential
@@ -61,8 +61,8 @@ parts:
     organize:
       target: home/ranger/dist/target
     stage:
-      - home/ranger/dist/target/ranger-2.5.1-SNAPSHOT-admin.tar.gz
-      - home/ranger/dist/target/ranger-2.5.1-SNAPSHOT-usersync.tar.gz
+      - home/ranger/dist/target/ranger-2.8.1-SNAPSHOT-admin.tar.gz
+      - home/ranger/dist/target/ranger-2.8.1-SNAPSHOT-usersync.tar.gz
     prime:
       - "-*"
 
@@ -70,7 +70,7 @@ parts:
     after: [base]
     plugin: nil
     build-environment:
-      - VERSION: "2.5.1-SNAPSHOT"
+      - VERSION: "2.8.1-SNAPSHOT"
       - RANGER_TARGET: /home/ranger/dist/target
       - RANGER_HOME: /usr/lib/ranger
     override-build: |
@@ -115,7 +115,7 @@ parts:
     after: [base]
     plugin: nil
     build-environment:
-      - VERSION: "2.5.1-SNAPSHOT"
+      - VERSION: "2.8.1-SNAPSHOT"
       - RANGER_TARGET: /home/ranger/dist/target
       - RANGER_HOME: /usr/lib/ranger
     override-build: |

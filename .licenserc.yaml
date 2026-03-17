@@ -35,4 +35,5 @@ header:
     - 'trivy.yaml'
     - 'lib/**'
     - 'ranger_rock/local-files/**'
+    - '**/*.patch'
   comment: on-failure

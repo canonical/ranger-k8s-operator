@@ -1,0 +1,122 @@
+From ccec237e1c7d29e04133572ccf9c7ab653bf3284 Mon Sep 17 00:00:00 2001
+From: Kristi Gjerko <kristi.gjerko@canonical.com>
+Date: Tue, 17 Mar 2026 15:49:35 +0100
+Subject: [PATCH] fix nashorn and jdk21 compatibility issues
+
+---
+ agents-common/pom.xml                             |  5 +++++
+ .../plugin/util/NashornScriptEngineCreator.java   |  4 ++--
+ .../authorizer/RecordFilterJavaScript.java        |  4 ++--
+ pom.xml                                           | 15 +++++++++++++--
+ .../resources/conf.dist/ranger-admin-site.xml     |  2 +-
+ 5 files changed, 23 insertions(+), 7 deletions(-)
+
+diff --git a/agents-common/pom.xml b/agents-common/pom.xml
+index b75bc2e4d..0ddf5da41 100644
+--- a/agents-common/pom.xml
++++ b/agents-common/pom.xml
+@@ -172,6 +172,11 @@
+             <groupId>org.mockito</groupId>
+             <artifactId>mockito-core</artifactId>
+         </dependency>
++        <dependency>
++            <groupId>org.openjdk.nashorn</groupId>
++            <artifactId>nashorn-core</artifactId>
++            <version>15.4</version>
++        </dependency>
+         <!-- To be added for JDK15 and above
+         <dependency>
+             <groupId>org.graalvm.js</groupId>
+diff --git a/agents-common/src/main/java/org/apache/ranger/plugin/util/NashornScriptEngineCreator.java b/agents-common/src/main/java/org/apache/ranger/plugin/util/NashornScriptEngineCreator.java
+index 4af3d5c63..1f803decf 100644
+--- a/agents-common/src/main/java/org/apache/ranger/plugin/util/NashornScriptEngineCreator.java
++++ b/agents-common/src/main/java/org/apache/ranger/plugin/util/NashornScriptEngineCreator.java
+@@ -23,8 +23,8 @@
+ import org.slf4j.LoggerFactory;
+ 
+ import javax.script.ScriptEngine;
+-import jdk.nashorn.api.scripting.ClassFilter;
+-import jdk.nashorn.api.scripting.NashornScriptEngineFactory;
++import org.openjdk.nashorn.api.scripting.ClassFilter;
++import org.openjdk.nashorn.api.scripting.NashornScriptEngineFactory;
+ 
+ public class NashornScriptEngineCreator implements ScriptEngineCreator {
+     private static final Logger LOG = LoggerFactory.getLogger(NashornScriptEngineCreator.class);
+diff --git a/plugin-nestedstructure/src/main/java/org/apache/ranger/authorization/nestedstructure/authorizer/RecordFilterJavaScript.java b/plugin-nestedstructure/src/main/java/org/apache/ranger/authorization/nestedstructure/authorizer/RecordFilterJavaScript.java
+index 77767767c..34a5cfac3 100644
+--- a/plugin-nestedstructure/src/main/java/org/apache/ranger/authorization/nestedstructure/authorizer/RecordFilterJavaScript.java
++++ b/plugin-nestedstructure/src/main/java/org/apache/ranger/authorization/nestedstructure/authorizer/RecordFilterJavaScript.java
+@@ -20,8 +20,8 @@
+ 
+ package org.apache.ranger.authorization.nestedstructure.authorizer;
+ 
+-import jdk.nashorn.api.scripting.ClassFilter;
+-import jdk.nashorn.api.scripting.NashornScriptEngineFactory;
++import org.openjdk.nashorn.api.scripting.ClassFilter;
++import org.openjdk.nashorn.api.scripting.NashornScriptEngineFactory;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ 
+diff --git a/pom.xml b/pom.xml
+index 52d6d9413..bdcfb2124 100755
+--- a/pom.xml
++++ b/pom.xml
+@@ -88,7 +88,7 @@
+         <dnsjava.version>3.6.2</dnsjava.version>
+         <eclipse.jpa.version>2.7.12</eclipse.jpa.version>
+         <elasticsearch.version>7.17.29</elasticsearch.version>
+-        <enunciate.version>2.13.2</enunciate.version>
++        <enunciate.version>2.17.1</enunciate.version>
+         <fasterxml.jackson.databind.version>2.17.2</fasterxml.jackson.databind.version>
+         <fasterxml.jackson.version>2.17.2</fasterxml.jackson.version>
+         <fasterxml.woodstox.version>5.4.0</fasterxml.woodstox.version>
+@@ -130,6 +130,7 @@
+         <javax.persistence.version>2.1.0</javax.persistence.version>
+         <javax.servlet.version>4.0.0</javax.servlet.version>
+         <javax.validation>2.0.1.Final</javax.validation>
++        <jaxb-core.version>2.3.0.1</jaxb-core.version>
+         <jaxb-impl.version>2.3.3</jaxb-impl.version>
+         <jaxb.api.version>2.3.1</jaxb.api.version>
+         <jericho.html.version>3.3</jericho.html.version>
+@@ -232,6 +233,16 @@
+                 <artifactId>gson</artifactId>
+                 <version>${gson.version}</version>
+             </dependency>
++            <dependency>
++                <groupId>com.sun.xml.bind</groupId>
++                <artifactId>jaxb-core</artifactId>
++                <version>${jaxb-core.version}</version>
++            </dependency>
++            <dependency>
++                <groupId>com.sun.xml.bind</groupId>
++                <artifactId>jaxb-impl</artifactId>
++                <version>${jaxb-impl.version}</version>
++            </dependency>
+             <dependency>
+                 <groupId>com.webcohesion.enunciate</groupId>
+                 <artifactId>enunciate-core-annotations</artifactId>
+@@ -303,7 +314,7 @@
+             <dependency>
+                 <groupId>org.glassfish.jaxb</groupId>
+                 <artifactId>jaxb-runtime</artifactId>
+-                <version>${jaxb.api.version}</version>
++                <version>${jaxb-impl.version}</version>
+             </dependency>
+             <dependency>
+                 <groupId>org.glassfish.jersey.core</groupId>
+diff --git a/security-admin/src/main/resources/conf.dist/ranger-admin-site.xml b/security-admin/src/main/resources/conf.dist/ranger-admin-site.xml
+index 2da6f1c43..86b46f732 100644
+--- a/security-admin/src/main/resources/conf.dist/ranger-admin-site.xml
++++ b/security-admin/src/main/resources/conf.dist/ranger-admin-site.xml
+@@ -52,7 +52,7 @@
+ 	</property>
+ 	<property>
+ 		<name>ranger.audit.elasticsearch.protocol</name>
+-		<value>http</value>
++		<value>https</value>
+ 		<description></description>
+ 	</property>
+ 	<property>
+-- 
+2.43.0
+

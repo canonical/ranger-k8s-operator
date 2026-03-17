@@ -4,7 +4,7 @@
 
 name: ranger
 base: ubuntu@22.04
-version: 2.8.1-22.04-edge
+version: 2.8.0.1-22.04-edge
 summary: Charmed ranger ROCK OCI
 description: |
   Apache Ranger™ is a framework to enable, monitor and
@@ -37,11 +37,22 @@ services:
     command: "/home/ranger/scripts/ranger-usersync-entrypoint.sh"
 
 parts:
+  patches:
+    plugin: dump
+    source: ./patches
+    organize:
+      '*.patch': patches/
+    stage:
+      - patches/*.patch
+    prime:
+      - "-*"
+
   base:
+    after: [patches]
     plugin: maven
     maven-parameters: ["-DskipTests=true", "-Dmaven.test.skip=true", "-Drat.skip=true", "-Dpmd.skip=true", "-Dfindbugs.skip=true", "-Dspotbugs.skip=true", "-Dcheckstyle.skip=true", "-Dmaven.wagon.http.ssl.insecure=true", "-Dmaven.wagon.http.ssl.allowall=true", "-Dmaven.wagon.http.ssl.ignore.validity.dates=true"] # yamllint disable-line
-    source: https://github.com/canonical/ranger.git
-    source-branch: ranger-2.8
+    source: https://github.com/apache/ranger.git
+    source-tag: release-ranger-2.8.0
     source-type: git
     build-packages:
       - build-essential
@@ -54,6 +65,7 @@ parts:
       - JAVA_HOME: /usr/lib/jvm/java-21-openjdk-amd64
       - RANGER_DIST: /home/ranger/dist
     override-build: |
+      git apply ${CRAFT_STAGE}/patches/*.patch
       craftctl default
 
       # Move target directory
@@ -61,8 +73,8 @@ parts:
     organize:
       target: home/ranger/dist/target
     stage:
-      - home/ranger/dist/target/ranger-2.8.1-SNAPSHOT-admin.tar.gz
-      - home/ranger/dist/target/ranger-2.8.1-SNAPSHOT-usersync.tar.gz
+      - home/ranger/dist/target/ranger-2.8.0-admin.tar.gz
+      - home/ranger/dist/target/ranger-2.8.0-usersync.tar.gz
     prime:
       - "-*"
 
@@ -70,7 +82,7 @@ parts:
     after: [base]
     plugin: nil
     build-environment:
-      - VERSION: "2.8.1-SNAPSHOT"
+      - VERSION: "2.8.0"
       - RANGER_TARGET: /home/ranger/dist/target
       - RANGER_HOME: /usr/lib/ranger
     override-build: |
@@ -115,7 +127,7 @@ parts:
     after: [base]
     plugin: nil
     build-environment:
-      - VERSION: "2.8.1-SNAPSHOT"
+      - VERSION: "2.8.0"
       - RANGER_TARGET: /home/ranger/dist/target
       - RANGER_HOME: /usr/lib/ranger
     override-build: |

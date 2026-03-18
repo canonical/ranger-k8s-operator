@@ -52,6 +52,31 @@ rock-dev                Running           10.137.215.60    Ubuntu 22.04 LTS
 Navigate to `<VM IP Address>:6080` (in this case 10.137.215.60:6080) and login with `admin`/`rangerR0cks!`. 
 Further information on connecting services and creating policies can be found at [ranger.apache.org](https://ranger.apache.org/blogs/policy_model.html).
 
+## Patching Ranger v2.8.0
+
+The build applies `patches/001-jdk21-compatibility.patch` to the upstream
+[release-ranger-2.8.0](https://github.com/apache/ranger/tree/release-ranger-2.8.0) source before compilation. This patch is required because
+upstream Ranger 2.8.0 targets JDK 8 while the rock builds with JDK 21.
+
+The patch makes the following changes:
+
+1. **Nashorn engine replacement:** The JDK-bundled Nashorn scripting engine
+   (`jdk.nashorn.*`) was removed in JDK 15. The patch switches the imports in
+   `NashornScriptEngineCreator` and `RecordFilterJavaScript` to the standalone
+   `org.openjdk.nashorn:nashorn-core:15.4` library and adds it as a dependency
+   in `agents-common/pom.xml`.
+
+2. **JAXB dependency fixes:** Adds explicit `jaxb-core` and `jaxb-impl`
+   dependency management entries and corrects the `jaxb-runtime` version
+   property to prevent classpath conflicts under JDK 21.
+
+3. **Enunciate upgrade:** The bundled Enunciate version 2.13.2 does not
+   support JDK 21. The patch bumps it to 2.17.1.
+
+4. **Elasticsearch audit protocol:** Changes the default
+   `ranger.audit.elasticsearch.protocol` from `http` to `https` in
+   `ranger-admin-site.xml`.
+
 ## Using Makefile
 
 `make dev` will create the multipass image, clone the repo, install and configure the prerequisites.

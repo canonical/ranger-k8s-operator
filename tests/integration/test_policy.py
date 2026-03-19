@@ -33,7 +33,7 @@ class TestPolicyRelation:
 
         await ops_test.model.deploy(
             TRINO_NAME,
-            channel="beta",
+            channel="edge",
             config=trino_config,
             trust=True,
         )

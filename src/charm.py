@@ -196,6 +196,9 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
 
         container = self.unit.get_container(self.name)
 
+        if not container.can_connect():
+            return
+
         check = container.get_check("up")
         if check.status != CheckStatus.UP:
             self.unit.status = MaintenanceStatus("Status check: DOWN")

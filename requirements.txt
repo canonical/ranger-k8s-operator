@@ -1,3 +1,4 @@
+--only-binary=pluggy # temporary workaround for charmcraft build errors
 apache-ranger == 0.0.11
 ops >= 2.2.0
 Jinja2 == 3.1.2

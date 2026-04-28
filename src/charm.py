@@ -212,6 +212,9 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
 
         self.unit.status = ActiveStatus("Status check: UP")
 
+        if self.unit.is_leader():
+            self.trino_catalog_handler.run_reconciliation()
+
     def _on_restart(self, event):
         """Restart application, action handler.
 

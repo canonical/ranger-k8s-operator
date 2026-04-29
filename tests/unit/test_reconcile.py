@@ -193,6 +193,7 @@ class TestReconciler(TestCase):
                 "update_policy",
                 "delete_zone",
                 "delete_role",
+                "delete_policy_by_id",
             ]
         )
         self.client.list_zones.return_value = []
@@ -408,3 +409,46 @@ class TestReconciler(TestCase):
 
         zone = self.client.create_zone.call_args[0][0]
         self.assertEqual(zone.tagServices, [])
+
+    def test_reconcile_purges_auto_policies_after_zone_creation(self):
+        """Ranger auto-generated policies are deleted after zone creation."""
+        auto_policies = [
+            RangerPolicy({"id": 100, "name": "auto-policy-1"}),
+            RangerPolicy({"id": 101, "name": "auto-policy-2"}),
+        ]
+
+        call_count = {"n": 0}
+        original_return = []
+
+        def list_policies_side_effect(zone_name, service_name):  # noqa DCO010
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return auto_policies
+            return original_return
+
+        self.client.list_policies.side_effect = list_policies_side_effect
+
+        catalogs = [{"name": "marketing"}]
+        self.reconciler.reconcile(catalogs)
+
+        self.assertEqual(self.client.delete_policy_by_id.call_count, 2)
+        deleted_ids = [
+            call.args[0]
+            for call in self.client.delete_policy_by_id.call_args_list
+        ]
+        self.assertEqual(sorted(deleted_ids), [100, 101])
+
+    def test_reconcile_no_purge_for_existing_zone(self):
+        """Auto-policy purge only happens for newly created zones."""
+        self.client.list_zones.return_value = [
+            RangerSecurityZone({"name": "marketing"})
+        ]
+        self.client.list_roles.return_value = [
+            RangerRole({"name": f"marketing{s}"})
+            for s in ("-viewer", "-editor", "-admin", "-auditor")
+        ]
+
+        catalogs = [{"name": "marketing"}]
+        self.reconciler.reconcile(catalogs)
+
+        self.client.delete_policy_by_id.assert_not_called()

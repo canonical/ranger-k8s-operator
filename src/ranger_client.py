@@ -409,6 +409,25 @@ class RangerAPIClient:
             )
         return created
 
+    def delete_policy_by_id(self, policy_id: int) -> None:
+        """Delete a policy by its ID.
+
+        ``DELETE /service/public/v2/api/policy/<id>``
+
+        Args:
+            policy_id: numeric ID of the policy to delete.
+
+        Raises:
+            RangerAPIError: if the API call fails.
+        """
+        logger.info("deleting policy id=%s", policy_id)
+        try:
+            self._client.delete_policy_by_id(policy_id)
+        except RangerServiceException as exc:
+            raise RangerAPIError(
+                f"Failed to delete policy id={policy_id}: {exc}"
+            ) from exc
+
     def delete_role(self, role_name: str) -> None:
         """Delete a role by name.
 

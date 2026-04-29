@@ -356,6 +356,7 @@ class TrinoCatalogReconciler:
                 zone = _build_zone(zone_name, self._service_name)
                 self._client.create_zone(zone)
                 logger.info("created zone %s", zone_name)
+                self._purge_auto_policies(zone_name)
 
         # --- Ensure default policies for desired zones ---
         for zone_name in sorted(desired_zones):
@@ -381,6 +382,28 @@ class TrinoCatalogReconciler:
                 self._client.create_role(role)
                 existing_role_names.add(role_name)
                 logger.info("created role %s", role_name)
+
+    def _purge_auto_policies(self, zone_name: str) -> None:
+        """Delete Ranger auto-generated policies from a newly created zone.
+
+        Ranger creates default policies when a zone is first created.
+        These are not tracked by the charm and would later block zone
+        cleanup by being mistaken for custom policies.
+
+        Args:
+            zone_name: the base zone / catalog name.
+        """
+        auto_policies = self._client.list_policies(
+            zone_name, self._service_name
+        )
+        for policy in auto_policies:
+            self._client.delete_policy_by_id(policy.id)
+            logger.info(
+                "deleted auto-generated policy %s (id=%s) from zone %s",
+                policy.name,
+                policy.id,
+                zone_name,
+            )
 
     def _ensure_policies(self, zone_name: str) -> None:
         """Ensure default policies exist and are correct for a zone.

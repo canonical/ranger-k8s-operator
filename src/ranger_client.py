@@ -50,6 +50,22 @@ class RangerAPIClient:
             auth: tuple of ``(username, password)`` for basic authentication.
         """
         self._client = RangerClient(url, auth)
+        self._client.client_http.session.hooks["response"].append(
+            RangerAPIClient._log_error_response
+        )
+
+    @staticmethod
+    def _log_error_response(response, *args, **kwargs):
+        """Log details of non-2xx HTTP responses for debugging."""
+        if not response.ok:
+            logger.debug(
+                "HTTP error: %s %s -> status=%s, headers=%s, body=%r",
+                response.request.method,
+                response.request.url,
+                response.status_code,
+                dict(response.headers),
+                response.text,
+            )
 
     # -- Service endpoints ---------------------------------------------------
 

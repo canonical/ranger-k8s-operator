@@ -386,7 +386,7 @@ class TestReconciler(TestCase):
         zone = self.client.create_zone.call_args[0][0]
         zone_svc = zone.services[SERVICE_NAME]
         resources = zone_svc.resources[0]
-        catalog_values = resources["catalog"]["values"]
+        catalog_values = resources["catalog"]
         self.assertEqual(
             sorted(catalog_values),
             ["marketing", "marketing_developer"],
@@ -400,3 +400,11 @@ class TestReconciler(TestCase):
         zone = self.client.create_zone.call_args[0][0]
         self.assertEqual(zone.adminUsers, ["admin"])
         self.assertEqual(zone.auditUsers, ["admin"])
+
+    def test_zone_tag_services_always_empty(self):
+        """Zone tagServices is always empty to avoid postCreate failures."""
+        catalogs = [{"name": "marketing"}]
+        self.reconciler.reconcile(catalogs)
+
+        zone = self.client.create_zone.call_args[0][0]
+        self.assertEqual(zone.tagServices, [])

@@ -87,9 +87,7 @@ def _build_zone(zone_name: str, service_name: str) -> RangerSecurityZone:
         {
             "resources": [
                 {
-                    "catalog": {
-                        "values": [zone_name, f"{zone_name}_developer"],
-                    }
+                    "catalog": [zone_name, f"{zone_name}_developer"],
                 }
             ]
         }
@@ -98,10 +96,13 @@ def _build_zone(zone_name: str, service_name: str) -> RangerSecurityZone:
         {
             "name": zone_name,
             "services": {service_name: zone_service},
+            "tagServices": [],
             "adminUsers": [ADMIN_USER],
             "adminUserGroups": [],
+            "adminRoles": [],
             "auditUsers": [ADMIN_USER],
             "auditUserGroups": [],
+            "auditRoles": [],
             "description": (
                 f"Managed zone for catalogs {zone_name} "
                 f"and {zone_name}_developer"
@@ -333,7 +334,11 @@ class TrinoCatalogReconciler:
         _service_name: the registered Trino service name in Ranger.
     """
 
-    def __init__(self, client: RangerAPIClient, service_name: str) -> None:
+    def __init__(
+        self,
+        client: RangerAPIClient,
+        service_name: str,
+    ) -> None:
         """Construct TrinoCatalogReconciler.
 
         Args:

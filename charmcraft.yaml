@@ -1,7 +1,13 @@
 # Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
 
+name: ranger-k8s
 type: charm
+title: Ranger K8s Operator
+summary: Kubernetes operator for Apache Ranger
+description: |
+  Apache Ranger is a framework to enable, monitor, and manage comprehensive data security.
+
 bases:
   - build-on:
     - name: ubuntu
@@ -9,3 +15,206 @@ bases:
     run-on:
     - name: ubuntu
       channel: "22.04"
+
+charm-libs:
+  - lib: data_platform_libs.data_interfaces
+    version: "0"
+  - lib: data_platform_libs.data_models
+    version: "0"
+  - lib: grafana_k8s.grafana_dashboard
+    version: "0"
+  - lib: loki_k8s.loki_push_api
+    version: "0"
+  - lib: nginx_ingress_integrator.nginx_route
+    version: "0"
+  - lib: prometheus_k8s.prometheus_scrape
+    version: "0"
+  - lib: trino_k8s.trino_catalog
+    version: "0"
+
+parts:
+  charm:
+    prime:
+      - -ranger_rock/
+
+peers:
+  peer:
+    interface: ranger
+
+requires:
+  database:
+    interface: postgresql_client
+    limit: 1
+  nginx-route:
+    interface: nginx-route
+  ldap:
+    interface: ldap
+  log-proxy:
+    interface: loki_push_api
+    optional: true
+    limit: 1
+  opensearch:
+    interface: opensearch_client
+    optional: true
+    limit: 1
+  trino-catalog:
+    interface: trino_catalog
+    optional: true
+    limit: 1
+
+provides:
+  policy:
+    interface: ranger_client
+  metrics-endpoint:
+    interface: prometheus_scrape
+  grafana-dashboard:
+    interface: grafana_dashboard
+
+containers:
+  ranger:
+    resource: ranger-image
+
+resources:
+  ranger-image:
+    type: oci-image
+    description: OCI image for Apache Ranger
+
+actions:
+  restart:
+    description: Restart the application server.
+
+config:
+  options:
+    ranger-admin-password:
+      description: |
+        The password for Ranger Admin user.
+        Password can not be changed using this property after initial deployment. 
+        It can be changed in the UI.
+        Password should be minimum 8 characters with min one alphabet and one numeric.
+      default: "rangerR0cks!"
+      type: string
+    tls-secret-name:
+      description: |
+          Name of the k8s secret which contains the TLS certificate to be used by ingress.
+      default: ranger-tls
+      type: string
+    external-hostname:
+      description: |
+          The DNS listing used for external connections. 
+          Will default to the name of the deployed application.
+      type: string
+      default: ranger-k8s
+    sync-ldap-url:
+      description: |
+        The url of the ldap to synchronize users from.
+        In format `ldap://<host>:<port>`.
+      type: string
+    sync-ldap-bind-dn:
+      description: |
+        The bind domain name for ldap synchronization.
+      type: string
+    sync-ldap-bind-password:
+      description: |
+          The bind password for ldap synchronization.
+      type: string
+      default: admin
+    sync-ldap-search-base:
+      description: |
+        Search base for ldap users and groups.
+      type: string
+    sync-ldap-user-object-class:
+      description: |
+        The object class corresponding to users for ldapsearch.
+      type: string
+      default: person
+    sync-group-object-class:
+      description: |
+        The object class corresponding to groups for ldapsearch.
+      type: string
+      default: posixGroup
+    sync-ldap-user-search-base:
+      description: |
+        Search base for ldap users.
+      type: string
+    sync-group-user-map-sync-enabled:
+      description: |
+        Set to true to sync groups without users.
+      type: boolean
+      default: true
+    sync-group-search-enabled:
+      description: |
+        Set to true to sync groups without users.
+      type: boolean
+      default: true
+    sync-group-search-base:
+      description: |
+        Search base for ldap groups.
+        If not specified this takes the value of `sync-ldap-search-base`.
+      type: string
+    sync-ldap-user-search-scope:
+      description: |
+        Search scope for the users.
+        Allowed values: `base`, `one` and `sub`.
+      type: string
+      default: sub
+    sync-ldap-group-search-scope:
+      description: |
+        Search scope for the groups.
+        Allowed values: `base`, `one` and `sub`.
+      type: string
+      default: sub
+    sync-ldap-user-search-filter:
+      description: |
+        Optional additional filter constraining the users selected for syncing.
+      type: string
+    sync-ldap-user-name-attribute:
+      description: |
+        Attribute from user entry that would be treated as user name.
+      type: string
+      default: uid
+    sync-group-member-attribute-name:
+      description: |
+        The attribute in the Group which specifies members.
+      type: string
+      default: memberUid
+    sync-ldap-user-group-name-attribute:
+      description: |
+        Attribute from user entry whose values would be treated as
+        group values to be pushed into Policy Manager database.
+      type: string
+      default: memberOf
+    sync-interval:
+      description: |
+        The interval in ms to synchronize the users/groups from ldap.
+        Note: this can not be less than hourly (3600000) for LDAP.
+      type: int
+      default: 3600000
+    sync-ldap-deltasync:
+      description: |
+        Enable to incrementally sync as opposed to full sync after initial run.
+      type: boolean
+      default: true
+    policy-mgr-url:
+      type: string
+      default: http://ranger-k8s:6080
+    charm-function:
+      description: |
+        The function the charm should provide, either `admin` or `usersync`.
+      type: string
+      default: admin
+    lookup-timeout:
+      description: |
+        The default timeout for the resource auto-complete
+        functionality for Ranger service in ms.
+      type: int
+      default: 3000
+    ranger-usersync-password:
+      description: |
+        The password for the user that synchronizes users and groups from LDAP to Ranger admin.
+        Password can not be changed using this property after initial deployment. 
+        It can be changed in the UI.
+        Password should be minimum 8 characters with min one alphabet and one numeric.
+      type: string
+      default: rangerR0cks!
+  
+  

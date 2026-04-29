@@ -67,8 +67,6 @@ class RangerAPIClient:
                 response.text,
             )
 
-    # -- Service endpoints ---------------------------------------------------
-
     def list_services_by_type(self, service_type: str) -> List[RangerService]:
         """List services filtered by type.
 
@@ -93,8 +91,6 @@ class RangerAPIClient:
                 f"Failed to list services by type {service_type!r}: {exc}"
             ) from exc
         return services or []
-
-    # -- Zone endpoints ------------------------------------------------------
 
     def list_zones(self) -> List[RangerSecurityZone]:
         """List all security zones.
@@ -195,8 +191,6 @@ class RangerAPIClient:
             raise RangerAPIError(
                 f"Failed to delete security zone {zone_name!r}: {exc}"
             ) from exc
-
-    # -- Policy endpoints ----------------------------------------------------
 
     def list_policies(
         self, zone_name: str, service_name: str
@@ -341,8 +335,6 @@ class RangerAPIClient:
                 f"in service {service_name!r}: no response from server"
             )
         return updated
-
-    # -- Role endpoints ------------------------------------------------------
 
     def list_roles(self) -> List[RangerRole]:
         """List all roles.

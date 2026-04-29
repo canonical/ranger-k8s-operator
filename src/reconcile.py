@@ -112,26 +112,12 @@ def _build_zone(zone_name: str, service_name: str) -> RangerSecurityZone:
 
 
 def _access(permission: str) -> RangerPolicyItemAccess:
-    """Shortcut to create an allowed access entry.
-
-    Args:
-        permission: the Trino permission type string.
-
-    Returns:
-        A ``RangerPolicyItemAccess`` with ``isAllowed=True``.
-    """
+    """Create an allowed access entry for ``permission``."""
     return RangerPolicyItemAccess({"type": permission, "isAllowed": True})
 
 
 def _resource(values: List[str]) -> RangerPolicyResource:
-    """Shortcut to create a policy resource with given values.
-
-    Args:
-        values: list of resource value strings.
-
-    Returns:
-        A ``RangerPolicyResource``.
-    """
+    """Create a policy resource with ``values``."""
     return RangerPolicyResource({"values": values})
 
 

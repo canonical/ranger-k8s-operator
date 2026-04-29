@@ -1,6 +1,6 @@
 --only-binary=pluggy # temporary workaround for charmcraft build errors
 apache-ranger == 0.0.11
-ops >= 2.2.0
+ops >= 3.4.0
 Jinja2 == 3.1.2
 pydantic==1.10.12
-cosl==0.0.54
+cosl==1.4.0

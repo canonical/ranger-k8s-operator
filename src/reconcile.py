@@ -18,7 +18,7 @@ from apache_ranger.model.ranger_security_zone import (
     RangerSecurityZoneService,
 )
 
-from literals import ADMIN_USER, DEFAULT_POLICY_SUFFIXES, ZONE_ROLE_SUFFIXES
+from literals import DEFAULT_POLICY_SUFFIXES, ZONE_ROLE_SUFFIXES
 from ranger_client import RangerAPIClient, RangerAPIError
 
 logger = logging.getLogger(__name__)
@@ -97,12 +97,12 @@ def _build_zone(zone_name: str, service_name: str) -> RangerSecurityZone:
             "name": zone_name,
             "services": {service_name: zone_service},
             "tagServices": [],
-            "adminUsers": [ADMIN_USER],
+            "adminUsers": [],
             "adminUserGroups": [],
-            "adminRoles": [],
-            "auditUsers": [ADMIN_USER],
+            "adminRoles": [f"{zone_name}-admin"],
+            "auditUsers": [],
             "auditUserGroups": [],
-            "auditRoles": [],
+            "auditRoles": [f"{zone_name}-auditor"],
             "description": (
                 f"Managed zone for catalogs {zone_name} "
                 f"and {zone_name}_developer"

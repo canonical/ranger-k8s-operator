@@ -393,14 +393,16 @@ class TestReconciler(TestCase):
             ["marketing", "marketing_developer"],
         )
 
-    def test_zone_admin_and_audit_users(self):
-        """Zone admin and audit users are set to admin user."""
+    def test_zone_admin_and_audit_roles(self):
+        """Zone admin and audit roles use zone-specific roles."""
         catalogs = [{"name": "sales"}]
         self.reconciler.reconcile(catalogs)
 
         zone = self.client.create_zone.call_args[0][0]
-        self.assertEqual(zone.adminUsers, ["admin"])
-        self.assertEqual(zone.auditUsers, ["admin"])
+        self.assertEqual(zone.adminUsers, [])
+        self.assertEqual(zone.adminRoles, ["sales-admin"])
+        self.assertEqual(zone.auditUsers, [])
+        self.assertEqual(zone.auditRoles, ["sales-auditor"])
 
     def test_zone_tag_services_always_empty(self):
         """Zone tagServices is always empty to avoid postCreate failures."""

@@ -102,7 +102,7 @@ class TestPolicyBuilders(TestCase):
     """Tests for the default policy builder functions."""
 
     def test_ro_policy_structure(self):
-        """The ro policy targets the base catalog with all 4 roles."""
+        """The ro policy targets the base catalog with viewer, editor and admin roles."""
         policy = _build_ro_policy("marketing", SERVICE_NAME)
         self.assertEqual(policy.name, "default - ro - marketing")
         self.assertEqual(policy.service, SERVICE_NAME)
@@ -117,7 +117,6 @@ class TestPolicyBuilders(TestCase):
                     "marketing-viewer",
                     "marketing-editor",
                     "marketing-admin",
-                    "marketing-auditor",
                 ]
             ),
         )

@@ -134,7 +134,11 @@ def _build_ro_policy(zone_name: str, service_name: str) -> RangerPolicy:
         A ``RangerPolicy`` ready to be created.
     """
     cat = zone_name
-    roles = _role_names(zone_name)
+    roles = [
+        f"{zone_name}-viewer",
+        f"{zone_name}-editor",
+        f"{zone_name}-admin",
+    ]
     accesses = [_access(p) for p in ("select", "show", "use")]
     item = RangerPolicyItem({"roles": roles, "accesses": accesses})
 

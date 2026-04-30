@@ -14,7 +14,7 @@ from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
 
-METADATA = yaml.safe_load(Path("./metadata.yaml").read_text())
+METADATA = yaml.safe_load(Path("./charmcraft.yaml").read_text())
 POSTGRES_NAME = "postgresql-k8s"
 APP_NAME = "ranger-k8s"
 USERSYNC_NAME = "ranger-usersync-k8s"

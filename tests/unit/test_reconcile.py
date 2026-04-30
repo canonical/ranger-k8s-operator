@@ -340,9 +340,8 @@ class TestReconciler(TestCase):
 
         self.client.update_policy.assert_called_once()
         update_call = self.client.update_policy.call_args
-        self.assertEqual(update_call.args[0], SERVICE_NAME)
-        self.assertEqual(update_call.args[1], "default - ro - marketing")
-        updated_policy = update_call.args[2]
+        self.assertEqual(update_call.args[0], 42)
+        updated_policy = update_call.args[1]
         self.assertEqual(updated_policy.id, 42)
 
     def test_reconcile_skips_policy_update_when_unchanged(self):

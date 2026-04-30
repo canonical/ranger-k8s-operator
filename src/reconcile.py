@@ -425,9 +425,7 @@ class TrinoCatalogReconciler:
                 existing = existing_by_name[policy_name]
                 if self._policy_needs_update(existing, desired):
                     desired.id = existing.id
-                    self._client.update_policy(
-                        self._service_name, policy_name, desired
-                    )
+                    self._client.update_policy(existing.id, desired)
                     logger.info("updated policy %s", policy_name)
 
     def _cleanup_zone(self, zone_name: str) -> None:

@@ -296,17 +296,15 @@ class RangerAPIClient:
 
     def update_policy(
         self,
-        service_name: str,
-        policy_name: str,
+        policy_id: int,
         policy: RangerPolicy,
     ) -> RangerPolicy:
-        """Update a policy by service and policy name.
+        """Update a policy by its ID.
 
-        ``PUT /service/public/v2/api/service/<svc>/policy/<policy>``
+        ``PUT /service/public/v2/api/policy/<id>``
 
         Args:
-            service_name: name of the Ranger service.
-            policy_name: name of the policy to update.
+            policy_id: numeric ID of the policy to update.
             policy: the updated policy definition.
 
         Returns:
@@ -316,23 +314,23 @@ class RangerAPIClient:
             RangerAPIError: if the API call fails.
         """
         logger.info(
-            "updating policy %s in service %s",
-            policy_name,
-            service_name,
+            "updating policy %s (id=%s)",
+            policy.name,
+            policy_id,
         )
         try:
-            updated: Optional[RangerPolicy] = self._client.update_policy(
-                service_name, policy_name, policy
+            updated: Optional[RangerPolicy] = self._client.update_policy_by_id(
+                policy_id, policy
             )
         except RangerServiceException as exc:
             raise RangerAPIError(
-                f"Failed to update policy {policy_name!r} "
-                f"in service {service_name!r}: {exc}"
+                f"Failed to update policy {policy.name!r} "
+                f"(id={policy_id}): {exc}"
             ) from exc
         if updated is None:
             raise RangerAPIError(
-                f"Failed to update policy {policy_name!r} "
-                f"in service {service_name!r}: no response from server"
+                f"Failed to update policy {policy.name!r} "
+                f"(id={policy_id}): no response from server"
             )
         return updated
 

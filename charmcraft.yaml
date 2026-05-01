@@ -185,10 +185,10 @@ config:
       default: memberOf
     sync-interval:
       description: |
-        The interval in ms to synchronize the users/groups from ldap.
-        Note: this can not be less than hourly (3600000) for LDAP.
+        The interval in seconds to synchronize the users/groups from ldap.
+        Note: this can not be less than hourly (3600) for LDAP.
       type: int
-      default: 3600000
+      default: 3600
     sync-ldap-deltasync:
       description: |
         Enable to incrementally sync as opposed to full sync after initial run.
@@ -216,5 +216,4 @@ config:
         Password should be minimum 8 characters with min one alphabet and one numeric.
       type: string
       default: rangerR0cks!
-  
-  
+ 

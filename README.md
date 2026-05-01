@@ -94,10 +94,12 @@ Trino typically exposes a read-only catalog (such as `my_db`) and sometimes a re
    - `<catalog>-admin`
    - `<catalog>-auditor`
 3. **Default policies**: Ranger configures default policies linking these roles to the appropriate permissions:
-   - **Read-only (`ro`)**: Grants the `viewer`, `editor`, `admin`, and `auditor` roles Select, Show, and Use permissions on the base `<catalog>`.
+   - **Read-only (`ro`)**: Grants the `viewer`, `editor`, and `admin` roles Select, Show, and Use permissions on the base `<catalog>`.
    - **Read-write (`rw`)**: Grants the `editor` and `admin` roles Select, Show, Use, Insert, and Delete permissions on the `<catalog>_developer` catalog.
    - **DDL (`ddl`)**: Grants the `admin` role Alter, Create, and Drop permissions on the `<catalog>_developer` catalog.
    - **Information schema (`is`)**: Grants standard users Select, Show, and Use permissions on the `information_schema` for both catalogs.
+
+Note that these default policies are reconciled to match the intended configuration. If you would like to intervene on the default behavior, you can do so by creating custom policies with override to deviate from the defaults.
 
 ##### Managing access
 

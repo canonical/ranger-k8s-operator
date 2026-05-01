@@ -100,6 +100,12 @@ parts:
         ${CRAFT_STAGE}${RANGER_TARGET}/ranger-${VERSION}-admin.tar.gz \
         --directory=${CRAFT_PART_INSTALL}${RANGER_HOME}/admin \
         --strip-components=1
+      
+      # Patch ElasticSearch client for OpenSearch compatibility.
+      # See patches/elasticsearch_patch.py for details.
+      python3 ${CRAFT_PROJECT_DIR}/patches/elasticsearch_patch.py \
+        ${CRAFT_PART_INSTALL}${RANGER_HOME}/admin/ews/lib \
+        ${CRAFT_PART_INSTALL}${RANGER_HOME}/admin/ews/webapp/WEB-INF/lib
     stage:
       - usr/lib/ranger/admin
       - var/run/ranger

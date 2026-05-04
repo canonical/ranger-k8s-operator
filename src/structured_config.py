@@ -80,7 +80,7 @@ class CharmConfig(BaseConfigModel):
     @validator("sync_interval")
     @classmethod
     def sync_interval_validator(cls, value: str) -> Optional[int]:
-        """Check validity of `sqlalchemy_pool_size` field.
+        """Check validity of `sync_interval` field.
 
         Args:
             value: sync-interval value
@@ -92,7 +92,7 @@ class CharmConfig(BaseConfigModel):
             ValueError: in the case when the value is out of range
         """
         int_value = int(value)
-        if 3600000 <= int_value <= 86400000:
+        if 3600 <= int_value <= 86400:
             return int_value
         raise ValueError("Value out of range.")
 

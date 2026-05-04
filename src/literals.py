@@ -102,3 +102,8 @@ DEFAULT_POLICIES = [
     "all - sysinfo",
     "all - systemproperty",
 ]
+
+# Trino catalog reconciliation literals
+TRINO_SERVICE_TYPE = "trino"
+DEFAULT_POLICY_SUFFIXES = ("ro", "rw", "ddl", "is")
+ZONE_ROLE_SUFFIXES = ("-viewer", "-editor", "-admin", "-auditor")

@@ -28,7 +28,7 @@ def test_config_parsing_parameters_integer_values(_harness) -> None:
         "sync-interval",
     ]
     erroneus_values = [2147483648, -2147483649]
-    valid_values = [3600000, 36000000, 86400000]
+    valid_values = [3600, 36000, 86400]
     for field in integer_fields:
         check_invalid_values(_harness, field, erroneus_values)
         check_valid_values(_harness, field, valid_values)

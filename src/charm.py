@@ -17,6 +17,7 @@ from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LogProxyConsumer
 from charms.nginx_ingress_integrator.v0.nginx_route import require_nginx_route
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
+from charms.trino_k8s.v0.trino_catalog import TrinoCatalogRequirer
 from ops.model import (
     ActiveStatus,
     BlockedStatus,
@@ -38,6 +39,7 @@ from relations.ldap import LDAPRelationHandler
 from relations.opensearch import OpensearchRelationHandler
 from relations.postgres import PostgresRelationHandler
 from relations.provider import RangerProvider
+from relations.trino import TrinoCatalogRelationHandler
 from state import State
 from structured_config import CharmConfig
 from utils import generate_password, log_event_handler, render
@@ -98,6 +100,10 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             extra_user_roles="admin",
         )
         self.opensearch_relation_handler = OpensearchRelationHandler(self)
+
+        # Trino Catalog
+        self.trino_catalog_requirer = TrinoCatalogRequirer(self)
+        self.trino_catalog_handler = TrinoCatalogRelationHandler(self)
 
         # Handle Ingress
         self._require_nginx_route()
@@ -205,6 +211,9 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             return
 
         self.unit.status = ActiveStatus("Status check: UP")
+
+        if self.unit.is_leader():
+            self.trino_catalog_handler.run_reconciliation()
 
     def _on_restart(self, event):
         """Restart application, action handler.

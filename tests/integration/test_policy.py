@@ -44,7 +44,9 @@ class TestPolicyRelation:
             raise_on_blocked=False,
             timeout=1500,
         )
-        await ops_test.model.integrate(APP_NAME, TRINO_NAME)
+        await ops_test.model.integrate(
+            f"{APP_NAME}:policy", f"{TRINO_NAME}:policy"
+        )
 
         await ops_test.model.wait_for_idle(
             apps=[APP_NAME, TRINO_NAME],

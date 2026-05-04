@@ -229,7 +229,7 @@ class TestCharm(TestCase):
                         "SYNC_GROUP_SEARCH_ENABLED": True,
                         "SYNC_GROUP_SEARCH_BASE": "dc=canonical,dc=dev,dc=com",
                         "SYNC_GROUP_OBJECT_CLASS": "posixGroup",
-                        "SYNC_INTERVAL": 3600000,
+                        "SYNC_INTERVAL": 3600,
                         "SYNC_LDAP_BIND_DN": "cn=admin,dc=canonical,dc=dev,dc=com",
                         "SYNC_LDAP_BIND_PASSWORD": "huedw7uiedw7",  # nosec
                         "SYNC_LDAP_GROUP_SEARCH_SCOPE": "sub",

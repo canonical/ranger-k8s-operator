@@ -47,19 +47,77 @@ Related applications must have the Ranger plugin configured. The Ranger plugin s
 #### Service name
 Before relation of an application to the Ranger charm, the application's `ranger-service-name` configuration parameter should be set. This will be the name of the Ranger service created for the application.
 
-#### Charmed Trino relation
-The configuration of these groups is done automatically on relation with the Ranger charm in the [Trino K8s charm](https://charmhub.io/trino-k8s).
+### Integrating with Trino
 
-```
-# relate trino and ranger charms:
+#### `policy` interface
+
+The `policy` interface enables Trino to download Ranger policies via the Ranger plugin. The configuration of groups is done automatically on relation with the Ranger charm in the [Trino K8s charm](https://charmhub.io/trino-k8s).
+
+```bash
 juju relate trino-k8s:policy ranger-k8s:policy
+```
 
-# confirm applications are related and wait until active:
+Confirm the applications are related and wait until active:
+
+```bash
 juju status --relations
+```
 
-# provide the ranger configuration file:
+Provide the Ranger configuration file:
+
+```bash
 juju config ranger-k8s --file=user-group-configuration.yaml
 ```
+
+#### `trino-catalog` interface
+
+The `trino-catalog` interface allows Ranger to automatically manage access control policies for Trino catalogs. When related, Ranger dynamically creates security zones, roles, and default policies based on the catalogs exposed by Trino.
+
+##### Usage
+
+Since there are multiple relations between Trino and Ranger, you must explicitly specify the endpoints:
+
+```bash
+juju relate trino-k8s:trino-catalog ranger-k8s:trino-catalog
+```
+
+The Ranger charm assumes there is a single registered Trino service on Ranger that belongs to the provider of the `trino-catalog` interface. It is highly recommended to only create this relation on a Trino charm already related on the `policy` interface.
+
+##### How it works
+
+Trino typically exposes a read-only catalog (such as `my_db`) and sometimes a read-write developer catalog (such as `my_db_developer`). When Ranger receives this catalog information, it performs the following automated setup:
+
+1. **Security zones**: Ranger creates a dedicated security zone for each base catalog (grouping `<catalog>` and `<catalog>_developer` into a single zone named `<catalog>`).
+2. **Roles**: Within the zone, Ranger automatically provisions four default roles for access management:
+   - `<catalog>-viewer`
+   - `<catalog>-editor`
+   - `<catalog>-admin`
+   - `<catalog>-auditor`
+3. **Default policies**: Ranger configures default policies linking these roles to the appropriate permissions:
+   - **Read-only (`ro`)**: Grants the `viewer`, `editor`, and `admin` roles Select, Show, and Use permissions on the base `<catalog>`.
+   - **Read-write (`rw`)**: Grants the `editor` and `admin` roles Select, Show, Use, Insert, and Delete permissions on the `<catalog>_developer` catalog.
+   - **DDL (`ddl`)**: Grants the `admin` role Alter, Create, and Drop permissions on the `<catalog>_developer` catalog.
+   - **Information schema (`is`)**: Grants standard users Select, Show, and Use permissions on the `information_schema` for both catalogs.
+
+Note that these default policies are reconciled to match the intended configuration. If you would like to intervene on the default behavior, you can do so by creating custom policies with override to deviate from the defaults.
+
+##### Managing access
+
+As a Ranger administrator, **you do not need to manually create base policies for Trino catalogs**.
+
+To grant a user or group access to a specific catalog:
+1. Log into the Apache Ranger UI.
+2. Navigate to **Settings > Roles**.
+3. Edit the automatically generated role that matches the desired access level (such as `<catalog>-viewer` or `<catalog>-editor`).
+4. Add the target users or groups to that role.
+
+You are free to add custom policies to the generated security zones if you require more granular access control (for example, row-level filtering or column masking).
+
+##### Catalog removal and cleanup
+
+Ranger continuously reconciles its state with Trino. If a catalog is removed from Trino, Ranger will evaluate the corresponding security zone:
+- If the zone contains **only the default policies**, Ranger will automatically delete the zone, its policies, and its associated roles to keep the system clean.
+- If you have added **custom policies** to the zone, Ranger will safely ignore it and leave the zone intact to prevent accidental data loss.
 
 ### Charmed OpenSearch relation
 [Charmed OpenSearch](https://charmhub.io/opensearch) should be integrated with the Ranger admin charm to enable auditing functionality for data access.

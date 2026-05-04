@@ -5,8 +5,6 @@
 
 import asyncio
 import logging
-import tempfile
-from pathlib import Path
 
 import pytest
 import pytest_asyncio
@@ -38,6 +36,15 @@ DEFAULT_POLICY_NAMES = {
 POLL_INTERVAL = 15
 POLL_TIMEOUT = 300
 RECONCILE_CYCLES = 180
+
+REPLICA_SECRET = """\
+ro:
+  user: test_ro_user
+  password: roPassw0rd
+rw:
+  user: test_rw_user
+  password: rwPassw0rd
+"""  # nosec B105
 
 
 async def _get_ranger_client(ops_test: OpsTest) -> RangerClient:
@@ -127,35 +134,11 @@ async def _create_and_grant_secret(ops_test):
     Returns:
         The secret ID string.
     """
-    replicas_content = yaml.dump(
-        {
-            "ro": {
-                "user": "test_ro_user",
-                "password": "roPassw0rd",
-            },  # nosec B105
-            "rw": {
-                "user": "test_rw_user",
-                "password": "rwPassw0rd",
-            },  # nosec B105
-        },
-        default_flow_style=False,
-    )
-
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".yaml", delete=False
-    ) as f:
-        f.write(replicas_content)
-        replicas_path = f.name
-
     secret_name = "test-pg-credentials"  # nosec B105
-    rc, stdout, stderr = await ops_test.juju(
-        "add-secret",
-        secret_name,
-        f"replicas#file={replicas_path}",
+    juju_secret = await ops_test.model.add_secret(
+        name=secret_name, data_args=[f"replicas={REPLICA_SECRET}"]
     )
-    assert rc == 0, f"Failed to create secret: {stderr}"
-
-    secret_id = stdout.strip()
+    secret_id = juju_secret.split(":")[-1]
     logger.info("created secret %s with id %s", secret_name, secret_id)
 
     rc, _, stderr = await ops_test.juju(
@@ -163,7 +146,6 @@ async def _create_and_grant_secret(ops_test):
     )
     assert rc == 0, f"Failed to grant secret: {stderr}"
 
-    Path(replicas_path).unlink(missing_ok=True)
     return secret_id
 
 

@@ -358,7 +358,15 @@ class TrinoCatalogReconciler:
             self._ensure_roles(zone_name, existing_role_names)
             if zone_name not in existing_zone_names:
                 zone = _build_zone(zone_name, self._service_name)
-                self._client.create_zone(zone)
+                try:
+                    self._client.create_zone(zone)
+                except RangerAPIError as exc:
+                    logger.warning(
+                        "failed to create zone %s: %s",
+                        zone_name,
+                        exc.message,
+                    )
+                    continue
                 logger.info("created zone %s", zone_name)
                 self._purge_auto_policies(zone_name)
 
@@ -383,7 +391,14 @@ class TrinoCatalogReconciler:
         for role_name in _role_names(zone_name):
             if role_name not in existing_role_names:
                 role = RangerRole({"name": role_name})
-                self._client.create_role(role)
+                try:
+                    self._client.create_role(role)
+                except RangerAPIError as exc:
+                    logger.warning(
+                        "failed to create role %s: %s",
+                        role_name,
+                        exc.message,
+                    )
                 existing_role_names.add(role_name)
                 logger.info("created role %s", role_name)
 
@@ -397,11 +412,29 @@ class TrinoCatalogReconciler:
         Args:
             zone_name: the base zone / catalog name.
         """
-        auto_policies = self._client.list_policies(
-            zone_name, self._service_name
-        )
+        try:
+            auto_policies = self._client.list_policies(
+                zone_name, self._service_name
+            )
+        except RangerAPIError as exc:
+            logger.warning(
+                "failed to list auto-policies for zone %s, skipping purge: %s",
+                zone_name,
+                exc.message,
+            )
+            return
         for policy in auto_policies:
-            self._client.delete_policy_by_id(policy.id)
+            try:
+                self._client.delete_policy_by_id(policy.id)
+            except RangerAPIError as exc:
+                logger.warning(
+                    "failed to delete auto-policy %s (id=%s) from zone %s: %s",
+                    policy.name,
+                    policy.id,
+                    zone_name,
+                    exc.message,
+                )
+                continue
             logger.info(
                 "deleted auto-generated policy %s (id=%s) from zone %s",
                 policy.name,
@@ -415,7 +448,17 @@ class TrinoCatalogReconciler:
         Args:
             zone_name: the base zone / catalog name.
         """
-        policies = self._client.list_policies(zone_name, self._service_name)
+        try:
+            policies = self._client.list_policies(
+                zone_name, self._service_name
+            )
+        except RangerAPIError as exc:
+            logger.warning(
+                "failed to list policies for zone %s, skipping: %s",
+                zone_name,
+                exc.message,
+            )
+            return
         existing_by_name = {p.name: p for p in policies}
 
         for suffix, builder in _POLICY_BUILDERS.items():
@@ -423,13 +466,29 @@ class TrinoCatalogReconciler:
             desired = builder(zone_name, self._service_name)
 
             if policy_name not in existing_by_name:
-                self._client.create_policy(desired)
+                try:
+                    self._client.create_policy(desired)
+                except RangerAPIError as exc:
+                    logger.warning(
+                        "failed to create policy %s: %s",
+                        policy_name,
+                        exc.message,
+                    )
+                    continue
                 logger.info("created policy %s", policy_name)
             else:
                 existing = existing_by_name[policy_name]
                 if self._policy_needs_update(existing, desired):
                     desired.id = existing.id
-                    self._client.update_policy(existing.id, desired)
+                    try:
+                        self._client.update_policy(existing.id, desired)
+                    except RangerAPIError as exc:
+                        logger.warning(
+                            "failed to update policy %s: %s",
+                            policy_name,
+                            exc.message,
+                        )
+                        continue
                     logger.info("updated policy %s", policy_name)
 
     def _cleanup_zone(self, zone_name: str) -> None:
@@ -440,7 +499,17 @@ class TrinoCatalogReconciler:
         Args:
             zone_name: the zone to potentially remove.
         """
-        policies = self._client.list_policies(zone_name, self._service_name)
+        try:
+            policies = self._client.list_policies(
+                zone_name, self._service_name
+            )
+        except RangerAPIError as exc:
+            logger.warning(
+                "failed to list policies for zone %s, skipping cleanup: %s",
+                zone_name,
+                exc.message,
+            )
+            return
         default_names = _default_policy_names(zone_name)
 
         for policy in policies:
@@ -452,17 +521,26 @@ class TrinoCatalogReconciler:
                 )
                 return
 
-        self._client.delete_zone(zone_name)
+        try:
+            self._client.delete_zone(zone_name)
+        except RangerAPIError as exc:
+            logger.warning(
+                "failed to delete stale zone %s: %s",
+                zone_name,
+                exc.message,
+            )
+            return
         logger.info("deleted stale zone %s", zone_name)
 
         for role_name in _role_names(zone_name):
             try:
                 self._client.delete_role(role_name)
                 logger.info("deleted stale role %s", role_name)
-            except RangerAPIError:
+            except RangerAPIError as exc:
                 logger.warning(
-                    "could not delete role %s, it may not exist",
+                    "could not delete role %s: %s",
                     role_name,
+                    exc.message,
                 )
 
     @staticmethod

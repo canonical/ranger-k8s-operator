@@ -33,6 +33,7 @@ from literals import (
     LOG_FILES,
     METRICS_PORT,
     RELATION_VALUES,
+    SUPPRESS_DEBUG_LOGS,
     USERSYNC_ENTRYPOINT,
 )
 from relations.ldap import LDAPRelationHandler
@@ -70,6 +71,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             args: Ignore.
         """
         super().__init__(*args)
+        self._configure_logging()
         self._state = State(self.app, lambda: self.model.get_relation("peer"))
         self.name = "ranger"
 
@@ -141,6 +143,13 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             tls_secret_name=self.config["tls-secret-name"],
             backend_protocol="HTTP",
         )
+
+    @staticmethod
+    def _configure_logging():
+        """Suppress noisy third-party HTTP debug logs when enabled."""
+        if SUPPRESS_DEBUG_LOGS:
+            logging.getLogger("apache_ranger").setLevel(logging.WARNING)
+            logging.getLogger("urllib3").setLevel(logging.WARNING)
 
     @log_event_handler(logger)
     def _on_install(self, event):
@@ -259,7 +268,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
                 return
             if e.stderr and "Warning" in e.stderr:
                 return
-            logger.debug(f"Unable to update truststore password {e.stderr}")
+            logger.debug("Unable to update truststore password %s", e.stderr)
 
     def _configure_ranger_admin(self, container):
         """Prepare Ranger Admin install.properties file.

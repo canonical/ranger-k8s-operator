@@ -37,6 +37,7 @@ RELATION_VALUES = [
 # Observability literals
 METRICS_PORT = 6080
 LOG_FILES = ["/usr/lib/ranger/admin/ews/logs/ranger-admin-ranger-k8s-0-.log"]
+SUPPRESS_DEBUG_LOGS = True
 
 HEADERS = {
     "Content-Type": "application/json",

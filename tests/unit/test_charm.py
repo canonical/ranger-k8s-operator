@@ -139,6 +139,13 @@ class TestCharm(TestCase):
         initial_plan = harness.get_container_pebble_plan("ranger").to_dict()
         self.assertEqual(initial_plan, {})
 
+    def test_suppress_debug_logs_configured(self):
+        """Third-party loggers are set to WARNING when SUPPRESS_DEBUG_LOGS is enabled."""
+        apache_ranger_logger = logging.getLogger("apache_ranger")
+        urllib3_logger = logging.getLogger("urllib3")
+        self.assertEqual(apache_ranger_logger.level, logging.WARNING)
+        self.assertEqual(urllib3_logger.level, logging.WARNING)
+
     def test_waiting_on_peer_relation_not_ready(self):
         """The charm is blocked without a peer relation."""
         harness = self.harness

@@ -7,17 +7,20 @@ version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
     "apache-ranger>=0.0.12,<0.1",
-    "ops>=3.4.0,<4",
-    "Jinja2>=3.1.2,<4",
+    "ops>=3.7.1,<4",
+    "Jinja2>=3.1.6,<4",
     "pydantic>=1.10,<2",
-    "cosl>=1.4.0,<2",
+    "cosl>=1.9.1,<2",
+    "requests>=2.34.2,<3",
+    "pyyaml>=6.0.3,<7",
 ]
 
 [dependency-groups]
 # Dependencies needed by vendored charm libraries at build time
 charmlibs-pydeps = [
-    "ops>=2.0.0,<4",
+    "ops>=3.7.1,<4",
     "pydantic>=1.10,<2",
+    "pyyaml>=6.0.3,<7",
 ]
 
 fmt = [
@@ -26,7 +29,7 @@ fmt = [
 
 lint = [
     "ruff>=0.15.16,<0.16",
-    "codespell>=2.2.1,<3",
+    "codespell>=2.4.2,<3",
     "pyright>=1.1.410,<2",
 ]
 
@@ -47,7 +50,7 @@ static = [
 
 integration = [
     "ipdb>=0.13.9,<0.14",
-    "juju>=3.5.2.1,<4",
+    "juju>=3.6.1.3,<4",
     "pytest>=9.0.3,<10",
     "pytest-operator>=0.43.2,<0.44",
     "pytest-asyncio>=0.21.2,<0.22",
@@ -55,7 +58,7 @@ integration = [
 
 integration-scenarios = [
     "ipdb>=0.13.9,<0.14",
-    "juju>=3.5.2.1,<4",
+    "juju>=3.6.1.3,<4",
     "pytest>=9.0.3,<10",
     "pytest-operator>=0.43.2,<0.44",
     "pytest-asyncio>=0.21.2,<0.22",

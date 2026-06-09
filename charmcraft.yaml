@@ -39,8 +39,14 @@ parts:
       - astral-uv
     uv-groups:
       - charmlibs-pydeps
-    prime:
+    stage:
       - -ranger_rock/
+      - -tests/
+  templates-dump:
+    plugin: dump
+    source: .
+    stage:
+      - templates/
 
 peers:
   peer:

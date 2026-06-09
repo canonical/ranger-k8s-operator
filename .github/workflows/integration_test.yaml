@@ -21,3 +21,4 @@ jobs:
       self-hosted-runner-label: "self-hosted-linux-amd64-noble-xlarge"
       builder-runner-label: "self-hosted-linux-amd64-noble-xlarge"
       trivy-severity-config: CRITICAL
+      with-uv: true

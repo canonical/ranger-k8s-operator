@@ -70,6 +70,7 @@ check-build-deps:
 	@which charmcraft >/dev/null || (echo "charmcraft not found" && exit 1)
 	@which rockcraft >/dev/null || (echo "rockcraft not found" && exit 1)
 	@which tox >/dev/null || (echo "tox not found" && exit 1)
+	@which uv >/dev/null || (echo "uv not found" && exit 1)
 	@echo "All build dependencies are installed."
 
 .PHONY: check-deploy-deps
@@ -169,4 +170,5 @@ clean-rockcraft:
 
 .PHONY: venv
 venv:
-	tox devenv -e integration
+	uv venv --clear venv
+	uv sync --active --group charmlibs-pydeps --group unit --group integration

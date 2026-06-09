@@ -34,6 +34,11 @@ charm-libs:
 
 parts:
   charm:
+    plugin: uv
+    build-snaps:
+      - astral-uv
+    uv-groups:
+      - charmlibs-pydeps
     prime:
       - -ranger_rock/
 

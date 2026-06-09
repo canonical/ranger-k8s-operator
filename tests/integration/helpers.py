@@ -42,9 +42,7 @@ LXD_MODEL_CONFIG = {
 }
 
 
-async def get_unit_url(
-    ops_test: OpsTest, application, unit, port, protocol="http"
-):
+async def get_unit_url(ops_test: OpsTest, application, unit, port, protocol="http"):
     """Return unit URL from the model.
 
     Args:
@@ -58,9 +56,7 @@ async def get_unit_url(
         Unit URL of the form {protocol}://{address}:{port}
     """
     status = await ops_test.model.get_status()  # noqa: F821
-    address = status["applications"][application]["units"][
-        f"{application}/{unit}"
-    ]["address"]
+    address = status["applications"][application]["units"][f"{application}/{unit}"]["address"]
     return f"{protocol}://{address}:{port}"
 
 
@@ -116,13 +112,9 @@ async def get_memberships(ops_test: OpsTest, url):
     """
     url = f"{url}/service/xusers/groupusers"
     try:
-        response = requests.get(
-            url, headers=HEADERS, auth=RANGER_AUTH, timeout=20
-        )
+        response = requests.get(url, headers=HEADERS, auth=RANGER_AUTH, timeout=20)
     except requests.exceptions.RequestException:
-        logger.exception(
-            "An exception has occurred while getting Ranger memberships:"
-        )
+        logger.exception("An exception has occurred while getting Ranger memberships:")
         raise
     data = json.loads(response.text)
     logger.info(data)

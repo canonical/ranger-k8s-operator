@@ -30,8 +30,7 @@ logger = logging.getLogger(__name__)
 
 CATALOG_NAME = "testcat"
 DEFAULT_POLICY_NAMES = {
-    f"default - {suffix} - {CATALOG_NAME}"
-    for suffix in ("ro", "rw", "ddl", "is")
+    f"default - {suffix} - {CATALOG_NAME}" for suffix in ("ro", "rw", "ddl", "is")
 }
 
 POLL_INTERVAL = 15
@@ -79,9 +78,7 @@ async def _poll_zones(ops_test, zone_name, *, expect_present):
             return None
         await asyncio.sleep(POLL_INTERVAL)
     state = "appear" if expect_present else "disappear"
-    raise TimeoutError(
-        f"Zone {zone_name!r} did not {state} within {POLL_TIMEOUT}s"
-    )
+    raise TimeoutError(f"Zone {zone_name!r} did not {state} within {POLL_TIMEOUT}s")
 
 
 async def _build_catalog_config(ops_test, secret_id):
@@ -98,10 +95,7 @@ async def _build_catalog_config(ops_test, secret_id):
         A valid YAML string for the trino-k8s catalog-config option.
     """
     model_name = ops_test.model.name
-    pg_url = (
-        f"jdbc:postgresql://postgresql-k8s-primary"
-        f".{model_name}.svc.cluster.local:5432"
-    )
+    pg_url = f"jdbc:postgresql://postgresql-k8s-primary.{model_name}.svc.cluster.local:5432"
 
     db_name = CATALOG_NAME
 
@@ -142,9 +136,7 @@ async def _create_and_grant_secret(ops_test):
     secret_id = juju_secret.split(":")[-1]
     logger.info("created secret %s with id %s", secret_name, secret_id)
 
-    rc, _, stderr = await ops_test.juju(
-        "grant-secret", secret_name, TRINO_NAME
-    )
+    rc, _, stderr = await ops_test.juju("grant-secret", secret_name, TRINO_NAME)
     assert rc == 0, f"Failed to grant secret: {stderr}"
 
     return secret_id
@@ -153,9 +145,7 @@ async def _create_and_grant_secret(ops_test):
 async def _set_catalog_config(ops_test, secret_id):
     """Set catalog-config on the Trino charm."""
     config_yaml = await _build_catalog_config(ops_test, secret_id)
-    await ops_test.model.applications[TRINO_NAME].set_config(
-        {"catalog-config": config_yaml}
-    )
+    await ops_test.model.applications[TRINO_NAME].set_config({"catalog-config": config_yaml})
     await ops_test.model.wait_for_idle(
         apps=[TRINO_NAME, APP_NAME],
         status="active",
@@ -167,9 +157,7 @@ async def _set_catalog_config(ops_test, secret_id):
 async def _clear_catalog_config(ops_test):
     """Remove all catalogs from Trino by clearing catalog-config."""
     empty_config = ""
-    await ops_test.model.applications[TRINO_NAME].set_config(
-        {"catalog-config": empty_config}
-    )
+    await ops_test.model.applications[TRINO_NAME].set_config({"catalog-config": empty_config})
     await ops_test.model.wait_for_idle(
         apps=[TRINO_NAME, APP_NAME],
         status="active",
@@ -210,9 +198,7 @@ async def deploy_trino_catalog_fixture(ops_test: OpsTest, deploy):
         )
 
     # Integrate policy if not already related
-    await ops_test.model.integrate(
-        f"{APP_NAME}:policy", f"{TRINO_NAME}:policy"
-    )
+    await ops_test.model.integrate(f"{APP_NAME}:policy", f"{TRINO_NAME}:policy")
     await ops_test.model.wait_for_idle(
         apps=[APP_NAME, TRINO_NAME],
         status="active",
@@ -221,9 +207,7 @@ async def deploy_trino_catalog_fixture(ops_test: OpsTest, deploy):
     )
 
     # Integrate trino-catalog
-    await ops_test.model.integrate(
-        f"{APP_NAME}:trino-catalog", f"{TRINO_NAME}:trino-catalog"
-    )
+    await ops_test.model.integrate(f"{APP_NAME}:trino-catalog", f"{TRINO_NAME}:trino-catalog")
     await ops_test.model.wait_for_idle(
         apps=[APP_NAME, TRINO_NAME],
         status="active",
@@ -245,12 +229,8 @@ class TestTrinoCatalogRelation:
 
     async def test_relation_active(self, ops_test: OpsTest):
         """Validate Ranger and Trino are active after relating on both interfaces."""
-        ranger_status = (
-            ops_test.model.applications[APP_NAME].units[0].workload_status
-        )
-        trino_status = (
-            ops_test.model.applications[TRINO_NAME].units[0].workload_status
-        )
+        ranger_status = ops_test.model.applications[APP_NAME].units[0].workload_status
+        trino_status = ops_test.model.applications[TRINO_NAME].units[0].workload_status
         assert ranger_status == "active"
         assert trino_status == "active"
 
@@ -264,10 +244,7 @@ class TestTrinoCatalogRelation:
         """Validate that the new zone contains exactly the four default policies."""
         ranger = await _get_ranger_client(ops_test)
         policies = (
-            ranger.find_policies(
-                {"zoneName": CATALOG_NAME, "serviceName": TRINO_SERVICE}
-            )
-            or []
+            ranger.find_policies({"zoneName": CATALOG_NAME, "serviceName": TRINO_SERVICE}) or []
         )
         policy_names = {p.name for p in policies}
         logger.info("policies in zone %s: %s", CATALOG_NAME, policy_names)
@@ -283,9 +260,7 @@ class TestTrinoCatalogRelation:
         zone_names = {z.name for z in zones}
         assert CATALOG_NAME not in zone_names
 
-    async def test_custom_policy_prevents_removal(
-        self, ops_test: OpsTest, deploy_trino_catalog
-    ):
+    async def test_custom_policy_prevents_removal(self, ops_test: OpsTest, deploy_trino_catalog):
         """Validate that a zone with custom policies is not removed on catalog removal."""
         secret_id = deploy_trino_catalog
 
@@ -300,18 +275,14 @@ class TestTrinoCatalogRelation:
                 "service": TRINO_SERVICE,
                 "name": f"custom-test-policy-{CATALOG_NAME}",
                 "resources": {
-                    "catalog": RangerPolicyResource(
-                        {"values": [CATALOG_NAME]}
-                    ),
+                    "catalog": RangerPolicyResource({"values": [CATALOG_NAME]}),
                 },
                 "policyItems": [
                     RangerPolicyItem(
                         {
                             "users": ["admin"],
                             "accesses": [
-                                RangerPolicyItemAccess(
-                                    {"type": "select", "isAllowed": True}
-                                )
+                                RangerPolicyItemAccess({"type": "select", "isAllowed": True})
                             ],
                         }
                     )

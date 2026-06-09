@@ -23,10 +23,6 @@ charmlibs-pydeps = [
     "pyyaml>=6.0.3,<7",
 ]
 
-fmt = [
-    "ruff>=0.15.16,<0.16",
-]
-
 lint = [
     "ruff>=0.15.16,<0.16",
     "codespell>=2.4.2,<3",
@@ -36,11 +32,13 @@ lint = [
 unit = [
     "coverage[toml]>=7.14.1,<8",
     "ipdb>=0.13.9,<0.14",
-    "pytest>=9.0.3,<10",
-]
-
-coverage-report = [
-    "coverage[toml]>=7.14.1,<8",
+    "ops[testing]>=3.7.1,<4",
+    "apache-ranger>=0.0.12,<0.1",
+    "Jinja2>=3.1.6,<4",
+    "pydantic>=1.10,<2",
+    "cosl>=1.9.1,<2",
+    "requests>=2.34.2,<3",
+    "pyyaml>=6.0.3,<7",
     "pytest>=9.0.3,<10",
 ]
 
@@ -91,13 +89,13 @@ log_cli_level = "INFO"
 
 # Linting tools configuration
 [tool.ruff]
-line-length = 79
+line-length = 99
 extend-exclude = ["__pycache__", "*.egg_info"]
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "C", "N", "D", "I001"]
-ignore = [
-    "E501",
+extend-ignore = [
+    "D105",
     "D107",
     "D203",
     "D204",
@@ -123,6 +121,8 @@ convention = "google"
 
 [tool.pyright]
 pythonVersion = "3.10"
+include = ["src/**/*.py"]
+extraPaths = ["lib"]
 # TODO (mertalpt): Enable type checking with the relevant refactoring task.
 typeCheckingMode = "off"
 

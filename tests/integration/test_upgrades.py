@@ -62,17 +62,13 @@ async def deploy(ops_test: OpsTest):
 class TestUpgrade:
     """Integration test for Ranger charm upgrade from previous release."""
 
-    async def test_upgrade(
-        self, ops_test: OpsTest, charm: str, charm_image: str
-    ):
+    async def test_upgrade(self, ops_test: OpsTest, charm: str, charm_image: str):
         """Builds the current charm and refreshes the current deployment."""
         resources = {
             "ranger-image": charm_image,
         }
 
-        await ops_test.model.applications[APP_NAME].refresh(
-            path=str(charm), resources=resources
-        )
+        await ops_test.model.applications[APP_NAME].refresh(path=str(charm), resources=resources)
         await ops_test.model.wait_for_idle(
             apps=[APP_NAME],
             status="active",
@@ -80,16 +76,11 @@ class TestUpgrade:
             timeout=600,
         )
 
-        assert (
-            ops_test.model.applications[APP_NAME].units[0].workload_status
-            == "active"
-        )
+        assert ops_test.model.applications[APP_NAME].units[0].workload_status == "active"
 
     async def test_ui_relation(self, ops_test: OpsTest):
         """Perform GET request on the Ranger UI host."""
-        url = await get_unit_url(
-            ops_test, application=APP_NAME, unit=0, port=6080
-        )
+        url = await get_unit_url(ops_test, application=APP_NAME, unit=0, port=6080)
         logger.info("curling app address: %s", url)
 
         response = requests.get(url, timeout=300)

@@ -27,9 +27,7 @@ def charm_image_fixture(request: FixtureRequest) -> str:
 
 
 @pytest_asyncio.fixture(scope="module", name="charm")
-async def charm_fixture(
-    request: FixtureRequest, ops_test: OpsTest
-) -> str | Path:
+async def charm_fixture(request: FixtureRequest, ops_test: OpsTest) -> str | Path:
     """Fetch the path to charm."""
     charms = request.config.getoption("--charm-file")
     if not charms:
@@ -77,7 +75,4 @@ async def deploy(ops_test: OpsTest, charm: str, charm_image: str):
         raise_on_blocked=False,
         timeout=1500,
     )
-    assert (
-        ops_test.model.applications[APP_NAME].units[0].workload_status
-        == "active"
-    )
+    assert ops_test.model.applications[APP_NAME].units[0].workload_status == "active"

@@ -67,8 +67,8 @@ class RangerAPIClient:
         """
         logger.info("listing services with type=%s", service_type)
         try:
-            services: Optional[List[RangerService]] = (
-                self._client.find_services({"serviceType": service_type})
+            services: Optional[List[RangerService]] = self._client.find_services(
+                {"serviceType": service_type}
             )
         except RangerServiceException as exc:
             raise RangerAPIError(
@@ -89,13 +89,9 @@ class RangerAPIClient:
         """
         logger.info("listing security zones")
         try:
-            zones: Optional[List[RangerSecurityZone]] = (
-                self._client.find_security_zones()
-            )
+            zones: Optional[List[RangerSecurityZone]] = self._client.find_security_zones()
         except RangerServiceException as exc:
-            raise RangerAPIError(
-                f"Failed to list security zones: {exc}"
-            ) from exc
+            raise RangerAPIError(f"Failed to list security zones: {exc}") from exc
         return zones or []
 
     def get_zone(self, zone_name: str) -> RangerSecurityZone:
@@ -114,13 +110,9 @@ class RangerAPIClient:
         """
         logger.info("getting security zone %s", zone_name)
         try:
-            zone: Optional[RangerSecurityZone] = (
-                self._client.get_security_zone(zone_name)
-            )
+            zone: Optional[RangerSecurityZone] = self._client.get_security_zone(zone_name)
         except RangerServiceException as exc:
-            raise RangerAPIError(
-                f"Failed to get security zone {zone_name!r}: {exc}"
-            ) from exc
+            raise RangerAPIError(f"Failed to get security zone {zone_name!r}: {exc}") from exc
         if zone is None:
             raise RangerAPIError(f"Security zone {zone_name!r} not found")
         return zone
@@ -141,17 +133,12 @@ class RangerAPIClient:
         """
         logger.info("creating security zone %s", zone.name)
         try:
-            created: Optional[RangerSecurityZone] = (
-                self._client.create_security_zone(zone)
-            )
+            created: Optional[RangerSecurityZone] = self._client.create_security_zone(zone)
         except RangerServiceException as exc:
-            raise RangerAPIError(
-                f"Failed to create security zone {zone.name!r}: {exc}"
-            ) from exc
+            raise RangerAPIError(f"Failed to create security zone {zone.name!r}: {exc}") from exc
         if created is None:
             raise RangerAPIError(
-                f"Failed to create security zone {zone.name!r}: "
-                "no response from server"
+                f"Failed to create security zone {zone.name!r}: no response from server"
             )
         return created
 
@@ -172,13 +159,9 @@ class RangerAPIClient:
         try:
             self._client.delete_security_zone(zone_name)
         except RangerServiceException as exc:
-            raise RangerAPIError(
-                f"Failed to delete security zone {zone_name!r}: {exc}"
-            ) from exc
+            raise RangerAPIError(f"Failed to delete security zone {zone_name!r}: {exc}") from exc
 
-    def list_policies(
-        self, zone_name: str, service_name: str
-    ) -> List[RangerPolicy]:
+    def list_policies(self, zone_name: str, service_name: str) -> List[RangerPolicy]:
         """List policies filtered by zone and service name.
 
         ``GET /service/public/v2/api/policy?zoneName=<z>&serviceName=<s>``
@@ -199,18 +182,15 @@ class RangerAPIClient:
             service_name,
         )
         try:
-            policies: Optional[List[RangerPolicy]] = (
-                self._client.find_policies(
-                    {
-                        "zoneName": zone_name,
-                        "serviceName": service_name,
-                    }
-                )
+            policies: Optional[List[RangerPolicy]] = self._client.find_policies(
+                {
+                    "zoneName": zone_name,
+                    "serviceName": service_name,
+                }
             )
         except RangerServiceException as exc:
             raise RangerAPIError(
-                f"Failed to list policies for zone={zone_name!r} "
-                f"service={service_name!r}: {exc}"
+                f"Failed to list policies for zone={zone_name!r} service={service_name!r}: {exc}"
             ) from exc
         return policies or []
 
@@ -229,22 +209,15 @@ class RangerAPIClient:
         Raises:
             RangerAPIError: if the policy is not found or the call fails.
         """
-        logger.info(
-            "getting policy %s in service %s", policy_name, service_name
-        )
+        logger.info("getting policy %s in service %s", policy_name, service_name)
         try:
-            policy: Optional[RangerPolicy] = self._client.get_policy(
-                service_name, policy_name
-            )
+            policy: Optional[RangerPolicy] = self._client.get_policy(service_name, policy_name)
         except RangerServiceException as exc:
             raise RangerAPIError(
-                f"Failed to get policy {policy_name!r} "
-                f"in service {service_name!r}: {exc}"
+                f"Failed to get policy {policy_name!r} in service {service_name!r}: {exc}"
             ) from exc
         if policy is None:
-            raise RangerAPIError(
-                f"Policy {policy_name!r} not found in service {service_name!r}"
-            )
+            raise RangerAPIError(f"Policy {policy_name!r} not found in service {service_name!r}")
         return policy
 
     def create_policy(self, policy: RangerPolicy) -> RangerPolicy:
@@ -263,17 +236,12 @@ class RangerAPIClient:
         """
         logger.info("creating policy %s", policy.name)
         try:
-            created: Optional[RangerPolicy] = self._client.create_policy(
-                policy
-            )
+            created: Optional[RangerPolicy] = self._client.create_policy(policy)
         except RangerServiceException as exc:
-            raise RangerAPIError(
-                f"Failed to create policy {policy.name!r}: {exc}"
-            ) from exc
+            raise RangerAPIError(f"Failed to create policy {policy.name!r}: {exc}") from exc
         if created is None:
             raise RangerAPIError(
-                f"Failed to create policy {policy.name!r}: "
-                "no response from server"
+                f"Failed to create policy {policy.name!r}: no response from server"
             )
         return created
 
@@ -302,13 +270,10 @@ class RangerAPIClient:
             policy_id,
         )
         try:
-            updated: Optional[RangerPolicy] = self._client.update_policy_by_id(
-                policy_id, policy
-            )
+            updated: Optional[RangerPolicy] = self._client.update_policy_by_id(policy_id, policy)
         except RangerServiceException as exc:
             raise RangerAPIError(
-                f"Failed to update policy {policy.name!r} "
-                f"(id={policy_id}): {exc}"
+                f"Failed to update policy {policy.name!r} (id={policy_id}): {exc}"
             ) from exc
         if updated is None:
             raise RangerAPIError(
@@ -351,13 +316,9 @@ class RangerAPIClient:
         """
         logger.info("getting role %s", role_name)
         try:
-            role: Optional[RangerRole] = self._client.get_role(
-                role_name, ADMIN_USER, ""
-            )
+            role: Optional[RangerRole] = self._client.get_role(role_name, ADMIN_USER, "")
         except RangerServiceException as exc:
-            raise RangerAPIError(
-                f"Failed to get role {role_name!r}: {exc}"
-            ) from exc
+            raise RangerAPIError(f"Failed to get role {role_name!r}: {exc}") from exc
         if role is None:
             raise RangerAPIError(f"Role {role_name!r} not found")
         return role
@@ -380,13 +341,9 @@ class RangerAPIClient:
         try:
             created: Optional[RangerRole] = self._client.create_role("", role)
         except RangerServiceException as exc:
-            raise RangerAPIError(
-                f"Failed to create role {role.name!r}: {exc}"
-            ) from exc
+            raise RangerAPIError(f"Failed to create role {role.name!r}: {exc}") from exc
         if created is None:
-            raise RangerAPIError(
-                f"Failed to create role {role.name!r}: no response from server"
-            )
+            raise RangerAPIError(f"Failed to create role {role.name!r}: no response from server")
         return created
 
     def delete_policy_by_id(self, policy_id: int) -> None:
@@ -404,9 +361,7 @@ class RangerAPIClient:
         try:
             self._client.delete_policy_by_id(policy_id)
         except RangerServiceException as exc:
-            raise RangerAPIError(
-                f"Failed to delete policy id={policy_id}: {exc}"
-            ) from exc
+            raise RangerAPIError(f"Failed to delete policy id={policy_id}: {exc}") from exc
 
     def delete_role(self, role_name: str) -> None:
         """Delete a role by name.
@@ -423,6 +378,4 @@ class RangerAPIClient:
         try:
             self._client.delete_role(role_name, ADMIN_USER, "")
         except RangerServiceException as exc:
-            raise RangerAPIError(
-                f"Failed to delete role {role_name!r}: {exc}"
-            ) from exc
+            raise RangerAPIError(f"Failed to delete role {role_name!r}: {exc}") from exc

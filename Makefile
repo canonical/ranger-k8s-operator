@@ -91,7 +91,7 @@ checks: fmt lint test
 
 .PHONY: fmt
 fmt:
-	tox -e fmt
+	tox -e format
 
 .PHONY: lint
 lint:

@@ -153,9 +153,7 @@ class CharmConfig(BaseConfigModel):
         Raises:
             ValueError: If the password does not meet the requirements.
         """
-        pattern = re.compile(
-            r"^(?=.*[A-Za-z])(?=.*\d)(?=.*[\W_])[A-Za-z\d\W_]{8,}$"
-        )
+        pattern = re.compile(r"^(?=.*[A-Za-z])(?=.*\d)(?=.*[\W_])[A-Za-z\d\W_]{8,}$")
         if pattern.match(value):
             return value
         raise ValueError("Password does not match requirements.")

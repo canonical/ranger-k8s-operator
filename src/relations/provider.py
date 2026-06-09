@@ -31,9 +31,7 @@ class RangerProvider(Object):
         - relation-broken
     """
 
-    def __init__(
-        self, charm: CharmBase, relation_name: str = "policy"
-    ) -> None:
+    def __init__(self, charm: CharmBase, relation_name: str = "policy") -> None:
         """Construct RangerProvider object.
 
         Args:
@@ -76,9 +74,7 @@ class RangerProvider(Object):
         logger.info("creating service")
         try:
             ranger = self._create_ranger_client()
-            service, is_created = self._create_ranger_service(
-                ranger, data, event
-            )
+            service, is_created = self._create_ranger_service(ranger, data, event)
         except RangerServiceException:
             event.defer()
             logger.exception(
@@ -87,9 +83,7 @@ class RangerProvider(Object):
             return
         except Exception:
             self.charm.unit.status = BlockedStatus("Unable to create service")
-            logger.exception(
-                "An error occurred while creating the ranger service:"
-            )
+            logger.exception("An error occurred while creating the ranger service:")
             return
 
         if not service:
@@ -120,9 +114,7 @@ class RangerProvider(Object):
             return
 
         try:
-            service_id = self.charm._state.services[
-                f"relation_{event.relation.id}"
-            ]
+            service_id = self.charm._state.services[f"relation_{event.relation.id}"]
             self._delete_ranger_service(service_id, event.relation.id)
         except RangerServiceException:
             logger.exception(
@@ -131,9 +123,7 @@ class RangerProvider(Object):
             return
         except Exception:
             self.charm.unit.status = BlockedStatus("Unable to delete service")
-            logger.exception(
-                "An error occurred while deleting the ranger service:"
-            )
+            logger.exception("An error occurred while deleting the ranger service:")
             return
 
         existing_services = self.charm._state.services
@@ -156,20 +146,14 @@ class RangerProvider(Object):
 
         existing_service = ranger.get_service(service_name)
         if existing_service is not None:
-            logger.info(
-                f"Service {service_name!r} not created as it already exists."
-            )
+            logger.info(f"Service {service_name!r} not created as it already exists.")
             is_created = False
             return (existing_service, is_created)
 
-        service = ranger_service.RangerService(
-            {"name": service_name, "type": data["type"]}
-        )
+        service = ranger_service.RangerService({"name": service_name, "type": data["type"]})
         service.configs = {
             "username": f"relation_id_{event.relation.id}",
-            "resource.lookup.timeout.value.in.ms": self.charm.config[
-                "lookup-timeout"
-            ],
+            "resource.lookup.timeout.value.in.ms": self.charm.config["lookup-timeout"],
         }
         for key, value in data.items():
             if key not in ["name", "type"]:
@@ -190,9 +174,7 @@ class RangerProvider(Object):
         Args:
             event: relation event
         """
-        relation = self.charm.model.get_relation(
-            self.relation_name, event.relation.id
-        )
+        relation = self.charm.model.get_relation(self.relation_name, event.relation.id)
 
         if relation:
             relation.data[self.charm.app].update(
@@ -225,11 +207,10 @@ class RangerProvider(Object):
         if retrieved_service is None:
             return
 
-        if self._has_custom_policies(
-            ranger, retrieved_service.name, relation_id
-        ):
+        if self._has_custom_policies(ranger, retrieved_service.name, relation_id):
             logger.warning(
-                f"Service {retrieved_service.name} has non-default policies defined. Deletion aborted."
+                f"Service {retrieved_service.name} has non-default policies defined."
+                " Deletion aborted."
             )
             return
         ranger.delete_service_by_id(service_id)

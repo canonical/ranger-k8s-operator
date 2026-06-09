@@ -24,9 +24,7 @@ class TestScaling:
         await scale(ops_test, app=APP_NAME, units=2)
         assert len(ops_test.model.applications[APP_NAME].units) == 2
 
-        url = await get_application_url(
-            ops_test, application=APP_NAME, port=6080
-        )
+        url = await get_application_url(ops_test, application=APP_NAME, port=6080)
         logger.info("curling app address: %s", url)
         response = requests.get(url, timeout=300, verify=False)  # nosec
         assert response.status_code == 200
@@ -36,9 +34,7 @@ class TestScaling:
         await scale(ops_test, app=APP_NAME, units=1)
         assert len(ops_test.model.applications[APP_NAME].units) == 1
 
-        url = await get_application_url(
-            ops_test, application=APP_NAME, port=6080
-        )
+        url = await get_application_url(ops_test, application=APP_NAME, port=6080)
         logger.info("curling app address: %s", url)
         response = requests.get(url, timeout=300, verify=False)  # nosec
         assert response.status_code == 200

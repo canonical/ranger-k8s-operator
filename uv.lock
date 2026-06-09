@@ -992,6 +992,25 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ca/20/742e720af65f9ad23ae0cfe140502a10b2e74da6c63773f3999dad793661/ops-3.7.1-py3-none-any.whl", hash = "sha256:559dc6770e551da5f4b9686a5605ed927c140182eb38bcc31c1c531c2f98923a", size = 212723, upload-time = "2026-05-28T04:13:39.845Z" },
 ]
 
+[package.optional-dependencies]
+testing = [
+    { name = "ops-scenario" },
+]
+
+[[package]]
+name = "ops-scenario"
+version = "8.7.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "ops" },
+    { name = "pyyaml" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4f/06/705b452b9145107978eb0400a1e751839ed1ec59dc152fa45a2e5fba0ea3/ops_scenario-8.7.1.tar.gz", hash = "sha256:25b24c7c612b8e089ad05f24a47c138999d1cc0a2683e0f7c74e0520c7bb6043", size = 78576, upload-time = "2026-05-28T04:13:45.292Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/15/45/c78501e1b8203207b7c43f62233b9fea3be5015f5230ce53d7deceb5d7a3/ops_scenario-8.7.1-py3-none-any.whl", hash = "sha256:01a8cee03c57a826b2dd9692571731d6307327cace7ac7865d9420e1136e7860", size = 69401, upload-time = "2026-05-28T04:13:41.39Z" },
+]
+
 [[package]]
 name = "packaging"
 version = "26.2"
@@ -1409,13 +1428,6 @@ charmlibs-pydeps = [
     { name = "pydantic" },
     { name = "pyyaml" },
 ]
-coverage-report = [
-    { name = "coverage", extra = ["toml"] },
-    { name = "pytest" },
-]
-fmt = [
-    { name = "ruff" },
-]
 integration = [
     { name = "ipdb" },
     { name = "juju" },
@@ -1439,9 +1451,16 @@ static = [
     { name = "bandit", extra = ["toml"] },
 ]
 unit = [
+    { name = "apache-ranger" },
+    { name = "cosl" },
     { name = "coverage", extra = ["toml"] },
     { name = "ipdb" },
+    { name = "jinja2" },
+    { name = "ops", extra = ["testing"] },
+    { name = "pydantic" },
     { name = "pytest" },
+    { name = "pyyaml" },
+    { name = "requests" },
 ]
 
 [package.metadata]
@@ -1461,11 +1480,6 @@ charmlibs-pydeps = [
     { name = "pydantic", specifier = ">=1.10,<2" },
     { name = "pyyaml", specifier = ">=6.0.3,<7" },
 ]
-coverage-report = [
-    { name = "coverage", extras = ["toml"], specifier = ">=7.14.1,<8" },
-    { name = "pytest", specifier = ">=9.0.3,<10" },
-]
-fmt = [{ name = "ruff", specifier = ">=0.15.16,<0.16" }]
 integration = [
     { name = "ipdb", specifier = ">=0.13.9,<0.14" },
     { name = "juju", specifier = ">=3.6.1.3,<4" },
@@ -1487,9 +1501,16 @@ lint = [
 ]
 static = [{ name = "bandit", extras = ["toml"], specifier = ">=1.9.4,<2" }]
 unit = [
+    { name = "apache-ranger", specifier = ">=0.0.12,<0.1" },
+    { name = "cosl", specifier = ">=1.9.1,<2" },
     { name = "coverage", extras = ["toml"], specifier = ">=7.14.1,<8" },
     { name = "ipdb", specifier = ">=0.13.9,<0.14" },
+    { name = "jinja2", specifier = ">=3.1.6,<4" },
+    { name = "ops", extras = ["testing"], specifier = ">=3.7.1,<4" },
+    { name = "pydantic", specifier = ">=1.10,<2" },
     { name = "pytest", specifier = ">=9.0.3,<10" },
+    { name = "pyyaml", specifier = ">=6.0.3,<7" },
+    { name = "requests", specifier = ">=2.34.2,<3" },
 ]
 
 [[package]]

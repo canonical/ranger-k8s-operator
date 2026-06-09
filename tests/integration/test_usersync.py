@@ -25,9 +25,7 @@ logger = logging.getLogger(__name__)
 class TestUserSync:
     """Integration test Ranger usersync."""
 
-    async def test_user_sync(
-        self, ops_test: OpsTest, charm: str, charm_image: str
-    ):
+    async def test_user_sync(self, ops_test: OpsTest, charm: str, charm_image: str):
         """Validate users and groups have been synchronized from LDAP."""
         await ops_test.model.deploy(LDAP_NAME, channel="edge")
 
@@ -47,9 +45,7 @@ class TestUserSync:
             "ranger-image": charm_image,
         }
         action = (
-            await ops_test.model.applications[LDAP_NAME]
-            .units[0]
-            .run_action("load-test-users")
+            await ops_test.model.applications[LDAP_NAME].units[0].run_action("load-test-users")
         )
         await action.wait()
 
@@ -70,9 +66,7 @@ class TestUserSync:
         )
         time.sleep(100)  # Provide time for user synchronization to occur.
 
-        url = await get_unit_url(
-            ops_test, application=APP_NAME, unit=0, port=6080
-        )
+        url = await get_unit_url(ops_test, application=APP_NAME, unit=0, port=6080)
         membership = await get_memberships(ops_test, url)
 
         assert membership == ("finance", 7)

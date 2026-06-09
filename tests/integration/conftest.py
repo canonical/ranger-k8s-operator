@@ -8,9 +8,10 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
-from integration.helpers import APP_NAME, POSTGRES_NAME
 from pytest import FixtureRequest
 from pytest_operator.plugin import OpsTest
+
+from integration.helpers import APP_NAME, POSTGRES_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -19,9 +20,9 @@ logger = logging.getLogger(__name__)
 def charm_image_fixture(request: FixtureRequest) -> str:
     """The OCI image for charm."""
     charm_image = request.config.getoption("--ranger-image")
-    assert (
-        charm_image
-    ), "--ranger-image argument is required which should contain the name of the OCI image."
+    assert charm_image, (
+        "--ranger-image argument is required which should contain the name of the OCI image."
+    )
     return charm_image
 
 

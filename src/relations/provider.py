@@ -3,7 +3,6 @@
 
 """Ranger client relation hooks & helpers."""
 
-
 import logging
 
 from apache_ranger.client import ranger_client

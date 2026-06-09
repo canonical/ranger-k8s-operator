@@ -269,9 +269,7 @@ class TestCharm(TestCase):
         simulate_admin_lifecycle(harness)
 
         # Update the config.
-        self.harness.update_config(
-            {"ranger-admin-password": "s3cure-pass"}
-        )  # nosec
+        self.harness.update_config({"ranger-admin-password": "s3cure-pass"})  # nosec
 
         # The new plan reflects the change.
         want_admin_password = "rangerR0cks!"  # nosec

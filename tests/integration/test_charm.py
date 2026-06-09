@@ -3,10 +3,13 @@
 # See LICENSE file for licensing details.
 
 """Charm integration tests."""
+
 import logging
 
 import pytest
 import requests
+from pytest_operator.plugin import OpsTest
+
 from integration.conftest import deploy  # noqa: F401, pylint: disable=W0611
 from integration.helpers import (
     APP_NAME,
@@ -14,7 +17,6 @@ from integration.helpers import (
     POSTGRES_NAME,
     get_unit_url,
 )
-from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
 

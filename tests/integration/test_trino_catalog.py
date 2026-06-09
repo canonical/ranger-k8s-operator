@@ -16,6 +16,8 @@ from apache_ranger.model.ranger_policy import (
     RangerPolicyItemAccess,
     RangerPolicyResource,
 )
+from pytest_operator.plugin import OpsTest
+
 from integration.helpers import (
     APP_NAME,
     RANGER_AUTH,
@@ -23,7 +25,6 @@ from integration.helpers import (
     TRINO_SERVICE,
     get_unit_url,
 )
-from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
 
@@ -333,6 +334,6 @@ class TestTrinoCatalogRelation:
         ranger = await _get_ranger_client(ops_test)
         zones = ranger.find_security_zones() or []
         zone_names = {z.name for z in zones}
-        assert (
-            CATALOG_NAME in zone_names
-        ), f"Zone {CATALOG_NAME!r} was removed despite having a custom policy"
+        assert CATALOG_NAME in zone_names, (
+            f"Zone {CATALOG_NAME!r} was removed despite having a custom policy"
+        )

@@ -3,6 +3,7 @@
 # See LICENSE file for licensing details.
 
 """Structured configuration for the Superset charm."""
+
 import logging
 import re
 from enum import Enum

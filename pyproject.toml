@@ -6,74 +6,59 @@ name = "ranger-k8s"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
-    "apache-ranger==0.0.12",
-    "ops>=3.4.0",
-    "Jinja2==3.1.2",
-    "pydantic==1.10.12",
-    "cosl==1.4.0",
+    "apache-ranger>=0.0.12,<0.1",
+    "ops>=3.4.0,<4",
+    "Jinja2>=3.1.2,<4",
+    "pydantic>=1.10,<2",
+    "cosl>=1.4.0,<2",
 ]
 
 [dependency-groups]
 # Dependencies needed by vendored charm libraries at build time
 charmlibs-pydeps = [
-    "ops>=2.0.0",
+    "ops>=2.0.0,<4",
     "pydantic>=1.10,<2",
 ]
 
 fmt = [
-    "black==22.8.0",
-    "isort==5.10.1",
+    "ruff>=0.15.16,<0.16",
 ]
 
 lint = [
-    "mypy",
-    "pylint",
-    "pydocstyle",
-    "pytest",
-    "types-PyYAML",
-    "types-requests",
-    "black==22.8.0",
-    "codespell==2.2.1",
-    "flake8==7.0.0",
-    "flake8-builtins==3.0.0",
-    "flake8-copyright==0.2.4",
-    "flake8-docstrings==1.7.0",
-    "isort==5.10.1",
-    "pep8-naming==0.13.2",
-    "pyproject-flake8==7.0.0",
-    "flake8-docstrings-complete>=1.0.3",
-    "flake8-test-docs>=1.0",
+    "ruff>=0.15.16,<0.16",
+    "codespell>=2.2.1,<3",
+    "pyright>=1.1.410,<2",
 ]
 
 unit = [
-    "coverage[toml]==6.4.4",
-    "ipdb==0.13.9",
-    "pytest==7.1.3",
+    "coverage[toml]>=7.14.1,<8",
+    "ipdb>=0.13.9,<0.14",
+    "pytest>=9.0.3,<10",
 ]
 
 coverage-report = [
-    "coverage[toml]",
-    "pytest",
+    "coverage[toml]>=7.14.1,<8",
+    "pytest>=9.0.3,<10",
 ]
 
 static = [
-    "bandit[toml]",
+    "bandit[toml]>=1.9.4,<2",
 ]
 
 integration = [
-    "ipdb==0.13.9",
-    "juju==3.5.2.1",
-    "pytest==7.1.3",
-    "pytest-operator==0.29.0",
-    "pytest-asyncio==0.21",
+    "ipdb>=0.13.9,<0.14",
+    "juju>=3.5.2.1,<4",
+    "pytest>=9.0.3,<10",
+    "pytest-operator>=0.29.0,<0.44",
+    "pytest-asyncio>=0.21,<2",
 ]
 
 integration-scenarios = [
-    "ipdb==0.13.9",
-    "juju==3.5.2.1",
-    "pytest==7.1.3",
-    "pytest-operator==0.22.0",
-    "pytest-asyncio==0.21",
+    "ipdb>=0.13.9,<0.14",
+    "juju>=3.5.2.1,<4",
+    "pytest>=9.0.3,<10",
+    "pytest-operator>=0.29.0,<0.44",
+    "pytest-asyncio>=0.21,<2",
 ]
 
 [tool.uv]
@@ -97,24 +82,20 @@ branch = true
 [tool.coverage.report]
 show_missing = true
 
-[tool.isort]
-profile = "black"
-line_length = 79
-
 [tool.pytest.ini_options]
 minversion = "6.0"
 log_cli_level = "INFO"
 
-# Formatting tools configuration
-[tool.black]
-line-length = 79
-target-version = ["py38"]
-
 # Linting tools configuration
 [tool.ruff]
 line-length = 79
+extend-exclude = ["__pycache__", "*.egg_info"]
+
+[tool.ruff.lint]
 select = ["E", "W", "F", "C", "N", "D", "I001"]
-extend-ignore = [
+ignore = [
+    "E501",
+    "D107",
     "D203",
     "D204",
     "D213",
@@ -127,30 +108,20 @@ extend-ignore = [
     "D409",
     "D413",
 ]
-ignore = ["E501", "D107"]
-extend-exclude = ["__pycache__", "*.egg_info"]
-per-file-ignores = {"tests/*" = ["D100","D101","D102","D103","D104"]}
 
-[tool.ruff.mccabe]
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D100", "D101", "D102", "D103", "D104"]
+
+[tool.ruff.lint.mccabe]
 max-complexity = 10
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.pyright]
+pythonVersion = "3.10"
+# TODO (mertalpt): Enable type checking with the relevant refactoring task.
+typeCheckingMode = "off"
 
 [tool.codespell]
-skip = "build,lib,venv,icon.svg,.tox,.git,.mypy_cache,.ruff_cache,.coverage"
-
-# Linting tools configuration
-[tool.flake8]
-max-line-length = 79
-max-doc-length = 99
-max-complexity = 10
-exclude = [".git", "__pycache__", ".tox", "build", "dist", "*.egg_info", "venv"]
-select = ["E", "W", "F", "C", "N", "R", "D", "H"]
-# Ignore W503, E501 because using black creates errors with this
-# Ignore D107 Missing docstring in __init__
-ignore = ["W503", "E501", "D107"]
-# D100, D101, D102, D103: Ignore missing docstrings in tests
-per-file-ignores = ["tests/*:D100,D101,D102,D103,D104"]
-docstring-convention = "google"
-# Check for properly formatted copyright header in each file
-copyright-check = "True"
-copyright-author = "Canonical Ltd."
-copyright-regexp = "Copyright\\s\\d{4}([-,]\\d{4})*\\s+%(author)s"
+skip = "build,lib,venv,.venv,icon.svg,.tox,.git,.mypy_cache,.ruff_cache,.coverage"

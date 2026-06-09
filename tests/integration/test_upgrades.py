@@ -10,13 +10,14 @@ import pytest
 import pytest_asyncio
 import requests
 import yaml
+from pytest_operator.plugin import OpsTest
+
 from integration.helpers import (
     APP_NAME,
     POSTGRES_NAME,
     SECURE_PWD,
     get_unit_url,
 )
-from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
 

@@ -7,6 +7,8 @@ import logging
 
 import pytest
 from apache_ranger.client import ranger_client
+from pytest_operator.plugin import OpsTest
+
 from integration.helpers import (
     APP_NAME,
     RANGER_AUTH,
@@ -14,7 +16,6 @@ from integration.helpers import (
     TRINO_SERVICE,
     get_unit_url,
 )
-from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
 

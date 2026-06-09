@@ -7,6 +7,8 @@ import logging
 import time
 
 import pytest
+from pytest_operator.plugin import OpsTest
+
 from integration.helpers import (
     APP_NAME,
     LDAP_NAME,
@@ -14,7 +16,6 @@ from integration.helpers import (
     get_memberships,
     get_unit_url,
 )
-from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
 

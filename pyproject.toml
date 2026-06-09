@@ -50,7 +50,7 @@ integration = [
     "juju>=3.5.2.1,<4",
     "pytest>=9.0.3,<10",
     "pytest-operator>=0.29.0,<0.44",
-    "pytest-asyncio>=0.21,<2",
+    "pytest-asyncio>=0.23,<2",
 ]
 
 integration-scenarios = [
@@ -58,7 +58,7 @@ integration-scenarios = [
     "juju>=3.5.2.1,<4",
     "pytest>=9.0.3,<10",
     "pytest-operator>=0.29.0,<0.44",
-    "pytest-asyncio>=0.21,<2",
+    "pytest-asyncio>=0.23,<2",
 ]
 
 [tool.uv]

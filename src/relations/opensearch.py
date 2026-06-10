@@ -56,9 +56,7 @@ class OpensearchRelationHandler(framework.Object):
         if not self.charm.unit.is_leader():
             return
 
-        self.charm.unit.status = WaitingStatus(
-            f"handling {self.relation_name} change"
-        )
+        self.charm.unit.status = WaitingStatus(f"handling {self.relation_name} change")
         self.update(event)
 
     @log_event_handler(logger)
@@ -87,9 +85,7 @@ class OpensearchRelationHandler(framework.Object):
 
         certificate = self.charm._state.opensearch_certificate
         truststore_pwd = self.charm._state.truststore_pwd
-        out, _ = container.exec(
-            ["/bin/sh", "-c", "echo $JAVA_HOME"]
-        ).wait_output()
+        out, _ = container.exec(["/bin/sh", "-c", "echo $JAVA_HOME"]).wait_output()
         java_home = out.strip()
 
         if not relation_broken and certificate:
@@ -195,9 +191,7 @@ class OpensearchRelationHandler(framework.Object):
                 timeout=60,
             )  # nosec
         except requests.exceptions.RequestException as e:
-            logger.error(
-                f"An exception has occurred while adding the audit schema: {e}"
-            )
+            logger.error(f"An exception has occurred while adding the audit schema: {e}")
             raise
 
     def update(self, event, relation_broken=False) -> None:

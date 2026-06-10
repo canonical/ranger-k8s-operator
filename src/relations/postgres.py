@@ -60,15 +60,11 @@ class PostgresRelationHandler(framework.Object):
         if not self.charm.unit.is_leader():
             return
 
-        self.charm.unit.status = WaitingStatus(
-            f"handling {event.relation.name} change"
-        )
+        self.charm.unit.status = WaitingStatus(f"handling {event.relation.name} change")
         self.update(event)
 
     @log_event_handler(logger)
-    def _on_database_relation_broken(
-        self, event: DatabaseCreatedEvent
-    ) -> None:
+    def _on_database_relation_broken(self, event: DatabaseCreatedEvent) -> None:
         """Handle broken relations with the database.
 
         Args:

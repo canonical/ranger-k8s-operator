@@ -204,9 +204,7 @@ class TestCharm(TestCase):
         self.assertEqual(got_plan["services"], want_plan["services"])
 
         # The service was started.
-        service = harness.model.unit.get_container("ranger").get_service(
-            "ranger"
-        )
+        service = harness.model.unit.get_container("ranger").get_service("ranger")
         self.assertTrue(service.is_running())
 
         # The MaintenanceStatus is set with replan message.
@@ -258,9 +256,7 @@ class TestCharm(TestCase):
         self.assertEqual(got_plan["services"], want_plan["services"])
 
         # The service was started.
-        service = harness.model.unit.get_container("ranger").get_service(
-            "ranger"
-        )
+        service = harness.model.unit.get_container("ranger").get_service("ranger")
         self.assertTrue(service.is_running())
 
     def test_config_changed(self):
@@ -269,15 +265,13 @@ class TestCharm(TestCase):
         simulate_admin_lifecycle(harness)
 
         # Update the config.
-        self.harness.update_config(
-            {"ranger-admin-password": "s3cure-pass"}
-        )  # nosec
+        self.harness.update_config({"ranger-admin-password": "s3cure-pass"})  # nosec
 
         # The new plan reflects the change.
         want_admin_password = "rangerR0cks!"  # nosec
-        got_admin_password = harness.get_container_pebble_plan(
+        got_admin_password = harness.get_container_pebble_plan("ranger").to_dict()["services"][
             "ranger"
-        ).to_dict()["services"]["ranger"]["environment"]["RANGER_ADMIN_PWD"]
+        ]["environment"]["RANGER_ADMIN_PWD"]
 
         self.assertEqual(got_admin_password, want_admin_password)
 
@@ -296,14 +290,10 @@ class TestCharm(TestCase):
 
         simulate_admin_lifecycle(harness)
 
-        nginx_route_relation_id = harness.add_relation(
-            "nginx-route", "ingress"
-        )
+        nginx_route_relation_id = harness.add_relation("nginx-route", "ingress")
         harness.charm._require_nginx_route()
 
-        assert harness.get_relation_data(
-            nginx_route_relation_id, harness.charm.app
-        ) == {
+        assert harness.get_relation_data(nginx_route_relation_id, harness.charm.app) == {
             "service-namespace": harness.charm.model.name,
             "service-hostname": harness.charm.app.name,
             "service-name": harness.charm.app.name,
@@ -323,9 +313,7 @@ class TestCharm(TestCase):
         container.get_check.return_value.status = CheckStatus.UP
         harness.charm.on.update_status.emit()
 
-        self.assertEqual(
-            harness.model.unit.status, ActiveStatus("Status check: UP")
-        )
+        self.assertEqual(harness.model.unit.status, ActiveStatus("Status check: UP"))
 
     @mock.patch("charm.RangerProvider._create_ranger_service")
     def policy_relation_setup(self, mock_create_ranger_service):
@@ -397,8 +385,7 @@ class TestCharm(TestCase):
         # Check that the specific warning message is in the logs
         self.assertTrue(
             any(
-                "Service relation_1 has non-default policies defined. Deletion aborted."
-                in message
+                "Service relation_1 has non-default policies defined. Deletion aborted." in message
                 for message in log.output
             )
         )
@@ -414,9 +401,7 @@ class TestCharm(TestCase):
             "ldap://comsys-openldap-k8s:389",
         )
         self.assertEqual(
-            got_plan["services"]["ranger"]["environment"][
-                "SYNC_GROUP_OBJECT_CLASS"
-            ],
+            got_plan["services"]["ranger"]["environment"]["SYNC_GROUP_OBJECT_CLASS"],
             "posixGroup",
         )
 
@@ -477,9 +462,7 @@ class TestCharm(TestCase):
     def test_on_opensearch_index_created(self):
         """Test handling of opensearch relation changed events."""
         harness = self.harness
-        self.opensearch_setup(
-            harness=harness, data=OPENSEARCH_RELATION_CHANGED_DATA
-        )
+        self.opensearch_setup(harness=harness, data=OPENSEARCH_RELATION_CHANGED_DATA)
 
         self.assertEqual(
             harness.model.unit.status,
@@ -494,19 +477,13 @@ class TestCharm(TestCase):
     def test_on_opensearch_relation_broken(self):
         """Test handling of broken relations with opensearch."""
         harness = self.harness
-        rel_id = self.opensearch_setup(
-            harness=harness, data=OPENSEARCH_RELATION_CHANGED_DATA
-        )
+        rel_id = self.opensearch_setup(harness=harness, data=OPENSEARCH_RELATION_CHANGED_DATA)
         data = OPENSEARCH_RELATION_BROKEN_DATA
         event = make_relation_event(rel_id, "opensearch", data)
-        self.harness.charm.opensearch_relation_handler._on_relation_broken(
-            event
-        )
+        self.harness.charm.opensearch_relation_handler._on_relation_broken(event)
         got_plan = harness.get_container_pebble_plan("ranger").to_dict()
         self.assertEqual(
-            got_plan["services"]["ranger"]["environment"][
-                "OPENSEARCH_ENABLED"
-            ],
+            got_plan["services"]["ranger"]["environment"]["OPENSEARCH_ENABLED"],
             False,
         )
 
@@ -528,16 +505,12 @@ def simulate_usersync_lifecycle(harness):
     harness.charm.on.ranger_pebble_ready.emit(container)
 
     harness.update_config({"charm-function": "usersync"})
-    harness.handle_exec(
-        "ranger", ["/bin/sh"], result="/usr/lib/jvm/java-21-openjdk-amd64/"
-    )
+    harness.handle_exec("ranger", ["/bin/sh"], result="/usr/lib/jvm/java-21-openjdk-amd64/")
 
     # Simulate LDAP readiness.
     rel_id = harness.add_relation("ldap", "comsys-openldap-k8s")
     harness.add_relation_unit(rel_id, "comsys-openldap-k8s/0")
-    event = make_relation_event(
-        rel_id, "comsys-openldap-k8s", LDAP_RELATION_CHANGED_DATA
-    )
+    event = make_relation_event(rel_id, "comsys-openldap-k8s", LDAP_RELATION_CHANGED_DATA)
     harness.charm.ldap._on_relation_changed(event)
     return rel_id
 
@@ -555,9 +528,7 @@ def simulate_admin_lifecycle(harness):
     container = harness.model.unit.get_container("ranger")
     harness.charm.on.ranger_pebble_ready.emit(container)
 
-    harness.handle_exec(
-        "ranger", ["/bin/sh"], result="/usr/lib/jvm/java-21-openjdk-amd64/"
-    )
+    harness.handle_exec("ranger", ["/bin/sh"], result="/usr/lib/jvm/java-21-openjdk-amd64/")
     harness.handle_exec("ranger", ["keytool"], result=0)
 
     # Simulate database readiness.

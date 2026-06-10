@@ -61,9 +61,7 @@ class TrinoCatalogRelationHandler(framework.Object):
         trino_info = self.charm.trino_catalog_requirer.get_trino_info()
         if trino_info:
             self.charm._state.trino_url = trino_info["trino_url"]
-            self.charm._state.trino_catalogs = [
-                c.to_dict() for c in trino_info["trino_catalogs"]
-            ]
+            self.charm._state.trino_catalogs = [c.to_dict() for c in trino_info["trino_catalogs"]]
             self.charm._state.trino_credentials_secret_id = trino_info[
                 "trino_credentials_secret_id"
             ]
@@ -112,17 +110,14 @@ class TrinoCatalogRelationHandler(framework.Object):
             services = client.list_services_by_type(TRINO_SERVICE_TYPE)
         except RangerAPIError:
             logger.warning(
-                "failed to connect to Ranger API, "
-                "reconciliation will retry on next update-status",
+                "failed to connect to Ranger API, reconciliation will retry on next update-status",
                 exc_info=True,
             )
             return
 
         if not services:
             if has_relation:
-                self.charm.unit.status = BlockedStatus(
-                    "Trino service not found in Ranger"
-                )
+                self.charm.unit.status = BlockedStatus("Trino service not found in Ranger")
             return
 
         service_name = services[0].name

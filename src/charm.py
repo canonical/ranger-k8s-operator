@@ -76,15 +76,11 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         self.name = "ranger"
 
         self.framework.observe(self.on.install, self._on_install)
-        self.framework.observe(
-            self.on.ranger_pebble_ready, self._on_ranger_pebble_ready
-        )
+        self.framework.observe(self.on.ranger_pebble_ready, self._on_ranger_pebble_ready)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
         self.framework.observe(self.on.update_status, self._on_update_status)
         self.framework.observe(self.on.restart_action, self._on_restart)
-        self.framework.observe(
-            self.on.peer_relation_changed, self._on_peer_relation_changed
-        )
+        self.framework.observe(self.on.peer_relation_changed, self._on_peer_relation_changed)
 
         self.postgres_relation = DatabaseRequires(
             self,
@@ -124,9 +120,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         )
 
         # Loki
-        self.log_proxy = LogProxyConsumer(
-            self, log_files=LOG_FILES, relation_name="log-proxy"
-        )
+        self.log_proxy = LogProxyConsumer(self, log_files=LOG_FILES, relation_name="log-proxy")
 
         # Grafana
         self._grafana_dashboards = GrafanaDashboardProvider(
@@ -246,9 +240,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         Args:
             container: The application container.
         """
-        out, _ = container.exec(
-            ["/bin/sh", "-c", "echo $JAVA_HOME"]
-        ).wait_output()
+        out, _ = container.exec(["/bin/sh", "-c", "echo $JAVA_HOME"]).wait_output()
         java_home = out.strip()
 
         command = [
@@ -282,14 +274,10 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         """
         db_conn = self._state.database_connection
         if self.unit.is_leader():
-            self._state.truststore_pwd = (
-                self._state.truststore_pwd or generate_password()
-            )
+            self._state.truststore_pwd = self._state.truststore_pwd or generate_password()
         self.set_truststore_password(container)
         opensearch = self._state.opensearch or {}
-        if opensearch.get("is_enabled") and not container.exists(
-            "/opensearch.crt"
-        ):
+        if opensearch.get("is_enabled") and not container.exists("/opensearch.crt"):
             self.opensearch_relation_handler.update_certificates()
 
         context = {
@@ -305,13 +293,14 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             "OPENSEARCH_USER": opensearch.get("username"),
             "OPENSEARCH_ENABLED": opensearch.get("is_enabled"),
             "RANGER_ADMIN_PWD": self.config["ranger-admin-password"],
-            "JAVA_OPTS": f"-Duser.timezone=UTC0 -Djavax.net.ssl.trustStorePassword={self._state.truststore_pwd}",
+            "JAVA_OPTS": (
+                f"-Duser.timezone=UTC0"
+                f" -Djavax.net.ssl.trustStorePassword={self._state.truststore_pwd}"
+            ),
             "RANGER_USERSYNC_PWD": self.config["ranger-usersync-password"],
         }
         config = render("admin-config.jinja", context)
-        container.push(
-            "/usr/lib/ranger/admin/install.properties", config, make_dirs=True
-        )
+        container.push("/usr/lib/ranger/admin/install.properties", config, make_dirs=True)
         return ADMIN_ENTRYPOINT, context
 
     def _configure_ranger_usersync(self, container):

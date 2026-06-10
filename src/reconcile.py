@@ -55,10 +55,7 @@ def _default_policy_names(zone_name: str) -> Set[str]:
     Returns:
         Set of default policy name strings.
     """
-    return {
-        f"default - {suffix} - {zone_name}"
-        for suffix in DEFAULT_POLICY_SUFFIXES
-    }
+    return {f"default - {suffix} - {zone_name}" for suffix in DEFAULT_POLICY_SUFFIXES}
 
 
 def _role_names(zone_name: str) -> List[str]:
@@ -103,10 +100,7 @@ def _build_zone(zone_name: str, service_name: str) -> RangerSecurityZone:
             "auditUsers": [],
             "auditUserGroups": [],
             "auditRoles": [f"{zone_name}-auditor"],
-            "description": (
-                f"Managed zone for catalogs {zone_name} "
-                f"and {zone_name}_developer"
-            ),
+            "description": (f"Managed zone for catalogs {zone_name} and {zone_name}_developer"),
         }
     )
 
@@ -187,9 +181,7 @@ def _build_rw_policy(zone_name: str, service_name: str) -> RangerPolicy:
     """
     dev_cat = f"{zone_name}_developer"
     roles = [f"{zone_name}-editor", f"{zone_name}-admin"]
-    accesses = [
-        _access(p) for p in ("select", "show", "use", "insert", "delete")
-    ]
+    accesses = [_access(p) for p in ("select", "show", "use", "insert", "delete")]
     item = RangerPolicyItem({"roles": roles, "accesses": accesses})
 
     return RangerPolicy(
@@ -379,9 +371,7 @@ class TrinoCatalogReconciler:
         for zone_name in sorted(stale_zones):
             self._cleanup_zone(zone_name)
 
-    def _ensure_roles(
-        self, zone_name: str, existing_role_names: Set[str]
-    ) -> None:
+    def _ensure_roles(self, zone_name: str, existing_role_names: Set[str]) -> None:
         """Create any missing roles for the given zone.
 
         Args:
@@ -413,9 +403,7 @@ class TrinoCatalogReconciler:
             zone_name: the base zone / catalog name.
         """
         try:
-            auto_policies = self._client.list_policies(
-                zone_name, self._service_name
-            )
+            auto_policies = self._client.list_policies(zone_name, self._service_name)
         except RangerAPIError as exc:
             logger.warning(
                 "failed to list auto-policies for zone %s, skipping purge: %s",
@@ -449,9 +437,7 @@ class TrinoCatalogReconciler:
             zone_name: the base zone / catalog name.
         """
         try:
-            policies = self._client.list_policies(
-                zone_name, self._service_name
-            )
+            policies = self._client.list_policies(zone_name, self._service_name)
         except RangerAPIError as exc:
             logger.warning(
                 "failed to list policies for zone %s, skipping: %s",
@@ -500,9 +486,7 @@ class TrinoCatalogReconciler:
             zone_name: the zone to potentially remove.
         """
         try:
-            policies = self._client.list_policies(
-                zone_name, self._service_name
-            )
+            policies = self._client.list_policies(zone_name, self._service_name)
         except RangerAPIError as exc:
             logger.warning(
                 "failed to list policies for zone %s, skipping cleanup: %s",
@@ -544,9 +528,7 @@ class TrinoCatalogReconciler:
                 )
 
     @staticmethod
-    def _policy_needs_update(
-        existing: RangerPolicy, desired: RangerPolicy
-    ) -> bool:
+    def _policy_needs_update(existing: RangerPolicy, desired: RangerPolicy) -> bool:
         """Check whether an existing policy differs from the desired state.
 
         Compares resource blocks and policy items (roles/users/accesses).
@@ -560,9 +542,7 @@ class TrinoCatalogReconciler:
         """
         if _serialise_resources(existing) != _serialise_resources(desired):
             return True
-        if _serialise_items(existing.policyItems) != _serialise_items(
-            desired.policyItems
-        ):
+        if _serialise_items(existing.policyItems) != _serialise_items(desired.policyItems):
             return True
         return False
 
@@ -620,15 +600,12 @@ def _serialise_items(items: list) -> set:
         if isinstance(item, RangerPolicyItem):
             users = frozenset(item.users or [])
             roles = frozenset(item.roles or [])
-            accesses = frozenset(
-                (a.type, a.isAllowed) for a in (item.accesses or [])
-            )
+            accesses = frozenset((a.type, a.isAllowed) for a in (item.accesses or []))
         else:
             users = frozenset(item.get("users", []))
             roles = frozenset(item.get("roles", []))
             accesses = frozenset(
-                (a.get("type"), a.get("isAllowed", True))
-                for a in item.get("accesses", [])
+                (a.get("type"), a.get("isAllowed", True)) for a in item.get("accesses", [])
             )
         result.add((users, roles, accesses))
     return result

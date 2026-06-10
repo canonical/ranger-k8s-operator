@@ -24,14 +24,10 @@ def render(template_name, context):
     Returns:
         A dict containing the rendered template.
     """
-    charm_dir = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), os.pardir)
-    )
+    charm_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
     loader = FileSystemLoader(os.path.join(charm_dir, "templates"))
     return (
-        Environment(loader=loader, autoescape=True)
-        .get_template(template_name)
-        .render(**context)
+        Environment(loader=loader, autoescape=True).get_template(template_name).render(**context)
     )
 
 
@@ -60,20 +56,17 @@ def log_event_handler(logger):
             """Log decorator method.
 
             Args:
+                self: The charm instance.
                 event: The event triggered when the relation changes.
 
             Returns:
                 Decorated method.
             """
-            logger.info(
-                f"* running {self.__class__.__name__}.{method.__name__}"
-            )
+            logger.info(f"* running {self.__class__.__name__}.{method.__name__}")
             try:
                 return method(self, event)
             finally:
-                logger.info(
-                    f"* completed {self.__class__.__name__}.{method.__name__}"
-                )
+                logger.info(f"* completed {self.__class__.__name__}.{method.__name__}")
 
         return decorated
 
@@ -125,16 +118,12 @@ def retry(max_retries=3, delay=2, backoff=2):
                     return result
                 except Exception as e:
                     if attempt < max_retries - 1:
-                        logger.warning(
-                            f"Request failed (attempt {attempt + 1}): {e}"
-                        )
+                        logger.warning(f"Request failed (attempt {attempt + 1}): {e}")
                         time.sleep(current_delay)
                         current_delay *= backoff
                     else:
                         logger.exception("Max retries reached for request")
-                        raise RangerServiceException(
-                            "Max retries reached for request."
-                        ) from e
+                        raise RangerServiceException("Max retries reached for request.") from e
             return None
 
         return wrapper
@@ -183,9 +172,4 @@ def generate_password():
     Returns:
         String of 32 randomized letter+digit characters
     """
-    return "".join(
-        [
-            secrets.choice(string.ascii_letters + string.digits)
-            for _ in range(32)
-        ]
-    )
+    return "".join([secrets.choice(string.ascii_letters + string.digits) for _ in range(32)])

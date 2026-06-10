@@ -7,6 +7,8 @@ import logging
 
 import pytest
 from apache_ranger.client import ranger_client
+from pytest_operator.plugin import OpsTest
+
 from integration.helpers import (
     APP_NAME,
     RANGER_AUTH,
@@ -14,7 +16,6 @@ from integration.helpers import (
     TRINO_SERVICE,
     get_unit_url,
 )
-from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
 
@@ -44,9 +45,7 @@ class TestPolicyRelation:
             raise_on_blocked=False,
             timeout=1500,
         )
-        await ops_test.model.integrate(
-            f"{APP_NAME}:policy", f"{TRINO_NAME}:policy"
-        )
+        await ops_test.model.integrate(f"{APP_NAME}:policy", f"{TRINO_NAME}:policy")
 
         await ops_test.model.wait_for_idle(
             apps=[APP_NAME, TRINO_NAME],
@@ -55,9 +54,7 @@ class TestPolicyRelation:
             timeout=1500,
         )
 
-        url = await get_unit_url(
-            ops_test, application=APP_NAME, unit=0, port=6080
-        )
+        url = await get_unit_url(ops_test, application=APP_NAME, unit=0, port=6080)
         ranger = ranger_client.RangerClient(url, RANGER_AUTH)
 
         new_service = ranger.get_service(TRINO_SERVICE)

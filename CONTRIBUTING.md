@@ -28,6 +28,9 @@ sudo snap install charmcraft --classic
 # Rockcraft
 sudo snap install rockcraft --classic
 
+# uv
+sudo snap install astral-uv --classic
+
 # yq
 sudo snap install yq
 

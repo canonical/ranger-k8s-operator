@@ -3,10 +3,13 @@
 # See LICENSE file for licensing details.
 
 """Charm integration tests."""
+
 import logging
 
 import pytest
 import requests
+from pytest_operator.plugin import OpsTest
+
 from integration.conftest import deploy  # noqa: F401, pylint: disable=W0611
 from integration.helpers import (
     APP_NAME,
@@ -14,7 +17,6 @@ from integration.helpers import (
     POSTGRES_NAME,
     get_unit_url,
 )
-from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +28,7 @@ class TestDeployment:
 
     async def test_ui(self, ops_test: OpsTest):
         """Perform GET request on the Ranger UI host."""
-        url = await get_unit_url(
-            ops_test, application=APP_NAME, unit=0, port=6080
-        )
+        url = await get_unit_url(ops_test, application=APP_NAME, unit=0, port=6080)
         logger.info("curling app address: %s", url)
 
         response = requests.get(url, timeout=300, verify=False)  # nosec
@@ -51,14 +51,9 @@ class TestDeployment:
             raise_on_blocked=False,
             timeout=1000,
         )
-        assert (
-            ops_test.model.applications[NGINX_NAME].units[0].workload_status
-            == "active"
-        )
+        assert ops_test.model.applications[NGINX_NAME].units[0].workload_status == "active"
 
-    async def test_simulate_crash(
-        self, ops_test: OpsTest, charm: str, charm_image: str
-    ):
+    async def test_simulate_crash(self, ops_test: OpsTest, charm: str, charm_image: str):
         """Simulate the crash of the Ranger charm.
 
         Args:
@@ -68,9 +63,7 @@ class TestDeployment:
         """
         # Destroy charm
         await ops_test.model.applications[APP_NAME].destroy()
-        await ops_test.model.block_until(
-            lambda: APP_NAME not in ops_test.model.applications
-        )
+        await ops_test.model.block_until(lambda: APP_NAME not in ops_test.model.applications)
 
         # Deploy charm again
         resources = {"ranger-image": charm_image}
@@ -95,8 +88,6 @@ class TestDeployment:
             raise_on_blocked=False,
             timeout=1500,
         )
-        url = await get_unit_url(
-            ops_test, application=APP_NAME, unit=0, port=6080
-        )
+        url = await get_unit_url(ops_test, application=APP_NAME, unit=0, port=6080)
         response = requests.get(url, timeout=300, verify=False)  # nosec
         assert response.status_code == 200

@@ -65,14 +65,10 @@ def test_password_fields(_harness) -> None:
         "P@ssw0rd1234",
     ]
 
-    check_invalid_values(
-        _harness, "ranger-admin-password", erroneous_passwords
-    )
+    check_invalid_values(_harness, "ranger-admin-password", erroneous_passwords)
     check_valid_values(_harness, "ranger-admin-password", valid_passwords)
 
-    check_invalid_values(
-        _harness, "ranger-usersync-password", erroneous_passwords
-    )
+    check_invalid_values(_harness, "ranger-usersync-password", erroneous_passwords)
     check_valid_values(_harness, "ranger-usersync-password", valid_passwords)
 
 

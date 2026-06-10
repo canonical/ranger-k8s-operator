@@ -13,14 +13,13 @@ on:
         description: 'Destination Channel'
         options:
         - latest/stable
-    secrets:
-      CHARMHUB_TOKEN:
-        required: true
 
 jobs:
   promote-charm:
     uses: canonical/operator-workflows/.github/workflows/promote_charm.yaml@main
+    secrets: inherit
+    permissions:
+      contents: write
     with:
       origin-channel: ${{ github.event.inputs.origin-channel }}
       destination-channel: ${{ github.event.inputs.destination-channel }}
-    secrets: inherit

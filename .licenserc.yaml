@@ -36,4 +36,5 @@ header:
     - 'lib/**'
     - 'ranger_rock/local-files/**'
     - '**/*.patch'
+    - 'uv.lock'
   comment: on-failure

@@ -119,6 +119,4 @@ class LDAPRelationHandler(framework.Object):
         if not self.charm._state.ldap:
             for value in RELATION_VALUES:
                 if not config.get(value):
-                    raise ValueError(
-                        "Add an LDAP relation or update config values."
-                    )
+                    raise ValueError("Add an LDAP relation or update config values.")

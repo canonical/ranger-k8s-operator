@@ -6,8 +6,8 @@
 import logging
 import time
 
+import jubilant
 import pytest
-from pytest_operator.plugin import OpsTest
 
 from integration.helpers import (
     APP_NAME,
@@ -15,26 +15,21 @@ from integration.helpers import (
     USERSYNC_NAME,
     get_memberships,
     get_unit_url,
+    wait_for_apps,
 )
 
 logger = logging.getLogger(__name__)
 
 
-@pytest.mark.abort_on_fail
+@pytest.mark.incremental
 @pytest.mark.usefixtures("deploy")
 class TestUserSync:
     """Integration test Ranger usersync."""
 
-    async def test_user_sync(self, ops_test: OpsTest, charm: str, charm_image: str):
+    def test_user_sync(self, juju: jubilant.Juju, charm: str, charm_image: str):
         """Validate users and groups have been synchronized from LDAP."""
-        await ops_test.model.deploy(LDAP_NAME, channel="edge")
-
-        await ops_test.model.wait_for_idle(
-            apps=[LDAP_NAME],
-            status="active",
-            raise_on_blocked=False,
-            timeout=600,
-        )
+        juju.deploy(LDAP_NAME, channel="edge")
+        wait_for_apps(juju, [LDAP_NAME], status="active", timeout=600)
 
         ranger_config = {
             "charm-function": "usersync",
@@ -44,29 +39,21 @@ class TestUserSync:
         resources = {
             "ranger-image": charm_image,
         }
-        action = (
-            await ops_test.model.applications[LDAP_NAME].units[0].run_action("load-test-users")
-        )
-        await action.wait()
+        juju.run(f"{LDAP_NAME}/0", "load-test-users")
 
-        await ops_test.model.deploy(
+        juju.deploy(
             charm,
+            app=USERSYNC_NAME,
             resources=resources,
-            application_name=USERSYNC_NAME,
             num_units=1,
             config=ranger_config,
         )
 
-        await ops_test.model.integrate(USERSYNC_NAME, LDAP_NAME)
-        await ops_test.model.wait_for_idle(
-            apps=[USERSYNC_NAME, LDAP_NAME],
-            status="active",
-            raise_on_blocked=False,
-            timeout=1500,
-        )
+        juju.integrate(USERSYNC_NAME, LDAP_NAME)
+        wait_for_apps(juju, [USERSYNC_NAME, LDAP_NAME], status="active", timeout=1500)
         time.sleep(100)  # Provide time for user synchronization to occur.
 
-        url = await get_unit_url(ops_test, application=APP_NAME, unit=0, port=6080)
-        membership = await get_memberships(ops_test, url)
+        url = get_unit_url(juju, application=APP_NAME, unit=0, port=6080)
+        membership = get_memberships(url)
 
         assert membership == ("finance", 7)

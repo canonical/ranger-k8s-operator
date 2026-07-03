@@ -6,12 +6,11 @@
 import logging
 from pathlib import Path
 
+import jubilant
 import pytest
-import pytest_asyncio
 from pytest import FixtureRequest
-from pytest_operator.plugin import OpsTest
 
-from integration.helpers import APP_NAME, POSTGRES_NAME
+from integration.helpers import APP_NAME, POSTGRES_NAME, wait_for_apps
 
 logger = logging.getLogger(__name__)
 
@@ -26,53 +25,85 @@ def charm_image_fixture(request: FixtureRequest) -> str:
     return charm_image
 
 
-@pytest_asyncio.fixture(scope="module", name="charm")
-async def charm_fixture(request: FixtureRequest, ops_test: OpsTest) -> str | Path:
+@pytest.fixture(scope="module", name="charm")
+def charm_fixture(request: FixtureRequest) -> str | Path:
     """Fetch the path to charm."""
     charms = request.config.getoption("--charm-file")
-    if not charms:
-        charm = await ops_test.build_charm(".")
-        assert charm, "Charm not built"
-        return charm
-    return charms[0]
+    if charms:
+        charm = charms[0]
+    else:
+        charm_dir = Path(__file__).resolve().parents[2]
+        charms = list(charm_dir.glob("*.charm"))
+        assert charms, f"No charms were found in {charm_dir.resolve()}"
+        assert len(charms) == 1, f"Found more than one charm {charms}"
+        charm = charms[0]
+
+    path = Path(charm).resolve()
+    assert path.is_file(), f"{path} is not a file"
+    return path
 
 
-@pytest_asyncio.fixture(name="deploy", scope="module")
-async def deploy(ops_test: OpsTest, charm: str, charm_image: str):
+@pytest.fixture(name="deploy", scope="module")
+def deploy(juju: jubilant.Juju, charm: str, charm_image: str):
     """Deploy the app."""
     resources = {
         "ranger-image": charm_image,
     }
-    await ops_test.model.deploy(POSTGRES_NAME, channel="14", trust=True)
-    await ops_test.model.wait_for_idle(
-        apps=[POSTGRES_NAME],
-        status="active",
-        raise_on_blocked=False,
-        timeout=1000,
-    )
+    juju.deploy(POSTGRES_NAME, channel="14", trust=True)
+    wait_for_apps(juju, [POSTGRES_NAME], status="active", timeout=1000)
 
-    await ops_test.model.deploy(
+    juju.deploy(
         charm,
+        app=APP_NAME,
         resources=resources,
-        application_name=APP_NAME,
         num_units=1,
         config={"ranger-usersync-password": "P@ssw0rd1234"},
     )
+    wait_for_apps(juju, [APP_NAME], status="blocked", timeout=1000)
 
-    await ops_test.model.wait_for_idle(
-        apps=[APP_NAME],
-        status="blocked",
-        raise_on_blocked=False,
-        timeout=1000,
-    )
+    juju.integrate(APP_NAME, POSTGRES_NAME)
 
-    await ops_test.model.integrate(APP_NAME, POSTGRES_NAME)
-
-    await ops_test.model.set_config({"update-status-hook-interval": "1m"})
-    await ops_test.model.wait_for_idle(
-        apps=[APP_NAME, POSTGRES_NAME],
+    juju.model_config({"update-status-hook-interval": "1m"})
+    wait_for_apps(
+        juju,
+        [APP_NAME, POSTGRES_NAME],
         status="active",
-        raise_on_blocked=False,
         timeout=1500,
+        idle_period=30,
     )
-    assert ops_test.model.applications[APP_NAME].units[0].workload_status == "active"
+
+    status = juju.status()
+    assert status.apps[APP_NAME].units[f"{APP_NAME}/0"].workload_status.current == "active"
+
+
+# Incremental test support: replaces pytest-operator's abort_on_fail marker.
+# Once a test in a class marked @pytest.mark.incremental fails, the remaining
+# tests in that class are xfailed. This is the recipe from the pytest docs.
+_test_failed_incremental: dict[str, dict[tuple[int, ...], str]] = {}
+
+
+def pytest_runtest_makereport(item, call):
+    """Record the first failing test for each incremental-marked class."""
+    if "incremental" in item.keywords:
+        if call.excinfo is not None:
+            cls_name = str(item.cls)
+            parametrize_index = (
+                tuple(item.callspec.indices.values()) if hasattr(item, "callspec") else ()
+            )
+            test_name = item.originalname or item.name
+            _test_failed_incremental.setdefault(cls_name, {}).setdefault(
+                parametrize_index, test_name
+            )
+
+
+def pytest_runtest_setup(item):
+    """Xfail a test if an earlier test in its incremental-marked class failed."""
+    if "incremental" in item.keywords:
+        cls_name = str(item.cls)
+        if cls_name in _test_failed_incremental:
+            parametrize_index = (
+                tuple(item.callspec.indices.values()) if hasattr(item, "callspec") else ()
+            )
+            test_name = _test_failed_incremental[cls_name].get(parametrize_index, None)
+            if test_name is not None:
+                pytest.xfail(f"previous test failed ({test_name})")

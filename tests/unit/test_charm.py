@@ -221,7 +221,7 @@ def _carry(state):
 
     Scenario derives a container's check status from its Pebble plan when a
     State is produced. Restoring the check to its healthy definition keeps the
-    State consistent when reused in a subsequent ``ctx.run``.
+    State consistent when reused in a subsequent `ctx.run`.
 
     Args:
         state: the State produced by a previous ctx.run.

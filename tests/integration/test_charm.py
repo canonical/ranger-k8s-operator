@@ -6,9 +6,9 @@
 
 import logging
 
+import jubilant
 import pytest
 import requests
-from pytest_operator.plugin import OpsTest
 
 from integration.conftest import deploy  # noqa: F401, pylint: disable=W0611
 from integration.helpers import (
@@ -16,78 +16,68 @@ from integration.helpers import (
     NGINX_NAME,
     POSTGRES_NAME,
     get_unit_url,
+    wait_for_apps,
 )
 
 logger = logging.getLogger(__name__)
 
 
-@pytest.mark.abort_on_fail
+@pytest.mark.incremental
 @pytest.mark.usefixtures("deploy")
 class TestDeployment:
     """Integration tests for Ranger charm."""
 
-    async def test_ui(self, ops_test: OpsTest):
+    def test_ui(self, juju: jubilant.Juju):
         """Perform GET request on the Ranger UI host."""
-        url = await get_unit_url(ops_test, application=APP_NAME, unit=0, port=6080)
+        url = get_unit_url(juju, application=APP_NAME, unit=0, port=6080)
         logger.info("curling app address: %s", url)
 
         response = requests.get(url, timeout=300, verify=False)  # nosec
         assert response.status_code == 200
 
-    async def test_ingress(self, ops_test: OpsTest):
+    def test_ingress(self, juju: jubilant.Juju):
         """Integrate Ranger with Ingress."""
-        await ops_test.model.deploy(NGINX_NAME, trust=True)
-        await ops_test.model.wait_for_idle(
-            apps=[NGINX_NAME],
-            status="waiting",
-            raise_on_blocked=False,
-            timeout=1500,
-        )
+        juju.deploy(NGINX_NAME, trust=True)
+        wait_for_apps(juju, [NGINX_NAME], status="waiting", timeout=1500)
 
-        await ops_test.model.integrate(APP_NAME, NGINX_NAME)
-        await ops_test.model.wait_for_idle(
-            apps=[NGINX_NAME, APP_NAME],
-            status="active",
-            raise_on_blocked=False,
-            timeout=1000,
-        )
-        assert ops_test.model.applications[NGINX_NAME].units[0].workload_status == "active"
+        juju.integrate(APP_NAME, NGINX_NAME)
+        wait_for_apps(juju, [NGINX_NAME, APP_NAME], status="active", timeout=1000)
 
-    async def test_simulate_crash(self, ops_test: OpsTest, charm: str, charm_image: str):
+        status = juju.status()
+        nginx_unit = status.apps[NGINX_NAME].units[f"{NGINX_NAME}/0"]
+        assert nginx_unit.workload_status.current == "active"
+
+    def test_simulate_crash(self, juju: jubilant.Juju, charm: str, charm_image: str):
         """Simulate the crash of the Ranger charm.
 
         Args:
-            ops_test: PyTest object.
+            juju: Jubilant Juju object.
             charm: charm path.
             charm_image: path to rock image to be used.
         """
         # Destroy charm
-        await ops_test.model.applications[APP_NAME].destroy()
-        await ops_test.model.block_until(lambda: APP_NAME not in ops_test.model.applications)
+        juju.remove_application(APP_NAME)
+        juju.wait(lambda status: APP_NAME not in status.apps, timeout=600)
 
         # Deploy charm again
         resources = {"ranger-image": charm_image}
-        await ops_test.model.deploy(
+        juju.deploy(
             charm,
+            app=APP_NAME,
             resources=resources,
-            application_name=APP_NAME,
             num_units=1,
         )
-        await ops_test.model.wait_for_idle(
-            apps=[APP_NAME],
-            status="blocked",
-            raise_on_blocked=False,
-            timeout=1000,
-        )
+        wait_for_apps(juju, [APP_NAME], status="blocked", timeout=1000)
 
-        await ops_test.model.integrate(APP_NAME, POSTGRES_NAME)
-
-        await ops_test.model.wait_for_idle(
-            apps=[APP_NAME, POSTGRES_NAME],
+        juju.integrate(APP_NAME, POSTGRES_NAME)
+        wait_for_apps(
+            juju,
+            [APP_NAME, POSTGRES_NAME],
             status="active",
-            raise_on_blocked=False,
             timeout=1500,
+            idle_period=30,
         )
-        url = await get_unit_url(ops_test, application=APP_NAME, unit=0, port=6080)
+
+        url = get_unit_url(juju, application=APP_NAME, unit=0, port=6080)
         response = requests.get(url, timeout=300, verify=False)  # nosec
         assert response.status_code == 200

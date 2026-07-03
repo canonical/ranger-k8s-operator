@@ -5,36 +5,36 @@
 
 import logging
 
+import jubilant
 import pytest
 import requests
-from pytest_operator.plugin import OpsTest
 
 from integration.helpers import APP_NAME, get_application_url, scale
 
 logger = logging.getLogger(__name__)
 
 
-@pytest.mark.abort_on_fail
+@pytest.mark.incremental
 @pytest.mark.usefixtures("deploy")
 class TestScaling:
     """Integration tests for scaling Ranger charm."""
 
-    async def test_scaling_up(self, ops_test: OpsTest):
+    def test_scaling_up(self, juju: jubilant.Juju):
         """Scale Ranger charm up to 2 units."""
-        await scale(ops_test, app=APP_NAME, units=2)
-        assert len(ops_test.model.applications[APP_NAME].units) == 2
+        scale(juju, app=APP_NAME, units=2)
+        assert len(juju.status().apps[APP_NAME].units) == 2
 
-        url = await get_application_url(ops_test, application=APP_NAME, port=6080)
+        url = get_application_url(juju, application=APP_NAME, port=6080)
         logger.info("curling app address: %s", url)
         response = requests.get(url, timeout=300, verify=False)  # nosec
         assert response.status_code == 200
 
-    async def test_scaling_down(self, ops_test: OpsTest):
+    def test_scaling_down(self, juju: jubilant.Juju):
         """Scale Ranger charm down to 1 unit."""
-        await scale(ops_test, app=APP_NAME, units=1)
-        assert len(ops_test.model.applications[APP_NAME].units) == 1
+        scale(juju, app=APP_NAME, units=1)
+        assert len(juju.status().apps[APP_NAME].units) == 1
 
-        url = await get_application_url(ops_test, application=APP_NAME, port=6080)
+        url = get_application_url(juju, application=APP_NAME, port=6080)
         logger.info("curling app address: %s", url)
         response = requests.get(url, timeout=300, verify=False)  # nosec
         assert response.status_code == 200

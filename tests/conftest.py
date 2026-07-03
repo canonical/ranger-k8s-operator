@@ -21,3 +21,4 @@ def pytest_addoption(parser: pytest.Parser):
     parser.addoption("--model", action="store", default=None)
     parser.addoption("--keep-models", action="store_true", default=False)
     parser.addoption("--series", action="store", default=None)
+    parser.addoption("--kube-config", action="store", default=None)

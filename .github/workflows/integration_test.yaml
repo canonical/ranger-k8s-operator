@@ -18,7 +18,13 @@ jobs:
       pull-requests: write
     with:
       runs-on: "self-hosted-linux-amd64-noble-xlarge"
-      channel: 1.35-strict/stable
+      channel: 1.35-classic/stable
+      provider: k8s
+      use-canonical-k8s: true
+      extra-arguments: >-
+        --kube-config=~/.kube/config
+        --juju-controller=localhost-localhost
+        --juju-cloud=canonical-k8s
       modules: >-
         ["test_charm.py",
         "test_policy.py",
@@ -27,6 +33,5 @@ jobs:
         "test_upgrades.py",
         "test_usersync.py"]'
       juju-channel: 3/stable
-      microk8s-addons: "dns ingress rbac storage metallb:10.15.119.2-10.15.119.4 registry"
       trivy-severity-config: CRITICAL
       with-uv: true

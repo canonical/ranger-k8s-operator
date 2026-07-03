@@ -6,14 +6,14 @@
 
 # pylint:disable=protected-access
 
+import dataclasses
 import json
 import logging
 import re
 from unittest import TestCase, mock
 
-from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
-from ops.pebble import CheckStatus
-from ops.testing import Harness
+import pytest
+from ops import pebble, testing
 
 from charm import RangerK8SCharm
 from state import State
@@ -25,7 +25,6 @@ LDAP_RELATION_CHANGED_DATA = {
     "base_dn": "dc=canonical,dc=dev,dc=com",
     "ldap_url": "ldap://comsys-openldap-k8s:389",
 }
-LDAP_RELATION_BROKEN_DATA: dict = {"comsys-openldap-k8s": {}}
 USERSYNC_CONFIG_VALUES = {
     "sync-ldap-url": "ldap://config-openldap-k8s:389",
     "sync-ldap-bind-password": "admin",  # nosec
@@ -35,12 +34,6 @@ USERSYNC_CONFIG_VALUES = {
     "sync-group-search-base": "dc=canonical,dc=dev,dc=com",
 }
 
-OPENSEARCH_RELATION_CHANGED_DATA = {
-    "user-secret": "thiahuid",
-    "tls-secret": "relation_1",
-    "endpoints": "opensearch-host:port",
-}
-OPENSEARCH_RELATION_BROKEN_DATA: dict = {"opensearch": {}}
 POLICY_RELATION_DATA = {
     "name": "trino-service",
     "type": "trino",
@@ -113,476 +106,471 @@ class MockRangerClient:
             del self.services[service_id]
 
 
-class TestCharm(TestCase):
-    """Unit tests.
+RANGER = "ranger"
 
-    Attrs:
-        maxDiff: Specifies max difference shown by failed tests.
-    """
+DATABASE_CONNECTION = {
+    "dbname": "ranger-k8s_db",
+    "host": "myhost",
+    "port": "5432",
+    "password": "admin",  # nosec
+    "user": "postgres_user",
+}
 
-    maxDiff = None
-
-    def setUp(self):
-        """Set up for the unit tests."""
-        self.harness = Harness(RangerK8SCharm)
-        self.addCleanup(self.harness.cleanup)
-        self.harness.set_can_connect("ranger", True)
-        self.harness.set_leader(True)
-        self.harness.set_model_name("ranger-model")
-        self.harness.add_network("10.0.0.10", endpoint="peer")
-        self.harness.begin()
-        logging.info("setup complete")
-
-    def test_initial_plan(self):
-        """The initial pebble plan is empty."""
-        harness = self.harness
-        initial_plan = harness.get_container_pebble_plan("ranger").to_dict()
-        self.assertEqual(initial_plan, {})
-
-    def test_suppress_debug_logs_configured(self):
-        """Third-party loggers are set to WARNING when SUPPRESS_DEBUG_LOGS is enabled."""
-        apache_ranger_logger = logging.getLogger("apache_ranger")
-        urllib3_logger = logging.getLogger("urllib3")
-        self.assertEqual(apache_ranger_logger.level, logging.WARNING)
-        self.assertEqual(urllib3_logger.level, logging.WARNING)
-
-    def test_waiting_on_peer_relation_not_ready(self):
-        """The charm is blocked without a peer relation."""
-        harness = self.harness
-
-        # Simulate pebble readiness.
-        container = harness.model.unit.get_container("ranger")
-        harness.charm.on.ranger_pebble_ready.emit(container)
-
-        # No plans are set yet.
-        got_plan = harness.get_container_pebble_plan("ranger").to_dict()
-        self.assertEqual(got_plan, {})
-
-        # The BlockStatus is set with a message.
-        self.assertEqual(
-            harness.model.unit.status,
-            BlockedStatus("peer relation not ready"),
-        )
-
-    def test_admin_ready(self):
-        """The pebble plan is correctly generated when the charm is ready."""
-        harness = self.harness
-        simulate_admin_lifecycle(harness)
-
-        # The plan is generated after pebble is ready.
-        want_plan = {
-            "services": {
-                "ranger": {
-                    "override": "replace",
-                    "summary": "ranger admin",
-                    "command": "/home/ranger/scripts/ranger-admin-entrypoint.sh",  # nosec
-                    "startup": "enabled",
-                    "environment": {
-                        "DB_NAME": "ranger-k8s_db",
-                        "DB_HOST": "myhost",
-                        "DB_PORT": "5432",
-                        "DB_USER": "postgres_user",
-                        "DB_PWD": "admin",  # nosec
-                        "RANGER_ADMIN_PWD": "rangerR0cks!",  # nosec
-                        "JAVA_OPTS": "-Duser.timezone=UTC0 -Djavax.net.ssl.trustStorePassword=***",
-                        "OPENSEARCH_ENABLED": None,
-                        "OPENSEARCH_HOST": None,
-                        "OPENSEARCH_INDEX": None,
-                        "OPENSEARCH_PWD": None,
-                        "OPENSEARCH_PORT": None,
-                        "OPENSEARCH_USER": None,
-                        "RANGER_USERSYNC_PWD": "rangerR0cks!",  # nosec
-                    },
-                }
-            },
-        }
-        got_plan = harness.get_container_pebble_plan("ranger").to_dict()
-        java_ops = got_plan["services"]["ranger"]["environment"]["JAVA_OPTS"]
-        got_plan["services"]["ranger"]["environment"]["JAVA_OPTS"] = re.sub(
-            r"=[^=]*$", "=***", java_ops
-        )
-        self.assertEqual(got_plan["services"], want_plan["services"])
-
-        # The service was started.
-        service = harness.model.unit.get_container("ranger").get_service("ranger")
-        self.assertTrue(service.is_running())
-
-        # The MaintenanceStatus is set with replan message.
-        self.assertEqual(
-            harness.model.unit.status,
-            MaintenanceStatus("replanning application"),
-        )
-
-    def test_usersync_ready(self):
-        """The pebble plan is correctly generated when the charm is ready."""
-        harness = self.harness
-        simulate_usersync_lifecycle(harness)
-        harness.update_config({"charm-function": "usersync"})
-
-        # The plan is generated after pebble is ready.
-        want_plan = {
-            "services": {
-                "ranger": {
-                    "override": "replace",
-                    "summary": "ranger usersync",
-                    "command": "/home/ranger/scripts/ranger-usersync-entrypoint.sh",  # nosec
-                    "startup": "enabled",
-                    "environment": {
-                        "POLICY_MGR_URL": "http://ranger-k8s:6080",
-                        "RANGER_USERSYNC_PWD": "rangerR0cks!",  # nosec
-                        "SYNC_GROUP_USER_MAP_SYNC_ENABLED": True,
-                        "SYNC_GROUP_SEARCH_ENABLED": True,
-                        "SYNC_GROUP_SEARCH_BASE": "dc=canonical,dc=dev,dc=com",
-                        "SYNC_GROUP_OBJECT_CLASS": "posixGroup",
-                        "SYNC_INTERVAL": 3600,
-                        "SYNC_LDAP_BIND_DN": "cn=admin,dc=canonical,dc=dev,dc=com",
-                        "SYNC_LDAP_BIND_PASSWORD": "huedw7uiedw7",  # nosec
-                        "SYNC_LDAP_GROUP_SEARCH_SCOPE": "sub",
-                        "SYNC_LDAP_SEARCH_BASE": "dc=canonical,dc=dev,dc=com",
-                        "SYNC_LDAP_USER_SEARCH_FILTER": None,
-                        "SYNC_LDAP_URL": "ldap://comsys-openldap-k8s:389",
-                        "SYNC_LDAP_USER_GROUP_NAME_ATTRIBUTE": "memberOf",
-                        "SYNC_LDAP_USER_NAME_ATTRIBUTE": "uid",
-                        "SYNC_LDAP_USER_OBJECT_CLASS": "person",
-                        "SYNC_LDAP_USER_SEARCH_BASE": "dc=canonical,dc=dev,dc=com",
-                        "SYNC_LDAP_USER_SEARCH_SCOPE": "sub",
-                        "SYNC_GROUP_MEMBER_ATTRIBUTE_NAME": "memberUid",
-                        "SYNC_LDAP_DELTASYNC": True,
-                    },
-                }
-            },
-        }
-        got_plan = harness.get_container_pebble_plan("ranger").to_dict()
-        self.assertEqual(got_plan["services"], want_plan["services"])
-
-        # The service was started.
-        service = harness.model.unit.get_container("ranger").get_service("ranger")
-        self.assertTrue(service.is_running())
-
-    def test_config_changed(self):
-        """The pebble plan changes according to config changes."""
-        harness = self.harness
-        simulate_admin_lifecycle(harness)
-
-        # Update the config.
-        self.harness.update_config({"ranger-admin-password": "s3cure-pass"})  # nosec
-
-        # The new plan reflects the change.
-        want_admin_password = "rangerR0cks!"  # nosec
-        got_admin_password = harness.get_container_pebble_plan("ranger").to_dict()["services"][
-            "ranger"
-        ]["environment"]["RANGER_ADMIN_PWD"]
-
-        self.assertEqual(got_admin_password, want_admin_password)
-
-        # The Maintenance Status is set with replan message.
-        self.assertEqual(
-            harness.model.unit.status,
-            BlockedStatus(
-                "value of 'ranger-admin-password' config cannot be changed after deployment. "
-                "Value should be rangerR0cks!"
-            ),
-        )
-
-    def test_ingress(self):
-        """The charm relates correctly to the nginx ingress charm."""
-        harness = self.harness
-
-        simulate_admin_lifecycle(harness)
-
-        nginx_route_relation_id = harness.add_relation("nginx-route", "ingress")
-        harness.charm._require_nginx_route()
-
-        assert harness.get_relation_data(nginx_route_relation_id, harness.charm.app) == {
-            "service-namespace": harness.charm.model.name,
-            "service-hostname": harness.charm.app.name,
-            "service-name": harness.charm.app.name,
-            "service-port": "6080",
-            "backend-protocol": "HTTP",
-            "tls-secret-name": "ranger-tls",
-        }
-
-    def test_update_status_up(self):
-        """The charm updates the unit status to active based on UP status."""
-        harness = self.harness
-
-        simulate_admin_lifecycle(harness)
-
-        container = harness.model.unit.get_container("ranger")
-        container.get_check = mock.Mock(status="up")
-        container.get_check.return_value.status = CheckStatus.UP
-        harness.charm.on.update_status.emit()
-
-        self.assertEqual(harness.model.unit.status, ActiveStatus("Status check: UP"))
-
-    @mock.patch("charm.RangerProvider._create_ranger_service")
-    def policy_relation_setup(self, mock_create_ranger_service):
-        """Setup the policy relation.
-
-        Args:
-            mock_create_ranger_service: mock create_ranger_service method.
-
-        Returns:
-            harness: harness test object.
-            rel_id: The Trino relation Id.
-        """
-        harness = self.harness
-        simulate_admin_lifecycle(harness)
-
-        rel_id = harness.add_relation("policy", "trino-k8s")
-        harness.add_relation_unit(rel_id, "trino-k8s/0")
-
-        data = POLICY_RELATION_DATA
-        event = make_relation_event(rel_id, "trino-k8s", data)
-
-        mock_create_ranger_service.return_value = (
-            MockService(f"relation_{rel_id}", rel_id),
-            True,
-        )
-        harness.charm.provider._on_relation_changed(event)
-        return harness, rel_id
-
-    def test_policy_on_relation_changed(self):
-        """Test that the provider correctly handles service creation and relation update."""
-        harness, rel_id = self.policy_relation_setup()
-        relation_data = harness.get_relation_data(rel_id, "ranger-k8s")
-        expected_data = {
-            "policy_manager_url": "http://ranger-k8s:6080",
-        }
-        self.assertEqual(relation_data, expected_data)
-
-    @mock.patch("charm.RangerProvider._create_ranger_service")
-    @mock.patch("charm.RangerProvider._create_ranger_client")
-    def test_on_policy_relation_broken(
-        self, mock_create_ranger_client, mock_create_ranger_service
-    ):
-        """Test handling of broken policy relation and service deletion."""
-        harness, rel_id = self.policy_relation_setup()
-
-        # Set up mock Ranger client
-        mock_ranger_client = MockRangerClient()
-        mock_create_ranger_client.return_value = mock_ranger_client
-
-        # Set up a mock service
-        service_name = f"relation_{rel_id}"
-        mock_service = MockService(name=service_name, service_id=rel_id)
-        mock_ranger_client.services[rel_id] = mock_service
-
-        # Define custom policies for the service
-        mock_ranger_client.policies[service_name] = [
-            {
-                "name": "all - catalog",
-                "policyItems": [{"users": ["custom_user"]}],
-            }
-        ]
-
-        # Simulate relation broken event
-        event = make_relation_event(rel_id, "trino-k8s", {})
-
-        with self.assertLogs(level="WARNING") as log:
-            harness.charm.provider._on_relation_broken(event)
-
-        # Check that the specific warning message is in the logs
-        self.assertTrue(
-            any(
-                "Service relation_1 has non-default policies defined. Deletion aborted." in message
-                for message in log.output
-            )
-        )
-
-    def test_ldap_relation_changed(self):
-        """The charm uses the configuration values from ldap relation."""
-        harness = self.harness
-        simulate_usersync_lifecycle(harness)
-
-        got_plan = harness.get_container_pebble_plan("ranger").to_dict()
-        self.assertEqual(
-            got_plan["services"]["ranger"]["environment"]["SYNC_LDAP_URL"],
-            "ldap://comsys-openldap-k8s:389",
-        )
-        self.assertEqual(
-            got_plan["services"]["ranger"]["environment"]["SYNC_GROUP_OBJECT_CLASS"],
-            "posixGroup",
-        )
-
-    def test_ldap_relation_broken(self):
-        """The charm enters a blocked state if no LDAP parameters."""
-        harness = self.harness
-        rel_id = simulate_usersync_lifecycle(harness)
-
-        data = LDAP_RELATION_BROKEN_DATA
-        event = make_relation_event(rel_id, "comsys-openldap-k8s", data)
-        harness.charm.ldap._on_relation_broken(event)
-        self.assertEqual(
-            harness.model.unit.status,
-            BlockedStatus("Add an LDAP relation or update config values."),
-        )
-
-    def test_ldap_config_updated(self):
-        """The charm uses the configuration values from config relation."""
-        harness = self.harness
-        self.test_ldap_relation_broken()
-        harness.update_config(USERSYNC_CONFIG_VALUES)
-        got_plan = harness.get_container_pebble_plan("ranger").to_dict()
-        self.assertEqual(
-            got_plan["services"]["ranger"]["environment"]["SYNC_LDAP_URL"],
-            "ldap://config-openldap-k8s:389",
-        )
-
-    @mock.patch("charm.OpensearchRelationHandler.get_secret_content")
-    @mock.patch("charm.OpensearchRelationHandler.add_opensearch_schema")
-    def opensearch_setup(
-        self,
-        mock_add_opensearch_schema,
-        mock_get_secret_content,
-        harness,
-        data,
-    ):
-        """Common setup for Openseatch relation changed and broken tests.
-
-        Args:
-            mock_add_opensearch_schema: the mocked method for schema setup.
-            mock_get_secret_content: the mocked method for accessing juju secrets.
-            harness: ops.testing.Harness object used to simulate charm lifecycle.
-            data: the opensearch relation data.
-
-        Returns:
-            rel_id: the opensearch relation id.
-        """
-        mock_get_secret_content.return_value = USER_SECRET_CONTENT
-
-        simulate_admin_lifecycle(harness)
-        rel_id = harness.add_relation("opensearch", "opensearch-app")
-        harness.add_relation_unit(rel_id, "opensearch-app/0")
-
-        event = make_relation_event(rel_id, "opensearch", data)
-        harness.charm.opensearch_relation_handler._on_index_created(event)
-        return rel_id
-
-    def test_on_opensearch_index_created(self):
-        """Test handling of opensearch relation changed events."""
-        harness = self.harness
-        self.opensearch_setup(harness=harness, data=OPENSEARCH_RELATION_CHANGED_DATA)
-
-        self.assertEqual(
-            harness.model.unit.status,
-            MaintenanceStatus("replanning application"),
-        )
-        got_plan = harness.get_container_pebble_plan("ranger").to_dict()
-        self.assertEqual(
-            got_plan["services"]["ranger"]["environment"]["OPENSEARCH_HOST"],
-            "opensearch-host",
-        )
-
-    def test_on_opensearch_relation_broken(self):
-        """Test handling of broken relations with opensearch."""
-        harness = self.harness
-        rel_id = self.opensearch_setup(harness=harness, data=OPENSEARCH_RELATION_CHANGED_DATA)
-        data = OPENSEARCH_RELATION_BROKEN_DATA
-        event = make_relation_event(rel_id, "opensearch", data)
-        self.harness.charm.opensearch_relation_handler._on_relation_broken(event)
-        got_plan = harness.get_container_pebble_plan("ranger").to_dict()
-        self.assertEqual(
-            got_plan["services"]["ranger"]["environment"]["OPENSEARCH_ENABLED"],
-            False,
-        )
+LDAP_STATE = {
+    "sync_ldap_bind_password": "huedw7uiedw7",  # nosec
+    "sync_ldap_bind_dn": "cn=admin,dc=canonical,dc=dev,dc=com",
+    "sync_ldap_search_base": "dc=canonical,dc=dev,dc=com",
+    "sync_ldap_user_search_base": "dc=canonical,dc=dev,dc=com",
+    "sync_group_search_base": "dc=canonical,dc=dev,dc=com",
+    "sync_ldap_url": "ldap://comsys-openldap-k8s:389",
+}
 
 
-def simulate_usersync_lifecycle(harness):
-    """Simulate a healthy charm life-cycle.
-
-    Args:
-        harness: ops.testing.Harness object used to simulate charm lifecycle.
+@pytest.fixture
+def ctx():
+    """Return a Scenario context for the Ranger charm.
 
     Returns:
-        rel_id: ldap relation id to be used for subsequent testing.
+        A configured ops.testing.Context for RangerK8SCharm.
     """
-    # Simulate peer relation readiness.
-    harness.add_relation("peer", "ranger")
-
-    # Simulate pebble readiness.
-    container = harness.model.unit.get_container("ranger")
-    harness.charm.on.ranger_pebble_ready.emit(container)
-
-    harness.update_config({"charm-function": "usersync"})
-    harness.handle_exec("ranger", ["/bin/sh"], result="/usr/lib/jvm/java-21-openjdk-amd64/")
-
-    # Simulate LDAP readiness.
-    rel_id = harness.add_relation("ldap", "comsys-openldap-k8s")
-    harness.add_relation_unit(rel_id, "comsys-openldap-k8s/0")
-    event = make_relation_event(rel_id, "comsys-openldap-k8s", LDAP_RELATION_CHANGED_DATA)
-    harness.charm.ldap._on_relation_changed(event)
-    return rel_id
+    return testing.Context(RangerK8SCharm)
 
 
-def simulate_admin_lifecycle(harness):
-    """Simulate a healthy charm life-cycle.
+def _encode(data):
+    """JSON-encode peer databag values the way the State store does.
 
     Args:
-        harness: ops.testing.Harness object used to simulate charm lifecycle.
-    """
-    # Simulate peer relation readiness.
-    harness.add_relation("peer", "ranger")
-
-    # Simulate pebble readiness.
-    container = harness.model.unit.get_container("ranger")
-    harness.charm.on.ranger_pebble_ready.emit(container)
-
-    harness.handle_exec("ranger", ["/bin/sh"], result="/usr/lib/jvm/java-21-openjdk-amd64/")
-    harness.handle_exec("ranger", ["keytool"], result=0)
-
-    # Simulate database readiness.
-    event = make_database_changed_event()
-    harness.charm.postgres_relation_handler._on_database_changed(event)
-
-
-def make_relation_event(rel_id, app_name, data):
-    """Create and return a mock relation event.
-
-    Args:
-        rel_id: The relation id.
-        app_name: The name of the application.
-        data: The relation data.
+        data: mapping of state keys to Python values.
 
     Returns:
-        Event dict.
+        Mapping of state keys to JSON-encoded string values.
     """
-    return type(
-        "Event",
-        (),
+    return {key: json.dumps(value) for key, value in data.items()}
+
+
+def _execs():
+    """Return the workload exec mocks used during admin configuration.
+
+    Returns:
+        A set of Scenario Exec objects for the shell and keytool calls.
+    """
+    return {
+        testing.Exec(("/bin/sh",), stdout="/usr/lib/jvm/java-21-openjdk-amd64/"),
+        testing.Exec(("keytool",), return_code=0),
+    }
+
+
+def _container():
+    """Return a connectable Ranger workload container.
+
+    Returns:
+        A Scenario Container for the ranger workload.
+    """
+    return testing.Container(RANGER, can_connect=True, execs=_execs())
+
+
+def _peer(app_data=None):
+    """Return the peer relation with JSON-encoded app databag state.
+
+    Args:
+        app_data: optional mapping of state keys to Python values.
+
+    Returns:
+        A Scenario PeerRelation for the ranger peer relation.
+    """
+    return testing.PeerRelation("peer", local_app_data=_encode(app_data or {}))
+
+
+def _service_env(state_out):
+    """Return the ranger service environment from an output State's plan.
+
+    The randomly generated truststore password embedded in JAVA_OPTS is
+    normalised so the value can be compared deterministically.
+
+    Args:
+        state_out: the State produced by ctx.run.
+
+    Returns:
+        The ranger service environment dict with a normalised JAVA_OPTS value.
+    """
+    env = state_out.get_container(RANGER).plan.to_dict()["services"]["ranger"]["environment"]
+    if "JAVA_OPTS" in env:
+        env["JAVA_OPTS"] = re.sub(r"=[^=]*$", "=***", env["JAVA_OPTS"])
+    return env
+
+
+def _service_dict(state_out):
+    """Return the full ranger service definition from an output State's plan.
+
+    Args:
+        state_out: the State produced by ctx.run.
+
+    Returns:
+        The ranger service definition dict with a normalised JAVA_OPTS value.
+    """
+    service = state_out.get_container(RANGER).plan.to_dict()["services"]["ranger"]
+    if "JAVA_OPTS" in service["environment"]:
+        service["environment"]["JAVA_OPTS"] = re.sub(
+            r"=[^=]*$", "=***", service["environment"]["JAVA_OPTS"]
+        )
+    return service
+
+
+def _carry(state):
+    """Reset a carried-forward container's check to a healthy UP status.
+
+    Scenario derives a container's check status from its Pebble plan when a
+    State is produced. Restoring the check to its healthy definition keeps the
+    State consistent when reused in a subsequent ``ctx.run``.
+
+    Args:
+        state: the State produced by a previous ctx.run.
+
+    Returns:
+        The State with the ranger container's check reset to UP.
+    """
+    container = state.get_container(RANGER)
+    healthy = dataclasses.replace(
+        container,
+        check_infos={testing.CheckInfo("up", status=pebble.CheckStatus.UP)},
+    )
+    return dataclasses.replace(state, containers={healthy})
+
+
+def test_initial_plan(ctx):
+    """The initial pebble plan is empty."""
+    state_out = ctx.run(
+        ctx.on.install(),
+        testing.State(leader=True, containers={_container()}),
+    )
+    assert state_out.get_container(RANGER).plan.to_dict() == {}
+
+
+def test_suppress_debug_logs_configured(ctx):
+    """Third-party loggers are set to WARNING when SUPPRESS_DEBUG_LOGS is enabled."""
+    ctx.run(ctx.on.install(), testing.State(leader=True, containers={_container()}))
+    assert logging.getLogger("apache_ranger").level == logging.WARNING
+    assert logging.getLogger("urllib3").level == logging.WARNING
+
+
+def test_waiting_on_peer_relation_not_ready(ctx):
+    """The charm is blocked without a peer relation."""
+    container = _container()
+    state_out = ctx.run(
+        ctx.on.pebble_ready(container),
+        testing.State(leader=True, containers={container}),
+    )
+    assert state_out.get_container(RANGER).plan.to_dict() == {}
+    assert state_out.unit_status == testing.BlockedStatus("peer relation not ready")
+
+
+def test_admin_ready(ctx):
+    """The pebble plan is correctly generated when the charm is ready."""
+    state_in = testing.State(
+        leader=True,
+        model=testing.Model(name="ranger-model"),
+        containers={_container()},
+        relations={_peer({"database_connection": DATABASE_CONNECTION})},
+    )
+    state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+    want_service = {
+        "override": "replace",
+        "summary": "ranger admin",
+        "command": "/home/ranger/scripts/ranger-admin-entrypoint.sh",  # nosec
+        "startup": "enabled",
+        "environment": {
+            "DB_NAME": "ranger-k8s_db",
+            "DB_HOST": "myhost",
+            "DB_PORT": "5432",
+            "DB_USER": "postgres_user",
+            "DB_PWD": "admin",  # nosec
+            "RANGER_ADMIN_PWD": "rangerR0cks!",  # nosec
+            "JAVA_OPTS": "-Duser.timezone=UTC0 -Djavax.net.ssl.trustStorePassword=***",
+            "OPENSEARCH_ENABLED": None,
+            "OPENSEARCH_HOST": None,
+            "OPENSEARCH_INDEX": None,
+            "OPENSEARCH_PWD": None,
+            "OPENSEARCH_PORT": None,
+            "OPENSEARCH_USER": None,
+            "RANGER_USERSYNC_PWD": "rangerR0cks!",  # nosec
+        },
+    }
+    assert _service_dict(state_out) == want_service
+
+    container_out = state_out.get_container(RANGER)
+    assert container_out.service_statuses["ranger"] == pebble.ServiceStatus.ACTIVE
+    assert state_out.unit_status == testing.MaintenanceStatus("replanning application")
+
+
+def test_usersync_ready(ctx):
+    """The pebble plan is correctly generated when the charm is ready."""
+    ldap_rel = testing.Relation(
+        "ldap",
+        remote_app_name="comsys-openldap-k8s",
+        remote_app_data=LDAP_RELATION_CHANGED_DATA,
+    )
+    state_in = testing.State(
+        leader=True,
+        model=testing.Model(name="ranger-model"),
+        config={"charm-function": "usersync"},
+        containers={_container()},
+        relations={_peer(), ldap_rel},
+    )
+    state_out = ctx.run(ctx.on.relation_changed(ldap_rel), state_in)
+
+    want_service = {
+        "override": "replace",
+        "summary": "ranger usersync",
+        "command": "/home/ranger/scripts/ranger-usersync-entrypoint.sh",  # nosec
+        "startup": "enabled",
+        "environment": {
+            "POLICY_MGR_URL": "http://ranger-k8s:6080",
+            "RANGER_USERSYNC_PWD": "rangerR0cks!",  # nosec
+            "SYNC_GROUP_USER_MAP_SYNC_ENABLED": True,
+            "SYNC_GROUP_SEARCH_ENABLED": True,
+            "SYNC_GROUP_SEARCH_BASE": "dc=canonical,dc=dev,dc=com",
+            "SYNC_GROUP_OBJECT_CLASS": "posixGroup",
+            "SYNC_INTERVAL": 3600,
+            "SYNC_LDAP_BIND_DN": "cn=admin,dc=canonical,dc=dev,dc=com",
+            "SYNC_LDAP_BIND_PASSWORD": "huedw7uiedw7",  # nosec
+            "SYNC_LDAP_GROUP_SEARCH_SCOPE": "sub",
+            "SYNC_LDAP_SEARCH_BASE": "dc=canonical,dc=dev,dc=com",
+            "SYNC_LDAP_USER_SEARCH_FILTER": None,
+            "SYNC_LDAP_URL": "ldap://comsys-openldap-k8s:389",
+            "SYNC_LDAP_USER_GROUP_NAME_ATTRIBUTE": "memberOf",
+            "SYNC_LDAP_USER_NAME_ATTRIBUTE": "uid",
+            "SYNC_LDAP_USER_OBJECT_CLASS": "person",
+            "SYNC_LDAP_USER_SEARCH_BASE": "dc=canonical,dc=dev,dc=com",
+            "SYNC_LDAP_USER_SEARCH_SCOPE": "sub",
+            "SYNC_GROUP_MEMBER_ATTRIBUTE_NAME": "memberUid",
+            "SYNC_LDAP_DELTASYNC": True,
+        },
+    }
+    assert _service_dict(state_out) == want_service
+    assert (
+        state_out.get_container(RANGER).service_statuses["ranger"] == pebble.ServiceStatus.ACTIVE
+    )
+
+
+def test_config_changed(ctx):
+    """The pebble plan changes according to config changes."""
+    state = testing.State(
+        leader=True,
+        model=testing.Model(name="ranger-model"),
+        containers={_container()},
+        relations={_peer({"database_connection": DATABASE_CONNECTION})},
+    )
+    state = ctx.run(ctx.on.config_changed(), state)
+
+    state = dataclasses.replace(state, config={"ranger-admin-password": "s3cure-pass"})  # nosec
+    state_out = ctx.run(ctx.on.config_changed(), _carry(state))
+
+    assert _service_env(state_out)["RANGER_ADMIN_PWD"] == "rangerR0cks!"  # nosec
+    assert state_out.unit_status == testing.BlockedStatus(
+        "value of 'ranger-admin-password' config cannot be changed after deployment. "
+        "Value should be rangerR0cks!"
+    )
+
+
+def test_ingress(ctx):
+    """The charm relates correctly to the nginx ingress charm."""
+    nginx_rel = testing.Relation("nginx-route", remote_app_name="ingress")
+    state_in = testing.State(
+        leader=True,
+        model=testing.Model(name="ranger-model"),
+        containers={_container()},
+        relations={_peer({"database_connection": DATABASE_CONNECTION}), nginx_rel},
+    )
+    state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+    assert state_out.get_relation(nginx_rel.id).local_app_data == {
+        "service-namespace": "ranger-model",
+        "service-hostname": "ranger-k8s",
+        "service-name": "ranger-k8s",
+        "service-port": "6080",
+        "backend-protocol": "HTTP",
+        "tls-secret-name": "ranger-tls",
+    }
+
+
+def test_update_status_up(ctx):
+    """The charm updates the unit status to active based on UP status."""
+    state = testing.State(
+        leader=True,
+        model=testing.Model(name="ranger-model"),
+        containers={_container()},
+        relations={_peer({"database_connection": DATABASE_CONNECTION})},
+    )
+    state = ctx.run(ctx.on.config_changed(), state)
+    state_out = ctx.run(ctx.on.update_status(), _carry(state))
+
+    assert state_out.unit_status == testing.ActiveStatus("Status check: UP")
+
+
+def test_policy_on_relation_changed(ctx):
+    """Test that the provider correctly handles service creation and relation update."""
+    policy_rel = testing.Relation(
+        "policy",
+        remote_app_name="trino-k8s",
+        remote_app_data=POLICY_RELATION_DATA,
+    )
+    state_in = testing.State(
+        leader=True,
+        containers={_container()},
+        relations={_peer({"database_connection": DATABASE_CONNECTION}), policy_rel},
+    )
+    with mock.patch("charm.RangerProvider._create_ranger_service") as mock_create:
+        mock_create.return_value = (MockService(f"relation_{policy_rel.id}", policy_rel.id), True)
+        state_out = ctx.run(ctx.on.relation_changed(policy_rel), state_in)
+
+    assert state_out.get_relation(policy_rel.id).local_app_data == {
+        "policy_manager_url": "http://ranger-k8s:6080",
+    }
+
+
+def test_on_policy_relation_broken(ctx):
+    """Test handling of broken policy relation and service deletion."""
+    policy_rel = testing.Relation("policy", remote_app_name="trino-k8s")
+    rel_id = policy_rel.id
+    service_name = f"relation_{rel_id}"
+
+    mock_ranger_client = MockRangerClient()
+    mock_ranger_client.services[rel_id] = MockService(name=service_name, service_id=rel_id)
+    mock_ranger_client.policies[service_name] = [
         {
-            "app": app_name,
-            "relation": type(
-                "Relation",
-                (),
+            "name": "all - catalog",
+            "policyItems": [{"users": ["custom_user"]}],
+        }
+    ]
+
+    state_in = testing.State(
+        leader=True,
+        containers={_container()},
+        relations={
+            _peer(
                 {
-                    "data": {app_name: data},
-                    "id": rel_id,
-                },
+                    "database_connection": DATABASE_CONNECTION,
+                    "services": {service_name: rel_id},
+                }
             ),
+            policy_rel,
         },
+    )
+    with mock.patch("charm.RangerProvider._create_ranger_client", return_value=mock_ranger_client):
+        ctx.run(ctx.on.relation_broken(policy_rel), state_in)
+
+    assert any(
+        f"Service {service_name} has non-default policies defined. Deletion aborted."
+        in line.message
+        for line in ctx.juju_log
     )
 
 
-def make_database_changed_event():
-    """Create and return a mock database changed event.
+def test_ldap_relation_changed(ctx):
+    """The charm uses the configuration values from ldap relation."""
+    ldap_rel = testing.Relation(
+        "ldap",
+        remote_app_name="comsys-openldap-k8s",
+        remote_app_data=LDAP_RELATION_CHANGED_DATA,
+    )
+    state_in = testing.State(
+        leader=True,
+        config={"charm-function": "usersync"},
+        containers={_container()},
+        relations={_peer(), ldap_rel},
+    )
+    state_out = ctx.run(ctx.on.relation_changed(ldap_rel), state_in)
 
-        The event is generated by the relation with postgresql_db
+    env = _service_env(state_out)
+    assert env["SYNC_LDAP_URL"] == "ldap://comsys-openldap-k8s:389"
+    assert env["SYNC_GROUP_OBJECT_CLASS"] == "posixGroup"
 
-    Returns:
-        Event dict.
-    """
-    return type(
-        "Event",
-        (),
-        {
-            "endpoints": "myhost:5432",
-            "username": "postgres_user",
-            "password": "admin",  # nosec
-            "database": "ranger-k8s_db",
-            "relation": type("Relation", (), {"name": "postgresql_db"}),
+
+def test_ldap_relation_broken(ctx):
+    """The charm enters a blocked state if no LDAP parameters."""
+    ldap_rel = testing.Relation("ldap", remote_app_name="comsys-openldap-k8s")
+    state_in = testing.State(
+        leader=True,
+        config={"charm-function": "usersync"},
+        containers={_container()},
+        relations={_peer({"ldap": LDAP_STATE}), ldap_rel},
+    )
+    state_out = ctx.run(ctx.on.relation_broken(ldap_rel), state_in)
+
+    assert state_out.unit_status == testing.BlockedStatus(
+        "Add an LDAP relation or update config values."
+    )
+
+
+def test_ldap_config_updated(ctx):
+    """The charm uses the configuration values from config relation."""
+    state_in = testing.State(
+        leader=True,
+        config={"charm-function": "usersync", **USERSYNC_CONFIG_VALUES},
+        containers={_container()},
+        relations={_peer()},
+    )
+    state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+    assert _service_env(state_out)["SYNC_LDAP_URL"] == "ldap://config-openldap-k8s:389"
+
+
+def test_on_opensearch_index_created(ctx):
+    """Test handling of opensearch relation changed events."""
+    user_secret = testing.Secret({"username": "testuser", "password": "testpassword"})  # nosec
+    tls_secret = testing.Secret({"tls-ca": USER_SECRET_CONTENT["tls-ca"]})
+    opensearch_rel = testing.Relation(
+        "opensearch",
+        remote_app_name="opensearch-app",
+        remote_app_data={
+            "secret-user": user_secret.id,
+            "secret-tls": tls_secret.id,
+            "endpoints": "opensearch-host:9200",
+            "index": "ranger_audits",
         },
     )
+    state_in = testing.State(
+        leader=True,
+        containers={_container()},
+        relations={_peer({"database_connection": DATABASE_CONNECTION}), opensearch_rel},
+        secrets={user_secret, tls_secret},
+    )
+    with mock.patch("charm.OpensearchRelationHandler.add_opensearch_schema"):
+        state_out = ctx.run(ctx.on.relation_changed(opensearch_rel), state_in)
+
+    assert state_out.unit_status == testing.MaintenanceStatus("replanning application")
+    assert _service_env(state_out)["OPENSEARCH_HOST"] == "opensearch-host"
+
+
+def test_on_opensearch_relation_broken(ctx):
+    """Test handling of broken relations with opensearch."""
+    opensearch_rel = testing.Relation("opensearch", remote_app_name="opensearch-app")
+    state_in = testing.State(
+        leader=True,
+        containers={_container()},
+        relations={
+            _peer(
+                {
+                    "database_connection": DATABASE_CONNECTION,
+                    "opensearch": {
+                        "is_enabled": True,
+                        "host": "opensearch-host",
+                        "port": "9200",
+                        "index": "ranger_audits",
+                        "username": "testuser",
+                        "password": "testpassword",  # nosec
+                    },
+                    "truststore_pwd": "test-truststore-pwd",  # nosec
+                    "opensearch_certificate": "cert-value",
+                }
+            ),
+            opensearch_rel,
+        },
+    )
+    state_out = ctx.run(ctx.on.relation_broken(opensearch_rel), state_in)
+
+    assert _service_env(state_out)["OPENSEARCH_ENABLED"] is False
 
 
 class TestState(TestCase):

@@ -129,12 +129,16 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
 
     def _require_nginx_route(self):
         """Require nginx-route relation based on current configuration."""
+        # Use raw model config here for bootstrap-safety: this method is called
+        # from __init__ before any hook handler runs, so a persisted invalid
+        # config must not prevent the charm from starting.
+        raw = self.model.config
         require_nginx_route(
             charm=self,
-            service_hostname=self.external_hostname,
+            service_hostname=raw.get("external-hostname") or self.app.name,
             service_name=self.app.name,
             service_port=APPLICATION_PORT,
-            tls_secret_name=self.config["tls-secret-name"],
+            tls_secret_name=raw.get("tls-secret-name"),
             backend_protocol="HTTP",
         )
 

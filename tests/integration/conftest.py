@@ -3,9 +3,6 @@
 
 """Charm integration test config."""
 
-import logging
-import os
-import subprocess  # nosec B404
 from pathlib import Path
 
 import jubilant
@@ -13,40 +10,6 @@ import pytest
 from pytest import FixtureRequest
 
 from integration.helpers import APP_NAME, POSTGRES_NAME, wait_for_apps
-
-logger = logging.getLogger(__name__)
-
-LXD_CONTROLLER = "localhost-localhost"
-K8S_CLOUD = "canonical-k8s"
-
-
-@pytest.fixture(scope="session", autouse=True)
-def setup_canonical_k8s(request: FixtureRequest):
-    """Bootstrap an LXD controller and register the Canonical K8s cloud."""
-    subprocess.run(  # nosec B603
-        ["/snap/bin/juju", "bootstrap", "localhost", LXD_CONTROLLER],
-        check=False,
-    )
-
-    kubeconfig = os.path.expanduser(request.config.getoption("--kube-config") or "~/.kube/config")
-    result = subprocess.run(  # nosec B603
-        [
-            "/snap/bin/juju",
-            "add-k8s",
-            K8S_CLOUD,
-            "--client",
-            "--controller",
-            LXD_CONTROLLER,
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-        env={**os.environ, "KUBECONFIG": kubeconfig},
-    )
-    if result.returncode != 0 and "already exists" not in (result.stdout + result.stderr):
-        raise RuntimeError(
-            f"Failed to add Canonical K8s cloud.\nstdout: {result.stdout}\nstderr: {result.stderr}"
-        )
 
 
 @pytest.fixture(scope="module", name="charm_image")

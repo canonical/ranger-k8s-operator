@@ -5,6 +5,7 @@
 """Charm integration tests."""
 
 import logging
+import subprocess  # nosec B404
 
 import jubilant
 import pytest
@@ -47,29 +48,25 @@ class TestDeployment:
         nginx_unit = status.apps[NGINX_NAME].units[f"{NGINX_NAME}/0"]
         assert nginx_unit.workload_status.current == "active"
 
-    def test_simulate_crash(self, juju: jubilant.Juju, charm: str, charm_image: str):
-        """Simulate the crash of the Ranger charm.
+    def test_simulate_crash(self, juju: jubilant.Juju):
+        """Simulate the crash of the Ranger charm by force-deleting its pod.
 
         Args:
             juju: Jubilant Juju object.
-            charm: charm path.
-            charm_image: path to rock image to be used.
         """
-        # Destroy charm
-        juju.remove_application(APP_NAME)
-        juju.wait(lambda status: APP_NAME not in status.apps, timeout=600)
-
-        # Deploy charm again
-        resources = {"ranger-image": charm_image}
-        juju.deploy(
-            charm,
-            app=APP_NAME,
-            resources=resources,
-            num_units=1,
+        subprocess.run(  # nosec B603 B607
+            [
+                "kubectl",
+                "delete",
+                "pod",
+                f"{APP_NAME}-0",
+                "-n",
+                juju.model,
+                "--grace-period=0",
+                "--force",
+            ],
+            check=True,
         )
-        wait_for_apps(juju, [APP_NAME], status="blocked", timeout=1000)
-
-        juju.integrate(APP_NAME, POSTGRES_NAME)
         wait_for_apps(
             juju,
             [APP_NAME, POSTGRES_NAME],

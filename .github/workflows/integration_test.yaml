@@ -21,10 +21,6 @@ jobs:
       channel: 1.35-classic/stable
       provider: k8s
       use-canonical-k8s: true
-      extra-arguments: >-
-        --kube-config=~/.kube/config
-        --juju-controller=localhost-localhost
-        --juju-cloud=canonical-k8s
       modules: >-
         ["test_charm.py",
         "test_policy.py",

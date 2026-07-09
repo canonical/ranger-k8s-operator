@@ -6,6 +6,8 @@
 
 import logging
 import subprocess  # nosec B404
+from typing import Optional
+from urllib.parse import urlparse
 
 import ops
 from charms.data_platform_libs.v0.data_interfaces import (
@@ -15,8 +17,8 @@ from charms.data_platform_libs.v0.data_interfaces import (
 from charms.data_platform_libs.v0.data_models import TypedCharmBase
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LogProxyConsumer
-from charms.nginx_ingress_integrator.v0.nginx_route import require_nginx_route
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
+from charms.traefik_k8s.v2.ingress import IngressPerAppRequirer
 from charms.trino_k8s.v0.trino_catalog import TrinoCatalogRequirer
 from ops.model import (
     ActiveStatus,
@@ -53,16 +55,10 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
     """Charm the service.
 
     Attributes:
-        external_hostname: DNS listing used for external connections.
         config_type: the charm structured config
     """
 
     config_type = CharmConfig
-
-    @property
-    def external_hostname(self):
-        """Return the DNS listing used for external connections."""
-        return self.config["external-hostname"] or self.app.name
 
     def __init__(self, *args):
         """Construct.
@@ -104,7 +100,16 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         self.trino_catalog_handler = TrinoCatalogRelationHandler(self)
 
         # Handle Ingress
-        self._require_nginx_route()
+        self.ingress = IngressPerAppRequirer(
+            self,
+            relation_name="ingress",
+            port=APPLICATION_PORT,
+            strip_prefix=True,
+            redirect_https=True,
+            scheme="http",
+        )
+        self.framework.observe(self.ingress.on.ready, self._on_ingress_ready)
+        self.framework.observe(self.ingress.on.revoked, self._on_ingress_revoked)
 
         # Prometheus
         self._prometheus_scraping = MetricsEndpointProvider(
@@ -127,20 +132,43 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             self, relation_name="grafana-dashboard"
         )
 
-    def _require_nginx_route(self):
-        """Require nginx-route relation based on current configuration."""
-        # Use raw model config here for bootstrap-safety: this method is called
-        # from __init__ before any hook handler runs, so a persisted invalid
-        # config must not prevent the charm from starting.
+    def resolve_policy_manager_url(self) -> Optional[str]:
+        """Resolve the policy manager URL for the current charm function.
+
+        For admin: explicit config override > live ingress URL > cluster DNS.
+        For usersync: config-only; returns None if unset.
+
+        Returns:
+            Full URL string, or None for usersync when policy-mgr-url is not configured.
+        """
+        override = self.config["policy-mgr-url"]
+        if override:
+            return override
+
+        if self.config["charm-function"].value == "usersync":
+            return None
+
+        ingress_url = self.ingress.url
+        if ingress_url:
+            parsed = urlparse(ingress_url)
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+            return f"{parsed.scheme}://{parsed.hostname}:{port}"
+
+        return f"http://{self.app.name}.{self.model.name}.svc.cluster.local:{APPLICATION_PORT}"
+
+    def _warn_deprecated_config(self):
+        """Log warnings if deprecated configuration options are set."""
         raw = self.model.config
-        require_nginx_route(
-            charm=self,
-            service_hostname=raw.get("external-hostname") or self.app.name,
-            service_name=self.app.name,
-            service_port=APPLICATION_PORT,
-            tls_secret_name=raw.get("tls-secret-name"),
-            backend_protocol="HTTP",
-        )
+        if raw.get("external-hostname"):
+            logger.warning(
+                "Config option 'external-hostname' is deprecated and has no effect. "
+                "Remove it from your configuration."
+            )
+        if raw.get("tls-secret-name"):
+            logger.warning(
+                "Config option 'tls-secret-name' is deprecated and has no effect. "
+                "Remove it from your configuration."
+            )
 
     @staticmethod
     def _configure_logging():
@@ -174,7 +202,26 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         Args:
             event: The event triggered when the relation changed.
         """
+        self._warn_deprecated_config()
         self.update(event)
+
+    @log_event_handler(logger)
+    def _on_ingress_ready(self, event):
+        """Handle ingress URL becoming available.
+
+        Args:
+            event: The ingress ready event.
+        """
+        self.provider.reconcile_policy_manager_url()
+
+    @log_event_handler(logger)
+    def _on_ingress_revoked(self, event):
+        """Handle ingress URL being revoked.
+
+        Args:
+            event: The ingress revoked event.
+        """
+        self.provider.reconcile_policy_manager_url()
 
     @log_event_handler(logger)
     def _on_peer_relation_changed(self, event):
@@ -331,7 +378,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
 
         context.update(
             {
-                "POLICY_MGR_URL": self.config["policy-mgr-url"],
+                "POLICY_MGR_URL": self.resolve_policy_manager_url(),
                 "RANGER_USERSYNC_PWD": self.config["ranger-usersync-password"],
             }
         )
@@ -381,6 +428,11 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         if charm_function == "usersync":
             self.ldap.validate()
 
+        if charm_function == "usersync" and not self.resolve_policy_manager_url():
+            raise ValueError(
+                "Missing required configuration: set 'policy-mgr-url' for usersync function."
+            )
+
         if self._state.opensearch and charm_function != "admin":
             raise ValueError("Only Ranger admin can relate to OpenSearch.")
 
@@ -426,8 +478,10 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             self.model.unit.open_port(port=APPLICATION_PORT, protocol="tcp")
             command, context = self._configure_ranger_admin(container)
         else:
-            self.unit.status = BlockedStatus("Missing charm-function.")
-            return
+            raise ValueError(
+                f"Unhandled charm-function {charm_function!r}; "
+                "update this method to support the new function type."
+            )
 
         logger.info("planning ranger %s execution", charm_function)
         pebble_layer = {

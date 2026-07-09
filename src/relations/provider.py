@@ -179,9 +179,24 @@ class RangerProvider(Object):
         if relation:
             relation.data[self.charm.app].update(
                 {
-                    "policy_manager_url": self.charm.config["policy-mgr-url"],
+                    "policy_manager_url": self.charm.resolve_policy_manager_url(),
                 }
             )
+
+    def reconcile_policy_manager_url(self):
+        """Re-write policy_manager_url in all active policy relation databags.
+
+        Safe to call at any time; skips silently for non-leaders.
+        """
+        if not self.charm.unit.is_leader():
+            return
+
+        url = self.charm.resolve_policy_manager_url()
+        if url is None:
+            return
+
+        for relation in self.charm.model.relations[self.relation_name]:
+            relation.data[self.charm.app]["policy_manager_url"] = url
 
     def _create_ranger_client(self):
         """Prepare Ranger client.

@@ -54,7 +54,7 @@ class TestDeployment:
         result_url = None
         deadline = time.monotonic() + 300
         while time.monotonic() < deadline:
-            unit_info = juju.show_unit(f"{TRAEFIK_NAME}/0")
+            unit_info = juju.show_unit(f"{APP_NAME}/0")
             for rel in unit_info.relation_info:
                 ingress_raw = rel.app_data.get("ingress")
                 if ingress_raw:

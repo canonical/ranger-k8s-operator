@@ -4,6 +4,7 @@
 
 """Charm integration tests."""
 
+import json
 import logging
 import subprocess  # nosec B404
 import time
@@ -53,11 +54,12 @@ class TestDeployment:
         result_url = None
         deadline = time.monotonic() + 300
         while time.monotonic() < deadline:
-            status = juju.status()
-            app_data = status.apps[APP_NAME].units.get(f"{APP_NAME}/0")
-            if app_data:
-                action = juju.run(f"{APP_NAME}/0", "get-relation-data")
-                result_url = (action.results or {}).get("policy_manager_url")
+            unit_info = juju.show_unit(f"{TRAEFIK_NAME}/0")
+            for rel in unit_info.relation_info:
+                ingress_raw = rel.app_data.get("ingress")
+                if ingress_raw:
+                    result_url = json.loads(ingress_raw).get("url")
+                    break
             if result_url and internal_url not in result_url:
                 break
             time.sleep(5)

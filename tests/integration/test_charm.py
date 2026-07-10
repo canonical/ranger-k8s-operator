@@ -56,7 +56,7 @@ class TestDeployment:
             status = juju.status()
             app_data = status.apps[APP_NAME].units.get(f"{APP_NAME}/0")
             if app_data:
-                action = juju.run(f"{APP_NAME}/0", "get-relation-data", check=False)
+                action = juju.run(f"{APP_NAME}/0", "get-relation-data")
                 result_url = (action.results or {}).get("policy_manager_url")
             if result_url and internal_url not in result_url:
                 break

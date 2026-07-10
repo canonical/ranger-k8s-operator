@@ -51,9 +51,14 @@ class TestUserSync:
 
         juju.integrate(USERSYNC_NAME, LDAP_NAME)
         wait_for_apps(juju, [USERSYNC_NAME, LDAP_NAME], status="active", timeout=1500)
-        time.sleep(100)  # Provide time for user synchronization to occur.
 
         url = get_unit_url(juju, application=APP_NAME, unit=0, port=6080)
-        membership = get_memberships(url)
+        membership = None
+        deadline = time.monotonic() + 300
+        while time.monotonic() < deadline:
+            membership = get_memberships(url)
+            if membership is not None:
+                break
+            time.sleep(10)
 
         assert membership == ("finance", 7)

@@ -256,6 +256,8 @@ def get_memberships(url):
         raise
     data = json.loads(response.text)
     logger.info(data)
+    if not data.get("vXGroupUsers"):
+        return None
     group = data["vXGroupUsers"][0].get("name")
     user_id = data["vXGroupUsers"][0].get("userId")
     membership = (group, user_id)

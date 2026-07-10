@@ -41,6 +41,9 @@ class TestUserSync:
         }
         juju.run(f"{LDAP_NAME}/0", "load-test-users")
 
+        admin_url = get_unit_url(juju, application=APP_NAME, unit=0, port=6080)
+        ranger_config["policy-mgr-url"] = admin_url
+
         juju.deploy(
             charm,
             app=USERSYNC_NAME,

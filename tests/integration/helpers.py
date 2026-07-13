@@ -20,7 +20,7 @@ METADATA = yaml.safe_load(Path("./charmcraft.yaml").read_text())
 POSTGRES_NAME = "postgresql-k8s"
 APP_NAME = "ranger-k8s"
 USERSYNC_NAME = "ranger-usersync-k8s"
-NGINX_NAME = "nginx-ingress-integrator"
+TRAEFIK_NAME = "traefik-k8s"
 TRINO_SERVICE = "trino-service"
 TRINO_NAME = "trino-k8s"
 RANGER_URL = "http://localhost:6080"
@@ -256,6 +256,8 @@ def get_memberships(url):
         raise
     data = json.loads(response.text)
     logger.info(data)
+    if not data.get("vXGroupUsers"):
+        return None
     group = data["vXGroupUsers"][0].get("name")
     user_id = data["vXGroupUsers"][0].get("userId")
     membership = (group, user_id)

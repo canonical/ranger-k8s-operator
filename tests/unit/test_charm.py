@@ -313,7 +313,7 @@ def test_usersync_ready(ctx):
     state_in = testing.State(
         leader=True,
         model=testing.Model(name="ranger-model"),
-        config={"charm-function": "usersync"},
+        config={"charm-function": "usersync", "policy-mgr-url": "http://ranger-k8s:6080"},
         containers={_container()},
         relations={_peer(), ldap_rel},
     )
@@ -373,24 +373,23 @@ def test_config_changed(ctx):
     )
 
 
-def test_ingress(ctx):
-    """The charm relates correctly to the nginx ingress charm."""
-    nginx_rel = testing.Relation("nginx-route", remote_app_name="ingress")
+def test_ingress_requirer_publishes_app_data(ctx):
+    """The ingress requirer publishes correct app data on relation_changed."""
+    ingress_rel = testing.Relation("ingress", remote_app_name="traefik-k8s")
     state_in = testing.State(
         leader=True,
         model=testing.Model(name="ranger-model"),
         containers={_container()},
-        relations={_peer({"database_connection": DATABASE_CONNECTION}), nginx_rel},
+        relations={_peer({"database_connection": DATABASE_CONNECTION}), ingress_rel},
     )
-    state_out = ctx.run(ctx.on.config_changed(), state_in)
+    state_out = ctx.run(ctx.on.relation_changed(ingress_rel), state_in)
 
-    assert state_out.get_relation(nginx_rel.id).local_app_data == {
-        "service-namespace": "ranger-model",
-        "service-hostname": "ranger-k8s",
-        "service-name": "ranger-k8s",
-        "service-port": "6080",
-        "backend-protocol": "HTTP",
-        "tls-secret-name": "ranger-tls",
+    assert state_out.get_relation(ingress_rel.id).local_app_data == {
+        "model": '"ranger-model"',
+        "name": '"ranger-k8s"',
+        "port": "6080",
+        "strip-prefix": "true",
+        "redirect-https": "true",
     }
 
 
@@ -417,6 +416,7 @@ def test_policy_on_relation_changed(ctx):
     )
     state_in = testing.State(
         leader=True,
+        model=testing.Model(name="ranger-model"),
         containers={_container()},
         relations={_peer({"database_connection": DATABASE_CONNECTION}), policy_rel},
     )
@@ -425,7 +425,7 @@ def test_policy_on_relation_changed(ctx):
         state_out = ctx.run(ctx.on.relation_changed(policy_rel), state_in)
 
     assert state_out.get_relation(policy_rel.id).local_app_data == {
-        "policy_manager_url": "http://ranger-k8s:6080",
+        "policy_manager_url": "http://ranger-k8s.ranger-model.svc.cluster.local:6080",
     }
 
 
@@ -476,7 +476,7 @@ def test_ldap_relation_changed(ctx):
     )
     state_in = testing.State(
         leader=True,
-        config={"charm-function": "usersync"},
+        config={"charm-function": "usersync", "policy-mgr-url": "http://ranger-k8s:6080"},
         containers={_container()},
         relations={_peer(), ldap_rel},
     )
@@ -507,7 +507,11 @@ def test_ldap_config_updated(ctx):
     """The charm uses the configuration values from config relation."""
     state_in = testing.State(
         leader=True,
-        config={"charm-function": "usersync", **USERSYNC_CONFIG_VALUES},
+        config={
+            "charm-function": "usersync",
+            "policy-mgr-url": "http://ranger-k8s:6080",
+            **USERSYNC_CONFIG_VALUES,
+        },
         containers={_container()},
         relations={_peer()},
     )
@@ -571,6 +575,72 @@ def test_on_opensearch_relation_broken(ctx):
     state_out = ctx.run(ctx.on.relation_broken(opensearch_rel), state_in)
 
     assert _service_env(state_out)["OPENSEARCH_ENABLED"] is False
+
+
+def test_usersync_blocked_without_policy_mgr_url(ctx):
+    """Usersync function blocks if policy-mgr-url is not configured."""
+    ldap_rel = testing.Relation(
+        "ldap",
+        remote_app_name="comsys-openldap-k8s",
+        remote_app_data=LDAP_RELATION_CHANGED_DATA,
+    )
+    state_in = testing.State(
+        leader=True,
+        config={"charm-function": "usersync"},
+        containers={_container()},
+        relations={_peer(), ldap_rel},
+    )
+    state_out = ctx.run(ctx.on.relation_changed(ldap_rel), state_in)
+
+    assert state_out.unit_status == testing.BlockedStatus(
+        "Missing required configuration: set 'policy-mgr-url' for usersync function."
+    )
+
+
+def test_deprecated_config_no_error(ctx):
+    """Setting deprecated config options does not raise a validation error."""
+    state_in = testing.State(
+        leader=True,
+        model=testing.Model(name="ranger-model"),
+        config={"external-hostname": "my-hostname", "tls-secret-name": "my-tls-secret"},
+        containers={_container()},
+        relations={_peer({"database_connection": DATABASE_CONNECTION})},
+    )
+    state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+    assert state_out.unit_status != testing.BlockedStatus("external-hostname")
+    assert state_out.unit_status != testing.BlockedStatus("tls-secret-name")
+
+
+def test_policy_mgr_url_from_ingress(ctx):
+    """Policy databag uses the normalized ingress URL when an ingress relation is ready."""
+    ingress_rel = testing.Relation(
+        "ingress",
+        remote_app_name="traefik-k8s",
+        remote_app_data={"ingress": '{"url": "http://ranger-k8s.example.com/"}'},
+    )
+    policy_rel = testing.Relation(
+        "policy",
+        remote_app_name="trino-k8s",
+        remote_app_data=POLICY_RELATION_DATA,
+    )
+    state_in = testing.State(
+        leader=True,
+        model=testing.Model(name="ranger-model"),
+        containers={_container()},
+        relations={
+            _peer({"database_connection": DATABASE_CONNECTION}),
+            ingress_rel,
+            policy_rel,
+        },
+    )
+    with mock.patch("charm.RangerProvider._create_ranger_service") as mock_create:
+        mock_create.return_value = (MockService(f"relation_{policy_rel.id}", policy_rel.id), True)
+        state_out = ctx.run(ctx.on.relation_changed(ingress_rel), state_in)
+
+    assert state_out.get_relation(policy_rel.id).local_app_data == {
+        "policy_manager_url": "http://ranger-k8s.example.com:80",
+    }
 
 
 class TestState(TestCase):

@@ -4,8 +4,10 @@
 
 """Charm integration tests."""
 
+import json
 import logging
 import subprocess  # nosec B404
+import time
 
 import jubilant
 import pytest
@@ -14,8 +16,8 @@ import requests
 from integration.conftest import deploy  # noqa: F401, pylint: disable=W0611
 from integration.helpers import (
     APP_NAME,
-    NGINX_NAME,
     POSTGRES_NAME,
+    TRAEFIK_NAME,
     get_unit_url,
     wait_for_apps,
 )
@@ -37,16 +39,39 @@ class TestDeployment:
         assert response.status_code == 200
 
     def test_ingress(self, juju: jubilant.Juju):
-        """Integrate Ranger with Ingress."""
-        juju.deploy(NGINX_NAME, trust=True)
-        wait_for_apps(juju, [NGINX_NAME], status="waiting", timeout=1500)
+        """Integrate Ranger with Traefik ingress and verify the policy URL is updated."""
+        juju.deploy(
+            TRAEFIK_NAME,
+            config={"routing_mode": "subdomain", "external_hostname": "example.com"},
+            trust=True,
+        )
+        wait_for_apps(juju, [TRAEFIK_NAME], status="active", timeout=1500)
 
-        juju.integrate(APP_NAME, NGINX_NAME)
-        wait_for_apps(juju, [NGINX_NAME, APP_NAME], status="active", timeout=1000)
+        juju.integrate(APP_NAME, TRAEFIK_NAME)
+        wait_for_apps(juju, [TRAEFIK_NAME, APP_NAME], status="active", timeout=1000)
 
-        status = juju.status()
-        nginx_unit = status.apps[NGINX_NAME].units[f"{NGINX_NAME}/0"]
-        assert nginx_unit.workload_status.current == "active"
+        internal_url = f"ranger-k8s.{juju.model}.svc.cluster.local:6080"
+        result_url = None
+        deadline = time.monotonic() + 300
+        while time.monotonic() < deadline:
+            unit_info = juju.show_unit(f"{APP_NAME}/0")
+            for rel in unit_info.relation_info:
+                ingress_raw = rel.app_data.get("ingress")
+                if ingress_raw:
+                    result_url = json.loads(ingress_raw).get("url")
+                    break
+            if result_url and internal_url not in result_url:
+                break
+            time.sleep(5)
+
+        assert result_url is not None
+        assert internal_url not in result_url
+        assert "example.com" in result_url
+
+        juju.remove_relation(APP_NAME, TRAEFIK_NAME)
+        wait_for_apps(juju, [APP_NAME], status="active", timeout=600)
+        juju.remove_application(TRAEFIK_NAME, destroy_storage=True)
+        wait_for_apps(juju, [APP_NAME], status="active", timeout=600)
 
     def test_simulate_crash(self, juju: jubilant.Juju):
         """Simulate the crash of the Ranger charm by force-deleting its pod.

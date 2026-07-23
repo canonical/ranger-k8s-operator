@@ -234,4 +234,16 @@ config:
         Password should be minimum 8 characters with min one alphabet and one numeric.
       type: string
       default: rangerR0cks!
+    enforce-strict-reconciliation:
+      description: |
+        Create a Ranger zone only when all corresponding roles are absent or empty.
+        Disabling this may loosen access by allowing creation with non-empty roles.
+      type: boolean
+      default: true
+    toggle-catalog-reconciliation:
+      description: |
+        Create missing Ranger zones for Trino catalogs. Disable to freeze catalog
+        reconciliation; enforce-strict-reconciliation has no effect while disabled.
+      type: boolean
+      default: true
  

@@ -10,12 +10,14 @@ import dataclasses
 import json
 import logging
 import re
+from types import SimpleNamespace
 from unittest import TestCase, mock
 
 import pytest
 from ops import pebble, testing
 
 from charm import RangerK8SCharm
+from relations.trino import TrinoCatalogRelationHandler
 from state import State
 
 logger = logging.getLogger(__name__)
@@ -405,6 +407,98 @@ def test_update_status_up(ctx):
     state_out = ctx.run(ctx.on.update_status(), _carry(state))
 
     assert state_out.unit_status == testing.ActiveStatus("Status check: UP")
+
+
+def _trino_handler(catalogs, strict=True, create_enabled=True):
+    """Create an isolated Trino relation handler with the requested configuration."""
+    handler = object.__new__(TrinoCatalogRelationHandler)
+    charm = mock.MagicMock()
+    charm._state.trino_catalogs = catalogs
+    charm.config = {
+        "ranger-admin-password": "rangerR0cks!",
+        "enforce-strict-reconciliation": strict,
+        "toggle-catalog-reconciliation": create_enabled,
+    }
+    charm.model.relations = {"trino-catalog": [mock.sentinel.trino_relation]}
+    handler.charm = charm
+    handler.relation_name = "trino-catalog"
+    return handler, charm
+
+
+def test_trino_reconciliation_threads_config_flags():
+    """The relation handler passes the reconciliation config to the reconciler."""
+    catalogs = [{"name": "marketing"}]
+    handler, _ = _trino_handler(catalogs, strict=False, create_enabled=False)
+    client = mock.MagicMock()
+    client.list_services_by_type.return_value = [SimpleNamespace(name="trino-service")]
+
+    with (
+        mock.patch("relations.trino.RangerAPIClient", return_value=client),
+        mock.patch("relations.trino.TrinoCatalogReconciler") as reconciler_cls,
+    ):
+        handler.run_reconciliation()
+
+    reconciler_cls.assert_called_once_with(client, "trino-service")
+    reconciler_cls.return_value.reconcile.assert_called_once_with(
+        catalogs,
+        strict=False,
+        create_enabled=False,
+    )
+
+
+def test_trino_relation_broken_clears_state_without_reconciliation():
+    """Breaking the relation clears state but does not reconcile removed catalogs."""
+    handler = object.__new__(TrinoCatalogRelationHandler)
+    charm = mock.MagicMock()
+    container = mock.MagicMock()
+    container.can_connect.return_value = True
+    charm.unit.is_leader.return_value = True
+    charm.model.unit.get_container.return_value = container
+    charm._state.trino_url = "http://trino:8080"
+    charm._state.trino_catalogs = [{"name": "marketing"}]
+    charm._state.trino_credentials_secret_id = mock.sentinel.trino_credentials
+    handler.charm = charm
+    handler.run_reconciliation = mock.MagicMock()
+
+    event = mock.sentinel.relation_broken_event
+    handler._on_relation_broken(event)
+
+    assert charm._state.trino_url is None
+    assert charm._state.trino_catalogs is None
+    assert charm._state.trino_credentials_secret_id is None
+    charm.update.assert_called_once_with(event)
+    handler.run_reconciliation.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("strict", "expected_log"),
+    [
+        (False, "fail-open"),
+        (True, "left unprovisioned"),
+    ],
+)
+def test_trino_reconciliation_role_gate_is_log_only(strict, expected_log, caplog):
+    """Role-gate decisions do not alter the unit status."""
+    handler, charm = _trino_handler([{"name": "marketing"}], strict=strict)
+    initial_status = object()
+    charm.unit.status = initial_status
+    populated_role = mock.MagicMock()
+    populated_role.name = "marketing-viewer"
+    populated_role.users = [{"name": "alice"}]
+    populated_role.groups = []
+    populated_role.roles = []
+    client = mock.MagicMock()
+    client.list_services_by_type.return_value = [SimpleNamespace(name="trino-service")]
+    client.list_zones.return_value = []
+    client.list_roles.return_value = [populated_role]
+    client.list_service_policies.return_value = []
+
+    caplog.set_level(logging.WARNING, logger="reconcile")
+    with mock.patch("relations.trino.RangerAPIClient", return_value=client):
+        handler.run_reconciliation()
+
+    assert charm.unit.status is initial_status
+    assert expected_log in caplog.text
 
 
 def test_policy_on_relation_changed(ctx):

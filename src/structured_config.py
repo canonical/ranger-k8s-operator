@@ -62,6 +62,8 @@ class CharmConfig(BaseConfigModel):
     policy_mgr_url: Optional[str]
     charm_function: FunctionType
     lookup_timeout: int
+    enforce_strict_reconciliation: bool
+    toggle_catalog_reconciliation: bool
 
     @validator("*", pre=True)
     @classmethod

@@ -86,7 +86,6 @@ class TrinoCatalogRelationHandler(framework.Object):
         self.charm._state.trino_catalogs = None
         self.charm._state.trino_credentials_secret_id = None
         self.charm.update(event)
-        self.run_reconciliation()
 
     def run_reconciliation(self):
         """Run Trino catalog reconciliation against the Ranger REST API.
@@ -124,7 +123,11 @@ class TrinoCatalogRelationHandler(framework.Object):
 
         try:
             reconciler = TrinoCatalogReconciler(client, service_name)
-            reconciler.reconcile(catalogs)
+            reconciler.reconcile(
+                catalogs,
+                strict=self.charm.config["enforce-strict-reconciliation"],
+                create_enabled=self.charm.config["toggle-catalog-reconciliation"],
+            )
         except RangerAPIError:
             logger.warning(
                 "reconciliation failed, will retry on next update-status",

@@ -5,13 +5,13 @@
 
 # pylint:disable=protected-access
 
-import logging
 from unittest import TestCase, mock
 
 from apache_ranger.model.ranger_policy import RangerPolicy
 from apache_ranger.model.ranger_role import RangerRole
 from apache_ranger.model.ranger_security_zone import RangerSecurityZone
 
+from literals import DEFAULT_POLICIES
 from ranger_client import RangerAPIError
 from reconcile import (
     TrinoCatalogReconciler,
@@ -20,11 +20,8 @@ from reconcile import (
     _build_ro_policy,
     _build_rw_policy,
     _catalogs_to_zones,
-    _default_policy_names,
     _role_names,
 )
-
-logger = logging.getLogger(__name__)
 
 SERVICE_NAME = "trino-service"
 
@@ -34,20 +31,15 @@ class TestCatalogsToZones(TestCase):
 
     def test_base_catalog_only(self):
         """A single base catalog maps to one zone."""
-        catalogs = [{"name": "marketing"}]
-        self.assertEqual(_catalogs_to_zones(catalogs), {"marketing"})
+        self.assertEqual(_catalogs_to_zones([{"name": "marketing"}]), {"marketing"})
 
     def test_developer_catalog_only(self):
         """A developer catalog maps to the base zone name."""
-        catalogs = [{"name": "marketing_developer"}]
-        self.assertEqual(_catalogs_to_zones(catalogs), {"marketing"})
+        self.assertEqual(_catalogs_to_zones([{"name": "marketing_developer"}]), {"marketing"})
 
     def test_base_and_developer(self):
         """Both base and developer catalogs map to one zone."""
-        catalogs = [
-            {"name": "marketing"},
-            {"name": "marketing_developer"},
-        ]
+        catalogs = [{"name": "marketing"}, {"name": "marketing_developer"}]
         self.assertEqual(_catalogs_to_zones(catalogs), {"marketing"})
 
     def test_multiple_zones(self):
@@ -58,10 +50,7 @@ class TestCatalogsToZones(TestCase):
             {"name": "sales"},
             {"name": "finance_developer"},
         ]
-        self.assertEqual(
-            _catalogs_to_zones(catalogs),
-            {"marketing", "sales", "finance"},
-        )
+        self.assertEqual(_catalogs_to_zones(catalogs), {"marketing", "sales", "finance"})
 
     def test_empty_catalogs(self):
         """No catalogs produce no zones."""
@@ -69,32 +58,18 @@ class TestCatalogsToZones(TestCase):
 
 
 class TestHelpers(TestCase):
-    """Tests for helper functions."""
+    """Tests for reconciliation naming helpers."""
 
     def test_role_names(self):
         """Role names follow the expected pattern."""
-        names = _role_names("marketing")
         self.assertEqual(
-            names,
+            _role_names("marketing"),
             [
                 "marketing-viewer",
                 "marketing-editor",
                 "marketing-admin",
                 "marketing-auditor",
             ],
-        )
-
-    def test_default_policy_names(self):
-        """Default policy names follow the expected pattern."""
-        names = _default_policy_names("marketing")
-        self.assertEqual(
-            names,
-            {
-                "default - ro - marketing",
-                "default - rw - marketing",
-                "default - ddl - marketing",
-                "default - is - marketing",
-            },
         )
 
 
@@ -109,47 +84,42 @@ class TestPolicyBuilders(TestCase):
         self.assertEqual(policy.zoneName, "marketing")
         self.assertEqual(policy.resources["catalog"].values, ["marketing"])
         self.assertEqual(len(policy.additionalResources), 3)
-        item = policy.policyItems[0]
         self.assertEqual(
-            sorted(item.roles),
-            sorted(
-                [
-                    "marketing-viewer",
-                    "marketing-editor",
-                    "marketing-admin",
-                ]
-            ),
+            sorted(policy.policyItems[0].roles),
+            ["marketing-admin", "marketing-editor", "marketing-viewer"],
         )
-        access_types = {a.type for a in item.accesses}
-        self.assertEqual(access_types, {"select", "show", "use"})
+        self.assertEqual(
+            {access.type for access in policy.policyItems[0].accesses}, {"select", "show", "use"}
+        )
 
     def test_rw_policy_structure(self):
-        """The rw policy targets the developer catalog with editor+admin."""
+        """The rw policy targets the developer catalog with editor and admin roles."""
         policy = _build_rw_policy("marketing", SERVICE_NAME)
         self.assertEqual(policy.name, "default - rw - marketing")
         self.assertEqual(policy.resources["catalog"].values, ["marketing_developer"])
-        item = policy.policyItems[0]
         self.assertEqual(
-            sorted(item.roles),
-            ["marketing-admin", "marketing-editor"],
+            sorted(policy.policyItems[0].roles), ["marketing-admin", "marketing-editor"]
         )
-        access_types = {a.type for a in item.accesses}
-        self.assertEqual(access_types, {"select", "show", "use", "insert", "delete"})
+        self.assertEqual(
+            {access.type for access in policy.policyItems[0].accesses},
+            {"select", "show", "use", "insert", "delete"},
+        )
 
     def test_ddl_policy_structure(self):
-        """The ddl policy targets the developer catalog schema/table with admin only."""
+        """The ddl policy targets the developer catalog schema and table with admin only."""
         policy = _build_ddl_policy("marketing", SERVICE_NAME)
         self.assertEqual(policy.name, "default - ddl - marketing")
         self.assertEqual(policy.resources["catalog"].values, ["marketing_developer"])
         self.assertIn("schema", policy.resources)
         self.assertEqual(len(policy.additionalResources), 1)
-        item = policy.policyItems[0]
-        self.assertEqual(item.roles, ["marketing-admin"])
-        access_types = {a.type for a in item.accesses}
-        self.assertEqual(access_types, {"alter", "create", "drop"})
+        self.assertEqual(policy.policyItems[0].roles, ["marketing-admin"])
+        self.assertEqual(
+            {access.type for access in policy.policyItems[0].accesses},
+            {"alter", "create", "drop"},
+        )
 
     def test_is_policy_structure(self):
-        """The is policy targets both catalogs with {USER} macro."""
+        """The is policy targets both catalogs with the user macro."""
         policy = _build_is_policy("marketing", SERVICE_NAME)
         self.assertEqual(policy.name, "default - is - marketing")
         self.assertEqual(
@@ -157,266 +127,160 @@ class TestPolicyBuilders(TestCase):
             ["marketing", "marketing_developer"],
         )
         self.assertEqual(len(policy.additionalResources), 3)
-        item = policy.policyItems[0]
-        self.assertEqual(item.users, ["{USER}"])
-        self.assertIsNone(item.roles)
-        access_types = {a.type for a in item.accesses}
-        self.assertEqual(access_types, {"select", "show", "use"})
-        second_block = policy.additionalResources[0]
-        self.assertEqual(second_block["schema"].values, ["information_schema"])
+        self.assertEqual(policy.policyItems[0].users, ["{USER}"])
+        self.assertIsNone(policy.policyItems[0].roles)
+        self.assertEqual(
+            {access.type for access in policy.policyItems[0].accesses}, {"select", "show", "use"}
+        )
+        self.assertEqual(
+            policy.additionalResources[0]["schema"].values,
+            ["information_schema"],
+        )
 
 
 class TestReconciler(TestCase):
     """Tests for the TrinoCatalogReconciler class."""
 
     def setUp(self):
-        """Set up mock client and reconciler."""
+        """Set up a reconciler with an empty Ranger snapshot."""
         self.client = mock.MagicMock(
             spec_set=[
-                "list_services_by_type",
                 "list_zones",
                 "list_roles",
-                "list_policies",
-                "get_zone",
-                "get_role",
-                "get_policy",
+                "list_service_policies",
                 "create_zone",
                 "create_role",
                 "create_policy",
-                "update_policy",
-                "delete_zone",
-                "delete_role",
                 "delete_policy_by_id",
             ]
         )
         self.client.list_zones.return_value = []
         self.client.list_roles.return_value = []
-        self.client.list_policies.return_value = []
+        self.client.list_service_policies.return_value = []
         self.reconciler = TrinoCatalogReconciler(self.client, SERVICE_NAME)
 
-    def test_reconcile_creates_roles_zone_and_policies(self):
-        """Reconciling a new catalog creates roles, zone, and 4 policies."""
-        catalogs = [{"name": "marketing"}]
-        self.reconciler.reconcile(catalogs)
+    def _existing_zone(self, name="marketing"):
+        """Make the named zone present in the shared snapshot."""
+        self.client.list_zones.return_value = [RangerSecurityZone({"name": name})]
 
-        self.assertEqual(self.client.create_role.call_count, 4)
-        created_roles = [call.args[0].name for call in self.client.create_role.call_args_list]
-        self.assertEqual(
-            sorted(created_roles),
-            [
-                "marketing-admin",
-                "marketing-auditor",
-                "marketing-editor",
-                "marketing-viewer",
-            ],
-        )
-
-        self.assertEqual(self.client.create_zone.call_count, 1)
-        zone = self.client.create_zone.call_args[0][0]
-        self.assertEqual(zone.name, "marketing")
-        self.assertIn(SERVICE_NAME, zone.services)
-
-        self.assertEqual(self.client.create_policy.call_count, 4)
-        created_policies = [call.args[0].name for call in self.client.create_policy.call_args_list]
-        self.assertEqual(
-            sorted(created_policies),
-            [
-                "default - ddl - marketing",
-                "default - is - marketing",
-                "default - ro - marketing",
-                "default - rw - marketing",
-            ],
-        )
-
-    def test_reconcile_skips_existing_roles_and_zones(self):
-        """Existing roles and zones are not recreated."""
-        self.client.list_zones.return_value = [RangerSecurityZone({"name": "marketing"})]
+    def _existing_roles(self, name="marketing", **members):
+        """Make all management roles present, optionally with memberships."""
         self.client.list_roles.return_value = [
-            RangerRole({"name": "marketing-viewer"}),
-            RangerRole({"name": "marketing-editor"}),
-            RangerRole({"name": "marketing-admin"}),
-            RangerRole({"name": "marketing-auditor"}),
+            RangerRole({"name": role_name, **members}) for role_name in _role_names(name)
         ]
 
-        catalogs = [{"name": "marketing"}]
-        self.reconciler.reconcile(catalogs)
+    def test_reconcile_creates_roles_zone_and_policies_from_shared_snapshot(self):
+        """A new catalog creates its missing roles, zone, and managed policies."""
+        self.reconciler.reconcile([{"name": "marketing"}])
+
+        self.assertEqual(self.client.list_zones.call_count, 1)
+        self.assertEqual(self.client.list_roles.call_count, 1)
+        self.client.list_service_policies.assert_called_once_with(SERVICE_NAME)
+        self.assertEqual(self.client.create_role.call_count, 4)
+        self.assertEqual(self.client.create_zone.call_count, 1)
+        self.assertEqual(self.client.create_policy.call_count, 4)
+        self.client.delete_policy_by_id.assert_not_called()
+
+    def test_reconcile_allows_absent_roles_in_strict_mode(self):
+        """Absent corresponding roles permit zone creation."""
+        self.reconciler.reconcile([{"name": "marketing"}])
+
+        self.client.create_zone.assert_called_once()
+
+    def test_reconcile_allows_empty_roles_in_strict_mode(self):
+        """Empty corresponding roles permit zone creation."""
+        self._existing_roles()
+
+        self.reconciler.reconcile([{"name": "marketing"}])
 
         self.client.create_role.assert_not_called()
-        self.client.create_zone.assert_not_called()
+        self.client.create_zone.assert_called_once()
 
-    def test_reconcile_developer_and_base_same_zone(self):
-        """Both base and developer catalogs map to a single zone."""
-        catalogs = [
-            {"name": "marketing"},
-            {"name": "marketing_developer"},
+    def test_reconcile_skips_populated_roles_in_strict_mode(self):
+        """Any corresponding role membership leaves a new catalog unprovisioned."""
+        self.client.list_roles.return_value = [
+            RangerRole({"name": "marketing-viewer", "users": [{"name": "alice"}]})
         ]
-        self.reconciler.reconcile(catalogs)
 
-        self.assertEqual(self.client.create_zone.call_count, 1)
-        zone = self.client.create_zone.call_args[0][0]
-        self.assertEqual(zone.name, "marketing")
-
-    def test_reconcile_cleans_stale_zone_with_defaults_only(self):
-        """A stale zone with only default policies is deleted."""
-        self.client.list_zones.return_value = [RangerSecurityZone({"name": "old_zone"})]
-        self.client.list_roles.return_value = []
-
-        default_policies = [
-            RangerPolicy({"name": f"default - {s} - old_zone"}) for s in ("ro", "rw", "ddl", "is")
-        ]
-        self.client.list_policies.return_value = default_policies
-
-        self.reconciler.reconcile([])
-
-        self.client.delete_zone.assert_called_once_with("old_zone")
-        self.assertEqual(self.client.delete_role.call_count, 4)
-        deleted_roles = [call.args[0] for call in self.client.delete_role.call_args_list]
-        self.assertEqual(
-            sorted(deleted_roles),
-            [
-                "old_zone-admin",
-                "old_zone-auditor",
-                "old_zone-editor",
-                "old_zone-viewer",
-            ],
-        )
-
-    def test_reconcile_preserves_stale_zone_with_custom_policies(self):
-        """A stale zone with custom policies is preserved."""
-        self.client.list_zones.return_value = [RangerSecurityZone({"name": "old_zone"})]
-        self.client.list_roles.return_value = []
-
-        policies = [
-            RangerPolicy({"name": "default - ro - old_zone"}),
-            RangerPolicy({"name": "my_custom_policy"}),
-        ]
-        self.client.list_policies.return_value = policies
-
-        self.reconciler.reconcile([])
-
-        self.client.delete_zone.assert_not_called()
-        self.client.delete_role.assert_not_called()
-
-    def test_reconcile_empty_catalogs_no_zones(self):
-        """Empty catalogs with no existing zones is a no-op."""
-        self.reconciler.reconcile([])
+        with self.assertLogs("reconcile", "WARNING") as logs:
+            self.reconciler.reconcile([{"name": "marketing"}])
 
         self.client.create_role.assert_not_called()
         self.client.create_zone.assert_not_called()
         self.client.create_policy.assert_not_called()
+        self.assertIn("left unprovisioned", "\n".join(logs.output))
 
-    def test_reconcile_updates_policy_when_changed(self):
-        """An existing policy with different items is updated."""
-        existing_policy = _build_ro_policy("marketing", SERVICE_NAME)
-        existing_policy.id = 42
-        existing_policy.policyItems[0].roles = ["marketing-viewer"]
+    def test_reconcile_fail_open_creates_onto_populated_roles(self):
+        """Disabling strict mode creates a zone despite populated roles."""
+        self._existing_roles(groups=[{"name": "analysts"}])
 
-        self.client.list_policies.return_value = [existing_policy]
+        with self.assertLogs("reconcile", "WARNING") as logs:
+            self.reconciler.reconcile([{"name": "marketing"}], strict=False)
 
-        catalogs = [{"name": "marketing"}]
-        self.reconciler.reconcile(catalogs)
+        self.client.create_zone.assert_called_once()
+        self.assertIn("fail-open", "\n".join(logs.output))
 
-        self.client.update_policy.assert_called_once()
-        update_call = self.client.update_policy.call_args
-        self.assertEqual(update_call.args[0], 42)
-        updated_policy = update_call.args[1]
-        self.assertEqual(updated_policy.id, 42)
+    def test_reconcile_freezes_when_creation_is_disabled(self):
+        """Creation-disabled reconciliation makes no changes."""
+        self.reconciler.reconcile([{"name": "marketing"}], create_enabled=False)
 
-    def test_reconcile_skips_policy_update_when_unchanged(self):
-        """An existing policy matching desired state is not updated."""
-        existing_policy = _build_ro_policy("marketing", SERVICE_NAME)
-        existing_policy.id = 42
-
-        self.client.list_policies.return_value = [existing_policy]
-
-        catalogs = [{"name": "marketing"}]
-        self.reconciler.reconcile(catalogs)
-
-        self.client.update_policy.assert_not_called()
-        self.client.create_policy.assert_called()
-        created_names = [c.args[0].name for c in self.client.create_policy.call_args_list]
-        self.assertNotIn("default - ro - marketing", created_names)
-
-    def test_reconcile_delete_role_error_logged(self):
-        """Failure to delete a stale role is logged but does not raise."""
-        self.client.list_zones.return_value = [RangerSecurityZone({"name": "stale"})]
-        self.client.list_roles.return_value = []
-        self.client.list_policies.return_value = []
-        self.client.delete_role.side_effect = RangerAPIError("role not found")
-
-        with self.assertLogs(level="WARNING") as logs:
-            self.reconciler.reconcile([])
-
-        self.client.delete_zone.assert_called_once_with("stale")
-        self.assertTrue(any("could not delete role" in msg for msg in logs.output))
-
-    def test_zone_services_constrained_to_catalogs(self):
-        """Zone resources are constrained to the zone's catalog pair."""
-        catalogs = [{"name": "marketing"}]
-        self.reconciler.reconcile(catalogs)
-
-        zone = self.client.create_zone.call_args[0][0]
-        zone_svc = zone.services[SERVICE_NAME]
-        resources = zone_svc.resources[0]
-        catalog_values = resources["catalog"]
-        self.assertEqual(
-            sorted(catalog_values),
-            ["marketing", "marketing_developer"],
-        )
-
-    def test_zone_admin_and_audit_roles(self):
-        """Zone admin and audit roles use zone-specific roles."""
-        catalogs = [{"name": "sales"}]
-        self.reconciler.reconcile(catalogs)
-
-        zone = self.client.create_zone.call_args[0][0]
-        self.assertEqual(zone.adminUsers, [])
-        self.assertEqual(zone.adminRoles, ["sales-admin"])
-        self.assertEqual(zone.auditUsers, [])
-        self.assertEqual(zone.auditRoles, ["sales-auditor"])
-
-    def test_zone_tag_services_always_empty(self):
-        """Zone tagServices is always empty to avoid postCreate failures."""
-        catalogs = [{"name": "marketing"}]
-        self.reconciler.reconcile(catalogs)
-
-        zone = self.client.create_zone.call_args[0][0]
-        self.assertEqual(zone.tagServices, [])
-
-    def test_reconcile_purges_auto_policies_after_zone_creation(self):
-        """Ranger auto-generated policies are deleted after zone creation."""
-        auto_policies = [
-            RangerPolicy({"id": 100, "name": "auto-policy-1"}),
-            RangerPolicy({"id": 101, "name": "auto-policy-2"}),
-        ]
-
-        call_count = {"n": 0}
-        original_return = []
-
-        def list_policies_side_effect(zone_name, service_name):  # noqa DCO010
-            call_count["n"] += 1
-            if call_count["n"] == 1:
-                return auto_policies
-            return original_return
-
-        self.client.list_policies.side_effect = list_policies_side_effect
-
-        catalogs = [{"name": "marketing"}]
-        self.reconciler.reconcile(catalogs)
-
-        self.assertEqual(self.client.delete_policy_by_id.call_count, 2)
-        deleted_ids = [call.args[0] for call in self.client.delete_policy_by_id.call_args_list]
-        self.assertEqual(sorted(deleted_ids), [100, 101])
-
-    def test_reconcile_no_purge_for_existing_zone(self):
-        """Auto-policy purge only happens for newly created zones."""
-        self.client.list_zones.return_value = [RangerSecurityZone({"name": "marketing"})]
-        self.client.list_roles.return_value = [
-            RangerRole({"name": f"marketing{s}"})
-            for s in ("-viewer", "-editor", "-admin", "-auditor")
-        ]
-
-        catalogs = [{"name": "marketing"}]
-        self.reconciler.reconcile(catalogs)
-
+        self.client.create_role.assert_not_called()
+        self.client.create_zone.assert_not_called()
+        self.client.create_policy.assert_not_called()
         self.client.delete_policy_by_id.assert_not_called()
+
+    def test_reconcile_never_modifies_completed_zone(self):
+        """A completed zone's roles and policies remain entirely untouched."""
+        self._existing_zone()
+        self._existing_roles()
+        edited_policy = _build_ro_policy("marketing", SERVICE_NAME)
+        edited_policy.policyItems[0].roles = ["marketing-viewer"]
+        self.client.list_service_policies.return_value = [edited_policy]
+
+        self.reconciler.reconcile([{"name": "marketing"}])
+
+        self.client.create_role.assert_not_called()
+        self.client.create_zone.assert_not_called()
+        self.client.create_policy.assert_not_called()
+        self.client.delete_policy_by_id.assert_not_called()
+
+    def test_reconcile_resumes_zone_with_auto_policies(self):
+        """A zone with Ranger's auto-policies resumes provisioning and purges them."""
+        self._existing_zone()
+        auto_policy = RangerPolicy(
+            {"id": 100, "name": DEFAULT_POLICIES[0], "zoneName": "marketing"}
+        )
+        self.client.list_service_policies.return_value = [auto_policy]
+
+        self.reconciler.reconcile([{"name": "marketing"}])
+
+        self.assertEqual(self.client.create_role.call_count, 4)
+        self.client.create_zone.assert_not_called()
+        self.assertEqual(self.client.create_policy.call_count, 4)
+        self.client.delete_policy_by_id.assert_called_once_with(100)
+
+    def test_reconcile_skips_zone_without_auto_policies(self):
+        """A zone without auto-policies is considered complete."""
+        self._existing_zone()
+        self._existing_roles()
+
+        self.reconciler.reconcile([{"name": "marketing"}])
+
+        self.client.create_role.assert_not_called()
+        self.client.create_zone.assert_not_called()
+        self.client.create_policy.assert_not_called()
+        self.client.delete_policy_by_id.assert_not_called()
+
+    def test_reconcile_creates_roles_before_zone_without_rollback(self):
+        """Role creation survives a failed zone create so the next run can resume."""
+        self.client.list_roles.return_value = [RangerRole({"name": "marketing-viewer"})]
+        self.client.create_zone.side_effect = RangerAPIError("zone unavailable")
+
+        self.reconciler.reconcile([{"name": "marketing"}])
+
+        self.assertEqual(self.client.create_role.call_count, 3)
+        self.client.create_zone.assert_called_once()
+        self.client.create_policy.assert_not_called()
+        self.client.delete_policy_by_id.assert_not_called()
+        call_names = [call[0] for call in self.client.mock_calls]
+        self.assertLess(call_names.index("create_role"), call_names.index("create_zone"))

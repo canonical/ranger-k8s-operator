@@ -16,6 +16,7 @@ from apache_ranger.model.ranger_policy import (
     RangerPolicyItemAccess,
     RangerPolicyResource,
 )
+from apache_ranger.model.ranger_role import RangerRole
 
 from integration.helpers import (
     APP_NAME,
@@ -29,8 +30,13 @@ from integration.helpers import (
 logger = logging.getLogger(__name__)
 
 CATALOG_NAME = "testcat"
+STRICT_CATALOG_NAME = "strictcat"
+FROZEN_CATALOG_NAME = "frozencat"
 DEFAULT_POLICY_NAMES = {
     f"default - {suffix} - {CATALOG_NAME}" for suffix in ("ro", "rw", "ddl", "is")
+}
+MANAGED_ROLE_NAMES = {
+    f"{CATALOG_NAME}-{suffix}" for suffix in ("viewer", "editor", "admin", "auditor")
 }
 
 POLL_INTERVAL = 15
@@ -53,16 +59,15 @@ def _get_ranger_client(juju: jubilant.Juju) -> RangerClient:
     return RangerClient(url, RANGER_AUTH)
 
 
-def _poll_zones(juju, zone_name, *, expect_present):
-    """Poll Ranger until a zone is present or absent.
+def _poll_zone(juju, zone_name):
+    """Poll Ranger until a zone is present.
 
     Args:
         juju: Jubilant Juju object.
         zone_name: Name of the security zone to look for.
-        expect_present: True to wait for zone to appear, False for disappear.
 
     Returns:
-        The matching zone dict when expect_present=True, None otherwise.
+        The matching zone.
 
     Raises:
         TimeoutError: if the condition is not met within POLL_TIMEOUT.
@@ -72,16 +77,13 @@ def _poll_zones(juju, zone_name, *, expect_present):
         ranger = _get_ranger_client(juju)
         zones = ranger.find_security_zones() or []
         zone_names = {z.name for z in zones}
-        if expect_present and zone_name in zone_names:
+        if zone_name in zone_names:
             return ranger.get_security_zone(zone_name)
-        if not expect_present and zone_name not in zone_names:
-            return None
         time.sleep(POLL_INTERVAL)
-    state = "appear" if expect_present else "disappear"
-    raise TimeoutError(f"Zone {zone_name!r} did not {state} within {POLL_TIMEOUT}s")
+    raise TimeoutError(f"Zone {zone_name!r} did not appear within {POLL_TIMEOUT}s")
 
 
-def _build_catalog_config(juju, secret_id):
+def _build_catalog_config(juju, secret_id, catalog_names=(CATALOG_NAME,)):
     """Build the catalog-config YAML string for Trino.
 
     Dynamically resolves the PostgreSQL JDBC URL and database name from
@@ -90,6 +92,7 @@ def _build_catalog_config(juju, secret_id):
     Args:
         juju: Jubilant Juju object.
         secret_id: Juju secret ID containing replica credentials.
+        catalog_names: Names exposed by Trino for these catalogs.
 
     Returns:
         A valid YAML string for the trino-k8s catalog-config option.
@@ -101,11 +104,12 @@ def _build_catalog_config(juju, secret_id):
 
     config = {
         "catalogs": {
-            CATALOG_NAME: {
+            catalog_name: {
                 "backend": "test-backend",
                 "database": db_name,
                 "secret-id": secret_id,
-            },
+            }
+            for catalog_name in catalog_names
         },
         "backends": {
             "test-backend": {
@@ -139,9 +143,9 @@ def _create_and_grant_secret(juju):
     return secret_id
 
 
-def _set_catalog_config(juju, secret_id):
+def _set_catalog_config(juju, secret_id, catalog_names=(CATALOG_NAME,)):
     """Set catalog-config on the Trino charm."""
-    config_yaml = _build_catalog_config(juju, secret_id)
+    config_yaml = _build_catalog_config(juju, secret_id, catalog_names)
     juju.config(TRINO_NAME, {"catalog-config": config_yaml})
     wait_for_apps(juju, [TRINO_NAME, APP_NAME], status="active", timeout=1500)
 
@@ -151,6 +155,17 @@ def _clear_catalog_config(juju):
     empty_config = ""
     juju.config(TRINO_NAME, {"catalog-config": empty_config})
     wait_for_apps(juju, [TRINO_NAME, APP_NAME], status="active", timeout=1500)
+
+
+def _policies_in_zone(ranger, zone_name):
+    """Return policies in a Ranger zone keyed by name."""
+    policies = ranger.find_policies({"zoneName": zone_name, "serviceName": TRINO_SERVICE}) or []
+    return {policy.name: policy for policy in policies}
+
+
+def _roles_by_name(ranger):
+    """Return all Ranger roles keyed by name."""
+    return {role.name: role for role in ranger.find_roles() or []}
 
 
 @pytest.fixture(name="deploy_trino_catalog", scope="module")
@@ -213,40 +228,31 @@ class TestTrinoCatalogRelation:
 
     def test_zone_created(self, juju: jubilant.Juju):
         """Validate that adding a catalog creates a security zone in Ranger."""
-        zone = _poll_zones(juju, CATALOG_NAME, expect_present=True)
+        zone = _poll_zone(juju, CATALOG_NAME)
         assert zone is not None
         logger.info("zone: %s", zone)
 
     def test_zone_default_policies(self, juju: jubilant.Juju):
         """Validate that the new zone contains exactly the four default policies."""
         ranger = _get_ranger_client(juju)
-        policies = (
-            ranger.find_policies({"zoneName": CATALOG_NAME, "serviceName": TRINO_SERVICE}) or []
-        )
-        policy_names = {p.name for p in policies}
+        policy_names = set(_policies_in_zone(ranger, CATALOG_NAME))
         logger.info("policies in zone %s: %s", CATALOG_NAME, policy_names)
         assert policy_names == DEFAULT_POLICY_NAMES
 
-    def test_catalog_removal_cleans_zone(self, juju: jubilant.Juju):
-        """Validate that removing a catalog from Trino removes the zone from Ranger."""
-        _clear_catalog_config(juju)
-        _poll_zones(juju, CATALOG_NAME, expect_present=False)
-
+    def test_existing_resources_are_not_updated_or_deleted(
+        self, juju: jubilant.Juju, deploy_trino_catalog
+    ):
+        """Validate reconciliation preserves existing zones, roles, and policies."""
         ranger = _get_ranger_client(juju)
-        zones = ranger.find_security_zones() or []
-        zone_names = {z.name for z in zones}
-        assert CATALOG_NAME not in zone_names
+        zone = ranger.get_security_zone(CATALOG_NAME)
+        roles = _roles_by_name(ranger)
+        policies = _policies_in_zone(ranger, CATALOG_NAME)
+        assert MANAGED_ROLE_NAMES <= set(roles)
 
-    def test_custom_policy_prevents_removal(self, juju: jubilant.Juju, deploy_trino_catalog):
-        """Validate that a zone with custom policies is not removed on catalog removal."""
-        secret_id = deploy_trino_catalog
+        managed_policy = policies[f"default - ro - {CATALOG_NAME}"]
+        managed_policy.description = "manually customized"
+        ranger.update_policy_by_id(managed_policy.id, managed_policy)
 
-        # Re-add the catalog and wait for the zone to reappear
-        _set_catalog_config(juju, secret_id)
-        _poll_zones(juju, CATALOG_NAME, expect_present=True)
-
-        # Create a custom policy in the zone via the Ranger REST API
-        ranger = _get_ranger_client(juju)
         custom_policy = RangerPolicy(
             {
                 "service": TRINO_SERVICE,
@@ -269,19 +275,90 @@ class TestTrinoCatalogRelation:
                 "isEnabled": True,
             }
         )
-        ranger.create_policy(custom_policy)
-        logger.info("created custom policy in zone %s", CATALOG_NAME)
+        custom_policy = ranger.create_policy(custom_policy)
 
-        # Remove the catalog from Trino
         _clear_catalog_config(juju)
-
-        # Wait long enough for at least two reconciliation cycles
         time.sleep(RECONCILE_CYCLES)
 
-        # The zone should still exist because of the custom policy
         ranger = _get_ranger_client(juju)
-        zones = ranger.find_security_zones() or []
-        zone_names = {z.name for z in zones}
-        assert CATALOG_NAME in zone_names, (
-            f"Zone {CATALOG_NAME!r} was removed despite having a custom policy"
+        assert ranger.get_security_zone(CATALOG_NAME).id == zone.id
+
+        current_roles = _roles_by_name(ranger)
+        assert {name: current_roles[name].id for name in MANAGED_ROLE_NAMES} == {
+            name: roles[name].id for name in MANAGED_ROLE_NAMES
+        }
+
+        current_policies = _policies_in_zone(ranger, CATALOG_NAME)
+        assert set(current_policies) == set(policies) | {custom_policy.name}
+        assert current_policies[managed_policy.name].id == managed_policy.id
+        assert current_policies[managed_policy.name].description == "manually customized"
+        assert current_policies[custom_policy.name].id == custom_policy.id
+
+        _set_catalog_config(juju, deploy_trino_catalog)
+        time.sleep(RECONCILE_CYCLES)
+
+        policies_after_reconciliation = _policies_in_zone(_get_ranger_client(juju), CATALOG_NAME)
+        assert (
+            policies_after_reconciliation[managed_policy.name].description == "manually customized"
         )
+        assert (
+            policies_after_reconciliation[custom_policy.name].id
+            == current_policies[custom_policy.name].id
+        )
+
+    def test_strict_gate_adopts_existing_roles_when_disabled(
+        self, juju: jubilant.Juju, deploy_trino_catalog
+    ):
+        """Validate strict mode blocks populated roles and fail-open mode adopts them."""
+        ranger = _get_ranger_client(juju)
+        populated_role = ranger.create_role(
+            "",
+            RangerRole(
+                {
+                    "name": f"{STRICT_CATALOG_NAME}-viewer",
+                    "users": [{"name": "existing-user"}],
+                }
+            ),
+        )
+
+        _set_catalog_config(juju, deploy_trino_catalog, (CATALOG_NAME, STRICT_CATALOG_NAME))
+        time.sleep(RECONCILE_CYCLES)
+
+        zones = ranger.find_security_zones() or []
+        assert STRICT_CATALOG_NAME not in {zone.name for zone in zones}
+
+        juju.config(APP_NAME, {"enforce-strict-reconciliation": False})
+        wait_for_apps(juju, [APP_NAME, TRINO_NAME], status="active", timeout=1500)
+        _poll_zone(juju, STRICT_CATALOG_NAME)
+
+        adopted_role = _roles_by_name(_get_ranger_client(juju))[populated_role.name]
+        assert adopted_role.id == populated_role.id
+        assert adopted_role.users
+
+    def test_reconciliation_toggle_freezes_creation(
+        self, juju: jubilant.Juju, deploy_trino_catalog
+    ):
+        """Validate disabling reconciliation prevents creation of a new zone."""
+        juju.config(APP_NAME, {"toggle-catalog-reconciliation": False})
+        wait_for_apps(juju, [APP_NAME, TRINO_NAME], status="active", timeout=1500)
+
+        _set_catalog_config(
+            juju,
+            deploy_trino_catalog,
+            (CATALOG_NAME, STRICT_CATALOG_NAME, FROZEN_CATALOG_NAME),
+        )
+        time.sleep(RECONCILE_CYCLES)
+
+        zones = _get_ranger_client(juju).find_security_zones() or []
+        assert FROZEN_CATALOG_NAME not in {zone.name for zone in zones}
+
+    def test_relation_removal_keeps_ranger_objects(self, juju: jubilant.Juju):
+        """Validate breaking the relation leaves the Ranger resources in place."""
+        juju.remove_relation(f"{APP_NAME}:trino-catalog", f"{TRINO_NAME}:trino-catalog")
+        wait_for_apps(juju, [APP_NAME, TRINO_NAME], status="active", timeout=1500)
+        time.sleep(RECONCILE_CYCLES)
+
+        ranger = _get_ranger_client(juju)
+        assert ranger.get_security_zone(CATALOG_NAME)
+        assert MANAGED_ROLE_NAMES <= set(_roles_by_name(ranger))
+        assert DEFAULT_POLICY_NAMES <= set(_policies_in_zone(ranger, CATALOG_NAME))

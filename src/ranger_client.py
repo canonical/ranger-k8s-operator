@@ -142,25 +142,6 @@ class RangerAPIClient:
             )
         return created
 
-    def delete_zone(self, zone_name: str) -> None:
-        """Delete a security zone by name.
-
-        ``DELETE /service/public/v2/api/zone/name/<zone_name>``
-
-        This also deletes all policies within the zone.
-
-        Args:
-            zone_name: name of the security zone to delete.
-
-        Raises:
-            RangerAPIError: if the API call fails.
-        """
-        logger.info("deleting security zone %s", zone_name)
-        try:
-            self._client.delete_security_zone(zone_name)
-        except RangerServiceException as exc:
-            raise RangerAPIError(f"Failed to delete security zone {zone_name!r}: {exc}") from exc
-
     def list_policies(self, zone_name: str, service_name: str) -> List[RangerPolicy]:
         """List policies filtered by zone and service name.
 
@@ -191,6 +172,31 @@ class RangerAPIClient:
         except RangerServiceException as exc:
             raise RangerAPIError(
                 f"Failed to list policies for zone={zone_name!r} service={service_name!r}: {exc}"
+            ) from exc
+        return policies or []
+
+    def list_service_policies(self, service_name: str) -> List[RangerPolicy]:
+        """List all policies belonging to a service.
+
+        ``GET /service/public/v2/api/policy?serviceName=<service_name>``
+
+        Args:
+            service_name: name of the Ranger service.
+
+        Returns:
+            List of matching ``RangerPolicy`` objects.
+
+        Raises:
+            RangerAPIError: if the API call fails.
+        """
+        logger.info("listing policies for service=%s", service_name)
+        try:
+            policies: Optional[List[RangerPolicy]] = self._client.find_policies(
+                {"serviceName": service_name}
+            )
+        except RangerServiceException as exc:
+            raise RangerAPIError(
+                f"Failed to list policies for service={service_name!r}: {exc}"
             ) from exc
         return policies or []
 
@@ -244,43 +250,6 @@ class RangerAPIClient:
                 f"Failed to create policy {policy.name!r}: no response from server"
             )
         return created
-
-    def update_policy(
-        self,
-        policy_id: int,
-        policy: RangerPolicy,
-    ) -> RangerPolicy:
-        """Update a policy by its ID.
-
-        ``PUT /service/public/v2/api/policy/<id>``
-
-        Args:
-            policy_id: numeric ID of the policy to update.
-            policy: the updated policy definition.
-
-        Returns:
-            The updated ``RangerPolicy``.
-
-        Raises:
-            RangerAPIError: if the API call fails.
-        """
-        logger.info(
-            "updating policy %s (id=%s)",
-            policy.name,
-            policy_id,
-        )
-        try:
-            updated: Optional[RangerPolicy] = self._client.update_policy_by_id(policy_id, policy)
-        except RangerServiceException as exc:
-            raise RangerAPIError(
-                f"Failed to update policy {policy.name!r} (id={policy_id}): {exc}"
-            ) from exc
-        if updated is None:
-            raise RangerAPIError(
-                f"Failed to update policy {policy.name!r} "
-                f"(id={policy_id}): no response from server"
-            )
-        return updated
 
     def list_roles(self) -> List[RangerRole]:
         """List all roles.
@@ -362,20 +331,3 @@ class RangerAPIClient:
             self._client.delete_policy_by_id(policy_id)
         except RangerServiceException as exc:
             raise RangerAPIError(f"Failed to delete policy id={policy_id}: {exc}") from exc
-
-    def delete_role(self, role_name: str) -> None:
-        """Delete a role by name.
-
-        ``DELETE /service/public/v2/api/roles/name/<role_name>``
-
-        Args:
-            role_name: name of the role to delete.
-
-        Raises:
-            RangerAPIError: if the API call fails.
-        """
-        logger.info("deleting role %s", role_name)
-        try:
-            self._client.delete_role(role_name, ADMIN_USER, "")
-        except RangerServiceException as exc:
-            raise RangerAPIError(f"Failed to delete role {role_name!r}: {exc}") from exc

@@ -71,7 +71,10 @@ juju config ranger-k8s --file=user-group-configuration.yaml
 
 #### `trino-catalog` interface
 
-The `trino-catalog` interface allows Ranger to automatically manage access control policies for Trino catalogs. When related, Ranger dynamically creates security zones, roles, and default policies based on the catalogs exposed by Trino.
+The `trino-catalog` interface creates Ranger access-control resources for Trino
+catalogs. When related, Ranger creates missing security zones, roles, and
+default policies based on the catalogs exposed by Trino. Existing completed
+Ranger objects are not updated or deleted.
 
 ##### Usage
 
@@ -99,7 +102,23 @@ Trino typically exposes a read-only catalog (such as `my_db`) and sometimes a re
    - **DDL (`ddl`)**: Grants the `admin` role Alter, Create, and Drop permissions on the `<catalog>_developer` catalog.
    - **Information schema (`is`)**: Grants standard users Select, Show, and Use permissions on the `information_schema` for both catalogs.
 
-Note that these default policies are reconciled to match the intended configuration. If you would like to intervene on the default behavior, you can do so by creating custom policies with override to deviate from the defaults.
+After creation, the charm leaves completed zones, roles, and policies
+unchanged. You can add custom policies to a generated zone without the charm
+overwriting them.
+
+##### Reconciliation configuration
+
+Catalog creation is enabled by default. Set
+`toggle-catalog-reconciliation=false` to prevent the charm from creating
+missing catalog resources. While creation is disabled,
+`enforce-strict-reconciliation` has no effect.
+
+Strict reconciliation is also enabled by default. Before creating a new zone,
+it requires the corresponding `<catalog>-viewer`, `<catalog>-editor`,
+`<catalog>-admin`, and `<catalog>-auditor` roles to be absent or empty. Set
+`enforce-strict-reconciliation=false` only when you intentionally authorize
+creation with populated matching roles, which can loosen access through the
+new default policies.
 
 ##### Managing access
 
@@ -113,11 +132,20 @@ To grant a user or group access to a specific catalog:
 
 You are free to add custom policies to the generated security zones if you require more granular access control (for example, row-level filtering or column masking).
 
-##### Catalog removal and cleanup
+The default information-schema policy is an exception to role-based access:
+its `{USER}` grant provides `information_schema` access even when the generated
+roles are empty.
 
-Ranger continuously reconciles its state with Trino. If a catalog is removed from Trino, Ranger will evaluate the corresponding security zone:
-- If the zone contains **only the default policies**, Ranger will automatically delete the zone, its policies, and its associated roles to keep the system clean.
-- If you have added **custom policies** to the zone, Ranger will safely ignore it and leave the zone intact to prevent accidental data loss.
+##### Catalog removal
+
+Removing a catalog from Trino or removing the relation does not delete Ranger
+objects. Remove the zone, roles, and policies manually when appropriate. To
+revoke access, empty the generated roles or add deny policies rather than
+deleting a zone: a missing zone can make its catalog subject to permissive
+global Ranger policies.
+
+For complete behavior, configuration details, and operational responsibilities,
+see [Trino Catalog Reconciliation](./CATALOG_RECONCILIATION.md).
 
 ### Charmed OpenSearch relation
 [Charmed OpenSearch](https://charmhub.io/opensearch) should be integrated with the Ranger admin charm to enable auditing functionality for data access.

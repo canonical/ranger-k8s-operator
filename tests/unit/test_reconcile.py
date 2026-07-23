@@ -148,6 +148,7 @@ class TestReconciler(TestCase):
                 "list_zones",
                 "list_roles",
                 "list_service_policies",
+                "list_policies",
                 "create_zone",
                 "create_role",
                 "create_policy",
@@ -157,6 +158,7 @@ class TestReconciler(TestCase):
         self.client.list_zones.return_value = []
         self.client.list_roles.return_value = []
         self.client.list_service_policies.return_value = []
+        self.client.list_policies.return_value = []
         self.reconciler = TrinoCatalogReconciler(self.client, SERVICE_NAME)
 
     def _existing_zone(self, name="marketing"):
@@ -170,16 +172,37 @@ class TestReconciler(TestCase):
         ]
 
     def test_reconcile_creates_roles_zone_and_policies_from_shared_snapshot(self):
-        """A new catalog creates its missing roles, zone, and managed policies."""
+        """A new catalog creates its resources and purges Ranger auto-policies."""
+        auto_policies = [
+            RangerPolicy({"id": 100, "name": DEFAULT_POLICIES[0], "zoneName": "marketing"}),
+            RangerPolicy({"id": 101, "name": DEFAULT_POLICIES[1], "zoneName": "marketing"}),
+        ]
+        self.client.list_policies.return_value = auto_policies
+
         self.reconciler.reconcile([{"name": "marketing"}])
 
         self.assertEqual(self.client.list_zones.call_count, 1)
         self.assertEqual(self.client.list_roles.call_count, 1)
         self.client.list_service_policies.assert_called_once_with(SERVICE_NAME)
+        self.client.list_policies.assert_called_once_with("marketing", SERVICE_NAME)
         self.assertEqual(self.client.create_role.call_count, 4)
         self.assertEqual(self.client.create_zone.call_count, 1)
         self.assertEqual(self.client.create_policy.call_count, 4)
-        self.client.delete_policy_by_id.assert_not_called()
+        self.client.delete_policy_by_id.assert_has_calls([mock.call(100), mock.call(101)])
+
+    def test_reconcile_first_create_purges_auto_policies_from_targeted_refetch(self):
+        """A first create purges auto-policies returned only by the targeted re-fetch."""
+        auto_policy = RangerPolicy(
+            {"id": 100, "name": DEFAULT_POLICIES[0], "zoneName": "marketing"}
+        )
+        self.client.list_policies.return_value = [auto_policy]
+
+        self.reconciler.reconcile([{"name": "marketing"}])
+
+        self.assertEqual(self.client.create_role.call_count, 4)
+        self.client.create_zone.assert_called_once()
+        self.assertEqual(self.client.create_policy.call_count, 4)
+        self.client.delete_policy_by_id.assert_called_once_with(100)
 
     def test_reconcile_allows_absent_roles_in_strict_mode(self):
         """Absent corresponding roles permit zone creation."""
@@ -228,6 +251,7 @@ class TestReconciler(TestCase):
         self.client.create_zone.assert_not_called()
         self.client.create_policy.assert_not_called()
         self.client.delete_policy_by_id.assert_not_called()
+        self.client.list_policies.assert_not_called()
 
     def test_reconcile_never_modifies_completed_zone(self):
         """A completed zone's roles and policies remain entirely untouched."""
@@ -251,13 +275,18 @@ class TestReconciler(TestCase):
             {"id": 100, "name": DEFAULT_POLICIES[0], "zoneName": "marketing"}
         )
         self.client.list_service_policies.return_value = [auto_policy]
+        current_auto_policy = RangerPolicy(
+            {"id": 101, "name": DEFAULT_POLICIES[0], "zoneName": "marketing"}
+        )
+        self.client.list_policies.return_value = [current_auto_policy]
 
         self.reconciler.reconcile([{"name": "marketing"}])
 
         self.assertEqual(self.client.create_role.call_count, 4)
         self.client.create_zone.assert_not_called()
         self.assertEqual(self.client.create_policy.call_count, 4)
-        self.client.delete_policy_by_id.assert_called_once_with(100)
+        self.client.list_policies.assert_called_once_with("marketing", SERVICE_NAME)
+        self.client.delete_policy_by_id.assert_called_once_with(101)
 
     def test_reconcile_skips_zone_without_auto_policies(self):
         """A zone without auto-policies is considered complete."""
@@ -270,6 +299,7 @@ class TestReconciler(TestCase):
         self.client.create_zone.assert_not_called()
         self.client.create_policy.assert_not_called()
         self.client.delete_policy_by_id.assert_not_called()
+        self.client.list_policies.assert_not_called()
 
     def test_reconcile_creates_roles_before_zone_without_rollback(self):
         """Role creation survives a failed zone create so the next run can resume."""

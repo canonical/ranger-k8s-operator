@@ -379,6 +379,7 @@ class TrinoCatalogReconciler:
     @staticmethod
     def _has_auto_policies(policies: List[RangerPolicy]) -> bool:
         """Return whether Ranger's zone-creation policies are present."""
+        # DEFAULT_POLICIES must exactly match Ranger's auto-policy names for the done-marker/purge.
         return any(policy.name in DEFAULT_POLICIES for policy in policies)
 
     def _can_create_zone(
@@ -421,7 +422,8 @@ class TrinoCatalogReconciler:
         if not zone_exists and not self._create_zone(zone_name):
             return
         self._create_missing_policies(zone_name, zone_policies)
-        self._purge_auto_policies(zone_name, zone_policies)
+        current_zone_policies = self._client.list_policies(zone_name, self._service_name)
+        self._purge_auto_policies(zone_name, current_zone_policies)
 
     def _ensure_roles(self, zone_name: str, existing_roles_by_name: Dict[str, RangerRole]) -> None:
         """Create any missing roles for the given zone.
@@ -485,11 +487,11 @@ class TrinoCatalogReconciler:
             logger.info("created policy %s", policy_name)
 
     def _purge_auto_policies(self, zone_name: str, zone_policies: List[RangerPolicy]) -> None:
-        """Delete pre-fetched Ranger auto-generated policies for a zone.
+        """Delete Ranger auto-generated policies for a zone.
 
         Args:
             zone_name: the base zone / catalog name.
-            zone_policies: the service-wide policy snapshot for this zone.
+            zone_policies: the current policies for this zone.
         """
         for policy in zone_policies:
             if policy.name not in DEFAULT_POLICIES:

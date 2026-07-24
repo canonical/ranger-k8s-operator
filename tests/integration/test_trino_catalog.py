@@ -316,7 +316,7 @@ class TestTrinoCatalogRelation:
             RangerRole(
                 {
                     "name": f"{STRICT_CATALOG_NAME}-viewer",
-                    "users": [{"name": "existing-user"}],
+                    "users": [{"name": "admin"}],
                 }
             ),
         )

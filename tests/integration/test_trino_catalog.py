@@ -363,7 +363,9 @@ class TestTrinoCatalogRelation:
 
         _poll_zone(juju, shell_catalog_name)
         policies = _policies_in_zone(_get_ranger_client(juju), shell_catalog_name)
-        assert policies[f"default - ro - {shell_catalog_name}"].policyItems == []
+        # Ranger omits an empty policyItems field in its GET response, which
+        # apache-ranger deserializes as None rather than []; both mean "no items".
+        assert not policies[f"default - ro - {shell_catalog_name}"].policyItems
         assert not set(policies) & set(DEFAULT_POLICIES)
 
     def test_relation_removal_keeps_ranger_objects(self, juju: jubilant.Juju):

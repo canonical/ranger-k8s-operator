@@ -103,7 +103,7 @@ def _resource(values: List[str]) -> RangerPolicyResource:
     return RangerPolicyResource({"values": values})
 
 
-def _build_ro_policy(zone_name: str, service_name: str) -> RangerPolicy:
+def _build_ro_policy(zone_name: str, service_name: str, allowed_roles: Set[str]) -> RangerPolicy:
     """Build the ``default - ro - <zone>`` policy.
 
     Read-only access on the base catalog for all four zone roles.
@@ -111,6 +111,7 @@ def _build_ro_policy(zone_name: str, service_name: str) -> RangerPolicy:
     Args:
         zone_name: the base zone / catalog name.
         service_name: the Trino service name.
+        allowed_roles: roles that may receive this policy's grants.
 
     Returns:
         A ``RangerPolicy`` ready to be created.
@@ -122,7 +123,21 @@ def _build_ro_policy(zone_name: str, service_name: str) -> RangerPolicy:
         f"{zone_name}-admin",
     ]
     accesses = [_access(p) for p in ("select", "show", "use")]
-    item = RangerPolicyItem({"roles": roles, "accesses": accesses})
+    omitted_roles = [role for role in roles if role not in allowed_roles]
+    roles = [role for role in roles if role in allowed_roles]
+    logger.debug(
+        "policy decision for zone %s, policy default - ro - %s: omitted populated roles=%s",
+        zone_name,
+        zone_name,
+        omitted_roles,
+    )
+    if not roles:
+        logger.debug(
+            "policy for zone %s, policy default - ro - %s is an audit-only shell",
+            zone_name,
+            zone_name,
+        )
+    policy_items = [RangerPolicyItem({"roles": roles, "accesses": accesses})] if roles else []
 
     policy = RangerPolicy(
         {
@@ -146,7 +161,7 @@ def _build_ro_policy(zone_name: str, service_name: str) -> RangerPolicy:
                     "column": _resource(["*"]),
                 },
             ],
-            "policyItems": [item],
+            "policyItems": policy_items,
             "zoneName": zone_name,
             "isAuditEnabled": True,
             "isEnabled": True,
@@ -155,7 +170,7 @@ def _build_ro_policy(zone_name: str, service_name: str) -> RangerPolicy:
     return policy
 
 
-def _build_rw_policy(zone_name: str, service_name: str) -> RangerPolicy:
+def _build_rw_policy(zone_name: str, service_name: str, allowed_roles: Set[str]) -> RangerPolicy:
     """Build the ``default - rw - <zone>`` policy.
 
     Read-write access on the developer catalog for editor and admin roles.
@@ -163,6 +178,7 @@ def _build_rw_policy(zone_name: str, service_name: str) -> RangerPolicy:
     Args:
         zone_name: the base zone / catalog name.
         service_name: the Trino service name.
+        allowed_roles: roles that may receive this policy's grants.
 
     Returns:
         A ``RangerPolicy`` ready to be created.
@@ -170,7 +186,21 @@ def _build_rw_policy(zone_name: str, service_name: str) -> RangerPolicy:
     dev_cat = f"{zone_name}_developer"
     roles = [f"{zone_name}-editor", f"{zone_name}-admin"]
     accesses = [_access(p) for p in ("select", "show", "use", "insert", "delete")]
-    item = RangerPolicyItem({"roles": roles, "accesses": accesses})
+    omitted_roles = [role for role in roles if role not in allowed_roles]
+    roles = [role for role in roles if role in allowed_roles]
+    logger.debug(
+        "policy decision for zone %s, policy default - rw - %s: omitted populated roles=%s",
+        zone_name,
+        zone_name,
+        omitted_roles,
+    )
+    if not roles:
+        logger.debug(
+            "policy for zone %s, policy default - rw - %s is an audit-only shell",
+            zone_name,
+            zone_name,
+        )
+    policy_items = [RangerPolicyItem({"roles": roles, "accesses": accesses})] if roles else []
 
     return RangerPolicy(
         {
@@ -194,7 +224,7 @@ def _build_rw_policy(zone_name: str, service_name: str) -> RangerPolicy:
                     "column": _resource(["*"]),
                 },
             ],
-            "policyItems": [item],
+            "policyItems": policy_items,
             "zoneName": zone_name,
             "isAuditEnabled": True,
             "isEnabled": True,
@@ -202,7 +232,7 @@ def _build_rw_policy(zone_name: str, service_name: str) -> RangerPolicy:
     )
 
 
-def _build_ddl_policy(zone_name: str, service_name: str) -> RangerPolicy:
+def _build_ddl_policy(zone_name: str, service_name: str, allowed_roles: Set[str]) -> RangerPolicy:
     """Build the ``default - ddl - <zone>`` policy.
 
     DDL operations on the developer catalog for admin role only.
@@ -210,6 +240,7 @@ def _build_ddl_policy(zone_name: str, service_name: str) -> RangerPolicy:
     Args:
         zone_name: the base zone / catalog name.
         service_name: the Trino service name.
+        allowed_roles: roles that may receive this policy's grants.
 
     Returns:
         A ``RangerPolicy`` ready to be created.
@@ -217,7 +248,21 @@ def _build_ddl_policy(zone_name: str, service_name: str) -> RangerPolicy:
     dev_cat = f"{zone_name}_developer"
     roles = [f"{zone_name}-admin"]
     accesses = [_access(p) for p in ("alter", "create", "drop")]
-    item = RangerPolicyItem({"roles": roles, "accesses": accesses})
+    omitted_roles = [role for role in roles if role not in allowed_roles]
+    roles = [role for role in roles if role in allowed_roles]
+    logger.debug(
+        "policy decision for zone %s, policy default - ddl - %s: omitted populated roles=%s",
+        zone_name,
+        zone_name,
+        omitted_roles,
+    )
+    if not roles:
+        logger.debug(
+            "policy for zone %s, policy default - ddl - %s is an audit-only shell",
+            zone_name,
+            zone_name,
+        )
+    policy_items = [RangerPolicyItem({"roles": roles, "accesses": accesses})] if roles else []
 
     return RangerPolicy(
         {
@@ -234,7 +279,7 @@ def _build_ddl_policy(zone_name: str, service_name: str) -> RangerPolicy:
                     "table": _resource(["*"]),
                 },
             ],
-            "policyItems": [item],
+            "policyItems": policy_items,
             "zoneName": zone_name,
             "isAuditEnabled": True,
             "isEnabled": True,
@@ -242,7 +287,7 @@ def _build_ddl_policy(zone_name: str, service_name: str) -> RangerPolicy:
     )
 
 
-def _build_is_policy(zone_name: str, service_name: str) -> RangerPolicy:
+def _build_is_policy(zone_name: str, service_name: str, allowed_roles: Set[str]) -> RangerPolicy:
     """Build the ``default - is - <zone>`` policy.
 
     Information-schema access on both catalogs for ``{USER}`` macro.
@@ -250,6 +295,7 @@ def _build_is_policy(zone_name: str, service_name: str) -> RangerPolicy:
     Args:
         zone_name: the base zone / catalog name.
         service_name: the Trino service name.
+        allowed_roles: accepted for a consistent policy-builder interface.
 
     Returns:
         A ``RangerPolicy`` ready to be created.
@@ -257,6 +303,12 @@ def _build_is_policy(zone_name: str, service_name: str) -> RangerPolicy:
     cats = [zone_name, f"{zone_name}_developer"]
     accesses = [_access(p) for p in ("select", "show", "use")]
     item = RangerPolicyItem({"users": ["{USER}"], "accesses": accesses})
+    logger.debug(
+        "policy decision for zone %s, policy default - is - %s: omitted populated roles=%s",
+        zone_name,
+        zone_name,
+        [],
+    )
 
     return RangerPolicy(
         {
@@ -323,7 +375,6 @@ class TrinoCatalogReconciler:
         catalogs: List[Dict],
         *,
         strict: bool = True,
-        create_enabled: bool = True,
     ) -> None:
         """Create missing Ranger resources for Trino catalogs.
 
@@ -332,11 +383,15 @@ class TrinoCatalogReconciler:
 
         Args:
             catalogs: list of catalog dicts (each with at least ``"name"``).
-            strict: require corresponding existing roles to be empty before creating a zone.
-            create_enabled: allow creation of new or incomplete zones.
+            strict: omit populated roles from newly created default policies.
         """
+        if not strict:
+            # Log the security opt-out with every run so it is never forgotten.
+            logger.info(
+                "strict reconciliation is disabled; this run is an authorized security opt-out"
+            )
         desired_zones = _catalogs_to_zones(catalogs)
-        logger.info("reconciling zones: desired=%s", sorted(desired_zones))
+        logger.debug("reconciling zones: desired=%s", sorted(desired_zones))
 
         existing_zone_names = {zone.name for zone in self._client.list_zones()}
         existing_roles = self._client.list_roles()
@@ -349,22 +404,15 @@ class TrinoCatalogReconciler:
             zone_exists = zone_name in existing_zone_names
             zone_policies = policies_by_zone.get(zone_name, [])
 
-            if not create_enabled:
-                logger.info("creation disabled; leaving zone %s unchanged", zone_name)
-                continue
             if zone_exists and not self._has_auto_policies(zone_policies):
-                logger.info("zone %s is already provisioned", zone_name)
+                logger.debug("zone %s is already provisioned", zone_name)
                 continue
-            if not zone_exists and not self._can_create_zone(
-                zone_name, existing_roles_by_name, strict
-            ):
-                continue
-
             self._provision_zone(
                 zone_name,
                 zone_exists,
                 existing_roles_by_name,
                 zone_policies,
+                strict,
             )
 
     @staticmethod
@@ -382,46 +430,24 @@ class TrinoCatalogReconciler:
         # DEFAULT_POLICIES must exactly match Ranger's auto-policy names for the done-marker/purge.
         return any(policy.name in DEFAULT_POLICIES for policy in policies)
 
-    def _can_create_zone(
-        self,
-        zone_name: str,
-        existing_roles_by_name: Dict[str, RangerRole],
-        strict: bool,
-    ) -> bool:
-        """Check whether existing corresponding roles permit zone creation."""
-        if not strict:
-            logger.warning(
-                "strict role gate disabled; creating zone %s in fail-open mode", zone_name
-            )
-            return True
-
-        populated_roles = [
-            role_name
-            for role_name in _role_names(zone_name)
-            if (role := existing_roles_by_name.get(role_name))
-            and (role.users or role.groups or role.roles)
-        ]
-        if populated_roles:
-            logger.warning(
-                "catalog %s left unprovisioned because roles are populated: %s",
-                zone_name,
-                ", ".join(populated_roles),
-            )
-            return False
-        return True
-
     def _provision_zone(
         self,
         zone_name: str,
         zone_exists: bool,
         existing_roles_by_name: Dict[str, RangerRole],
         zone_policies: List[RangerPolicy],
+        strict: bool,
     ) -> None:
         """Create the missing resources for a new or interrupted zone."""
         self._ensure_roles(zone_name, existing_roles_by_name)
         if not zone_exists and not self._create_zone(zone_name):
             return
-        self._create_missing_policies(zone_name, zone_policies)
+        self._create_missing_policies(
+            zone_name,
+            zone_policies,
+            existing_roles_by_name,
+            strict,
+        )
         current_zone_policies = self._client.list_policies(zone_name, self._service_name)
         self._purge_auto_policies(zone_name, current_zone_policies)
 
@@ -468,15 +494,29 @@ class TrinoCatalogReconciler:
         logger.info("created zone %s", zone_name)
         return True
 
-    def _create_missing_policies(self, zone_name: str, zone_policies: List[RangerPolicy]) -> None:
+    def _create_missing_policies(
+        self,
+        zone_name: str,
+        zone_policies: List[RangerPolicy],
+        existing_roles_by_name: Dict[str, RangerRole],
+        strict: bool,
+    ) -> None:
         """Create managed default policies that do not already exist."""
         existing_policy_names = {policy.name for policy in zone_policies}
+        allowed_roles = set(_role_names(zone_name))
+        if strict:
+            allowed_roles = {
+                role_name
+                for role_name in allowed_roles
+                if (role := existing_roles_by_name.get(role_name)) is None
+                or not (role.users or role.groups or role.roles is not None)
+            }
         for suffix, builder in _POLICY_BUILDERS.items():
             policy_name = f"default - {suffix} - {zone_name}"
             if policy_name in existing_policy_names:
                 continue
             try:
-                self._client.create_policy(builder(zone_name, self._service_name))
+                self._client.create_policy(builder(zone_name, self._service_name, allowed_roles))
             except RangerAPIError as exc:
                 logger.warning(
                     "failed to create policy %s: %s",

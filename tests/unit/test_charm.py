@@ -409,7 +409,7 @@ def test_update_status_up(ctx):
     assert state_out.unit_status == testing.ActiveStatus("Status check: UP")
 
 
-def _trino_handler(catalogs, strict=True, create_enabled=True):
+def _trino_handler(catalogs, strict=True):
     """Create an isolated Trino relation handler with the requested configuration."""
     handler = object.__new__(TrinoCatalogRelationHandler)
     charm = mock.MagicMock()
@@ -417,7 +417,6 @@ def _trino_handler(catalogs, strict=True, create_enabled=True):
     charm.config = {
         "ranger-admin-password": "rangerR0cks!",
         "enforce-strict-reconciliation": strict,
-        "toggle-catalog-reconciliation": create_enabled,
     }
     charm.model.relations = {"trino-catalog": [mock.sentinel.trino_relation]}
     handler.charm = charm
@@ -425,10 +424,10 @@ def _trino_handler(catalogs, strict=True, create_enabled=True):
     return handler, charm
 
 
-def test_trino_reconciliation_threads_config_flags():
-    """The relation handler passes the reconciliation config to the reconciler."""
+def test_trino_reconciliation_threads_strict_config():
+    """The relation handler passes strict reconciliation config to the reconciler."""
     catalogs = [{"name": "marketing"}]
-    handler, _ = _trino_handler(catalogs, strict=False, create_enabled=False)
+    handler, _ = _trino_handler(catalogs, strict=False)
     client = mock.MagicMock()
     client.list_services_by_type.return_value = [SimpleNamespace(name="trino-service")]
 
@@ -442,7 +441,6 @@ def test_trino_reconciliation_threads_config_flags():
     reconciler_cls.return_value.reconcile.assert_called_once_with(
         catalogs,
         strict=False,
-        create_enabled=False,
     )
 
 
@@ -468,37 +466,6 @@ def test_trino_relation_broken_clears_state_without_reconciliation():
     assert charm._state.trino_credentials_secret_id is None
     charm.update.assert_called_once_with(event)
     handler.run_reconciliation.assert_not_called()
-
-
-@pytest.mark.parametrize(
-    ("strict", "expected_log"),
-    [
-        (False, "fail-open"),
-        (True, "left unprovisioned"),
-    ],
-)
-def test_trino_reconciliation_role_gate_is_log_only(strict, expected_log, caplog):
-    """Role-gate decisions do not alter the unit status."""
-    handler, charm = _trino_handler([{"name": "marketing"}], strict=strict)
-    initial_status = object()
-    charm.unit.status = initial_status
-    populated_role = mock.MagicMock()
-    populated_role.name = "marketing-viewer"
-    populated_role.users = [{"name": "alice"}]
-    populated_role.groups = []
-    populated_role.roles = []
-    client = mock.MagicMock()
-    client.list_services_by_type.return_value = [SimpleNamespace(name="trino-service")]
-    client.list_zones.return_value = []
-    client.list_roles.return_value = [populated_role]
-    client.list_service_policies.return_value = []
-
-    caplog.set_level(logging.WARNING, logger="reconcile")
-    with mock.patch("relations.trino.RangerAPIClient", return_value=client):
-        handler.run_reconciliation()
-
-    assert charm.unit.status is initial_status
-    assert expected_log in caplog.text
 
 
 def test_policy_on_relation_changed(ctx):

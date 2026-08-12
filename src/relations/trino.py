@@ -126,7 +126,6 @@ class TrinoCatalogRelationHandler(framework.Object):
             reconciler.reconcile(
                 catalogs,
                 strict=self.charm.config["enforce-strict-reconciliation"],
-                create_enabled=self.charm.config["toggle-catalog-reconciliation"],
             )
         except RangerAPIError:
             logger.warning(

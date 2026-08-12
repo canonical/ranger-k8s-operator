@@ -65,7 +65,7 @@ class RangerAPIClient:
         Raises:
             RangerAPIError: if the API call fails.
         """
-        logger.info("listing services with type=%s", service_type)
+        logger.debug("listing services with type=%s", service_type)
         try:
             services: Optional[List[RangerService]] = self._client.find_services(
                 {"serviceType": service_type}
@@ -87,7 +87,7 @@ class RangerAPIClient:
         Raises:
             RangerAPIError: if the API call fails.
         """
-        logger.info("listing security zones")
+        logger.debug("listing security zones")
         try:
             zones: Optional[List[RangerSecurityZone]] = self._client.find_security_zones()
         except RangerServiceException as exc:
@@ -108,7 +108,7 @@ class RangerAPIClient:
         Raises:
             RangerAPIError: if the zone is not found or the call fails.
         """
-        logger.info("getting security zone %s", zone_name)
+        logger.debug("getting security zone %s", zone_name)
         try:
             zone: Optional[RangerSecurityZone] = self._client.get_security_zone(zone_name)
         except RangerServiceException as exc:
@@ -131,7 +131,6 @@ class RangerAPIClient:
         Raises:
             RangerAPIError: if the API call fails.
         """
-        logger.info("creating security zone %s", zone.name)
         try:
             created: Optional[RangerSecurityZone] = self._client.create_security_zone(zone)
         except RangerServiceException as exc:
@@ -140,6 +139,7 @@ class RangerAPIClient:
             raise RangerAPIError(
                 f"Failed to create security zone {zone.name!r}: no response from server"
             )
+        logger.info("created security zone %s", zone.name)
         return created
 
     def list_policies(self, zone_name: str, service_name: str) -> List[RangerPolicy]:
@@ -157,7 +157,7 @@ class RangerAPIClient:
         Raises:
             RangerAPIError: if the API call fails.
         """
-        logger.info(
+        logger.debug(
             "listing policies for zone=%s service=%s",
             zone_name,
             service_name,
@@ -189,7 +189,7 @@ class RangerAPIClient:
         Raises:
             RangerAPIError: if the API call fails.
         """
-        logger.info("listing policies for service=%s", service_name)
+        logger.debug("listing policies for service=%s", service_name)
         try:
             policies: Optional[List[RangerPolicy]] = self._client.find_policies(
                 {"serviceName": service_name}
@@ -215,7 +215,7 @@ class RangerAPIClient:
         Raises:
             RangerAPIError: if the policy is not found or the call fails.
         """
-        logger.info("getting policy %s in service %s", policy_name, service_name)
+        logger.debug("getting policy %s in service %s", policy_name, service_name)
         try:
             policy: Optional[RangerPolicy] = self._client.get_policy(service_name, policy_name)
         except RangerServiceException as exc:
@@ -240,7 +240,6 @@ class RangerAPIClient:
         Raises:
             RangerAPIError: if the API call fails.
         """
-        logger.info("creating policy %s", policy.name)
         try:
             created: Optional[RangerPolicy] = self._client.create_policy(policy)
         except RangerServiceException as exc:
@@ -249,6 +248,7 @@ class RangerAPIClient:
             raise RangerAPIError(
                 f"Failed to create policy {policy.name!r}: no response from server"
             )
+        logger.info("created policy %s", policy.name)
         return created
 
     def list_roles(self) -> List[RangerRole]:
@@ -262,7 +262,7 @@ class RangerAPIClient:
         Raises:
             RangerAPIError: if the API call fails.
         """
-        logger.info("listing roles")
+        logger.debug("listing roles")
         try:
             roles: Optional[List[RangerRole]] = self._client.find_roles()
         except RangerServiceException as exc:
@@ -283,7 +283,7 @@ class RangerAPIClient:
         Raises:
             RangerAPIError: if the role is not found or the call fails.
         """
-        logger.info("getting role %s", role_name)
+        logger.debug("getting role %s", role_name)
         try:
             role: Optional[RangerRole] = self._client.get_role(role_name, ADMIN_USER, "")
         except RangerServiceException as exc:
@@ -306,13 +306,13 @@ class RangerAPIClient:
         Raises:
             RangerAPIError: if the API call fails.
         """
-        logger.info("creating role %s", role.name)
         try:
             created: Optional[RangerRole] = self._client.create_role("", role)
         except RangerServiceException as exc:
             raise RangerAPIError(f"Failed to create role {role.name!r}: {exc}") from exc
         if created is None:
             raise RangerAPIError(f"Failed to create role {role.name!r}: no response from server")
+        logger.info("created role %s", role.name)
         return created
 
     def delete_policy_by_id(self, policy_id: int) -> None:
@@ -326,8 +326,8 @@ class RangerAPIClient:
         Raises:
             RangerAPIError: if the API call fails.
         """
-        logger.info("deleting policy id=%s", policy_id)
         try:
             self._client.delete_policy_by_id(policy_id)
         except RangerServiceException as exc:
             raise RangerAPIError(f"Failed to delete policy id={policy_id}: {exc}") from exc
+        logger.info("deleted policy id=%s", policy_id)

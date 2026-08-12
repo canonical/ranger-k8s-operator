@@ -70,22 +70,19 @@ def test_password_fields(ctx) -> None:
     check_valid_values(ctx, "ranger-usersync-password", valid_passwords)
 
 
-def test_catalog_reconciliation_flags(ctx) -> None:
-    """Catalog reconciliation flags use their declared defaults and accept toggles."""
+def test_strict_reconciliation_configuration(ctx) -> None:
+    """Strict reconciliation uses its declared default and accepts a toggle."""
     state = testing.State()
     with ctx(ctx.on.config_changed(), state) as manager:
         assert manager.charm.config["enforce-strict-reconciliation"] is True
-        assert manager.charm.config["toggle-catalog-reconciliation"] is True
 
     state = testing.State(
         config={
             "enforce-strict-reconciliation": False,
-            "toggle-catalog-reconciliation": False,
         }
     )
     with ctx(ctx.on.config_changed(), state) as manager:
         assert manager.charm.config["enforce-strict-reconciliation"] is False
-        assert manager.charm.config["toggle-catalog-reconciliation"] is False
 
 
 def check_valid_values(ctx, field: str, accepted_values: list) -> None:

@@ -108,17 +108,30 @@ overwriting them.
 
 ##### Reconciliation configuration
 
-Catalog creation is enabled by default. Set
-`toggle-catalog-reconciliation=false` to prevent the charm from creating
-missing catalog resources. While creation is disabled,
-`enforce-strict-reconciliation` has no effect.
+Catalog reconciliation is create-only: the charm provisions missing zones,
+roles, and default policies, but never updates or deletes operator-managed
+state.
 
-Strict reconciliation is also enabled by default. Before creating a new zone,
-it requires the corresponding `<catalog>-viewer`, `<catalog>-editor`,
-`<catalog>-admin`, and `<catalog>-auditor` roles to be absent or empty. Set
-`enforce-strict-reconciliation=false` only when you intentionally authorize
-creation with populated matching roles, which can loosen access through the
-new default policies.
+Strict reconciliation is enabled by default. For each default policy, the
+charm omits every referenced role that already has members. This per-role
+filtering ensures the charm never grants access through its own action. Set
+`enforce-strict-reconciliation=false` only as an authorized security opt-out;
+it restores unfiltered default policies.
+
+Partial policies are expected. For example, if `<catalog>-admin` already has
+members, the `ro` policy still grants `<catalog>-viewer` and
+`<catalog>-editor`, but omits `<catalog>-admin`. If every role referenced by a
+policy already has members, the charm creates an audit-only shell: it has empty
+grants (`policyItems`), retains scoped resources, and keeps auditing enabled.
+
+Zones are always finalized: the charm purges auto-policies and marks the zone
+done even when some or all default policies become shells. A zone can therefore
+remain bare and locked down, and the charm will not revisit it.
+
+Role membership is evaluated from a provisioning snapshot. Roles populated
+after provisioning still gain access through existing policies. Roles populated
+at provisioning do not receive omitted default grants later, even if they are
+subsequently emptied.
 
 ##### Managing access
 
@@ -143,9 +156,6 @@ objects. Remove the zone, roles, and policies manually when appropriate. To
 revoke access, empty the generated roles or add deny policies rather than
 deleting a zone: a missing zone can make its catalog subject to permissive
 global Ranger policies.
-
-For complete behavior, configuration details, and operational responsibilities,
-see [Trino Catalog Reconciliation](./CATALOG_RECONCILIATION.md).
 
 ### Charmed OpenSearch relation
 [Charmed OpenSearch](https://charmhub.io/opensearch) should be integrated with the Ranger admin charm to enable auditing functionality for data access.

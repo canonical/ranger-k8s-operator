@@ -26,12 +26,12 @@ from integration.helpers import (
     get_unit_url,
     wait_for_apps,
 )
+from literals import DEFAULT_POLICIES
 
 logger = logging.getLogger(__name__)
 
 CATALOG_NAME = "testcat"
 STRICT_CATALOG_NAME = "strictcat"
-FROZEN_CATALOG_NAME = "frozencat"
 DEFAULT_POLICY_NAMES = {
     f"default - {suffix} - {CATALOG_NAME}" for suffix in ("ro", "rw", "ddl", "is")
 }
@@ -306,10 +306,10 @@ class TestTrinoCatalogRelation:
             == current_policies[custom_policy.name].id
         )
 
-    def test_strict_gate_adopts_existing_roles_when_disabled(
+    def test_strict_mode_filters_populated_viewer_from_default_policy(
         self, juju: jubilant.Juju, deploy_trino_catalog
     ):
-        """Validate strict mode blocks populated roles and fail-open mode adopts them."""
+        """Validate strict mode creates a zone without granting its populated viewer role."""
         ranger = _get_ranger_client(juju)
         populated_role = ranger.create_role(
             "",
@@ -324,33 +324,47 @@ class TestTrinoCatalogRelation:
         _set_catalog_config(juju, deploy_trino_catalog, (CATALOG_NAME, STRICT_CATALOG_NAME))
         time.sleep(RECONCILE_CYCLES)
 
-        zones = ranger.find_security_zones() or []
-        assert STRICT_CATALOG_NAME not in {zone.name for zone in zones}
-
-        juju.config(APP_NAME, {"enforce-strict-reconciliation": False})
-        wait_for_apps(juju, [APP_NAME, TRINO_NAME], status="active", timeout=1500)
         _poll_zone(juju, STRICT_CATALOG_NAME)
 
-        adopted_role = _roles_by_name(_get_ranger_client(juju))[populated_role.name]
+        ranger = _get_ranger_client(juju)
+        policies = _policies_in_zone(ranger, STRICT_CATALOG_NAME)
+        ro_policy = policies[f"default - ro - {STRICT_CATALOG_NAME}"]
+        assert f"{STRICT_CATALOG_NAME}-editor" in ro_policy.policyItems[0].roles
+        assert f"{STRICT_CATALOG_NAME}-admin" in ro_policy.policyItems[0].roles
+        assert f"{STRICT_CATALOG_NAME}-viewer" not in ro_policy.policyItems[0].roles
+
+        adopted_role = _roles_by_name(ranger)[populated_role.name]
         assert adopted_role.id == populated_role.id
         assert adopted_role.users
 
-    def test_reconciliation_toggle_freezes_creation(
+    def test_strict_mode_creates_audit_only_shell_and_finalizes_zone(
         self, juju: jubilant.Juju, deploy_trino_catalog
     ):
-        """Validate disabling reconciliation prevents creation of a new zone."""
-        juju.config(APP_NAME, {"toggle-catalog-reconciliation": False})
-        wait_for_apps(juju, [APP_NAME, TRINO_NAME], status="active", timeout=1500)
+        """Validate populated default-policy roles create a shell and finalized zone."""
+        shell_catalog_name = "shellcat"
+        ranger = _get_ranger_client(juju)
+        for suffix in ("viewer", "editor", "admin"):
+            ranger.create_role(
+                "",
+                RangerRole(
+                    {
+                        "name": f"{shell_catalog_name}-{suffix}",
+                        "users": [{"name": "admin"}],
+                    }
+                ),
+            )
 
         _set_catalog_config(
             juju,
             deploy_trino_catalog,
-            (CATALOG_NAME, STRICT_CATALOG_NAME, FROZEN_CATALOG_NAME),
+            (CATALOG_NAME, STRICT_CATALOG_NAME, shell_catalog_name),
         )
         time.sleep(RECONCILE_CYCLES)
 
-        zones = _get_ranger_client(juju).find_security_zones() or []
-        assert FROZEN_CATALOG_NAME not in {zone.name for zone in zones}
+        _poll_zone(juju, shell_catalog_name)
+        policies = _policies_in_zone(_get_ranger_client(juju), shell_catalog_name)
+        assert policies[f"default - ro - {shell_catalog_name}"].policyItems == []
+        assert not set(policies) & set(DEFAULT_POLICIES)
 
     def test_relation_removal_keeps_ranger_objects(self, juju: jubilant.Juju):
         """Validate breaking the relation leaves the Ranger resources in place."""

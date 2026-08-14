@@ -70,6 +70,21 @@ def test_password_fields(ctx) -> None:
     check_valid_values(ctx, "ranger-usersync-password", valid_passwords)
 
 
+def test_strict_reconciliation_configuration(ctx) -> None:
+    """Strict reconciliation uses its declared default and accepts a toggle."""
+    state = testing.State()
+    with ctx(ctx.on.config_changed(), state) as manager:
+        assert manager.charm.config["enforce-strict-reconciliation"] is True
+
+    state = testing.State(
+        config={
+            "enforce-strict-reconciliation": False,
+        }
+    )
+    with ctx(ctx.on.config_changed(), state) as manager:
+        assert manager.charm.config["enforce-strict-reconciliation"] is False
+
+
 def check_valid_values(ctx, field: str, accepted_values: list) -> None:
     """Check the correctness of the passed values for a field.
 

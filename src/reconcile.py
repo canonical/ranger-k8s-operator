@@ -18,7 +18,7 @@ from apache_ranger.model.ranger_security_zone import (
     RangerSecurityZoneService,
 )
 
-from literals import DEFAULT_POLICY_SUFFIXES, ZONE_ROLE_SUFFIXES
+from literals import DEFAULT_POLICIES, ZONE_ROLE_SUFFIXES
 from ranger_client import RangerAPIClient, RangerAPIError
 
 logger = logging.getLogger(__name__)
@@ -44,18 +44,6 @@ def _catalogs_to_zones(catalogs: List[Dict]) -> Set[str]:
         else:
             zones.add(name)
     return zones
-
-
-def _default_policy_names(zone_name: str) -> Set[str]:
-    """Return the set of default policy names for a zone.
-
-    Args:
-        zone_name: the base zone / catalog name.
-
-    Returns:
-        Set of default policy name strings.
-    """
-    return {f"default - {suffix} - {zone_name}" for suffix in DEFAULT_POLICY_SUFFIXES}
 
 
 def _role_names(zone_name: str) -> List[str]:
@@ -115,7 +103,7 @@ def _resource(values: List[str]) -> RangerPolicyResource:
     return RangerPolicyResource({"values": values})
 
 
-def _build_ro_policy(zone_name: str, service_name: str) -> RangerPolicy:
+def _build_ro_policy(zone_name: str, service_name: str, allowed_roles: Set[str]) -> RangerPolicy:
     """Build the ``default - ro - <zone>`` policy.
 
     Read-only access on the base catalog for all four zone roles.
@@ -123,6 +111,7 @@ def _build_ro_policy(zone_name: str, service_name: str) -> RangerPolicy:
     Args:
         zone_name: the base zone / catalog name.
         service_name: the Trino service name.
+        allowed_roles: roles that may receive this policy's grants.
 
     Returns:
         A ``RangerPolicy`` ready to be created.
@@ -134,7 +123,21 @@ def _build_ro_policy(zone_name: str, service_name: str) -> RangerPolicy:
         f"{zone_name}-admin",
     ]
     accesses = [_access(p) for p in ("select", "show", "use")]
-    item = RangerPolicyItem({"roles": roles, "accesses": accesses})
+    omitted_roles = [role for role in roles if role not in allowed_roles]
+    roles = [role for role in roles if role in allowed_roles]
+    logger.debug(
+        "policy decision for zone %s, policy default - ro - %s: omitted populated roles=%s",
+        zone_name,
+        zone_name,
+        omitted_roles,
+    )
+    if not roles:
+        logger.debug(
+            "policy for zone %s, policy default - ro - %s is an audit-only shell",
+            zone_name,
+            zone_name,
+        )
+    policy_items = [RangerPolicyItem({"roles": roles, "accesses": accesses})] if roles else []
 
     policy = RangerPolicy(
         {
@@ -158,7 +161,7 @@ def _build_ro_policy(zone_name: str, service_name: str) -> RangerPolicy:
                     "column": _resource(["*"]),
                 },
             ],
-            "policyItems": [item],
+            "policyItems": policy_items,
             "zoneName": zone_name,
             "isAuditEnabled": True,
             "isEnabled": True,
@@ -167,7 +170,7 @@ def _build_ro_policy(zone_name: str, service_name: str) -> RangerPolicy:
     return policy
 
 
-def _build_rw_policy(zone_name: str, service_name: str) -> RangerPolicy:
+def _build_rw_policy(zone_name: str, service_name: str, allowed_roles: Set[str]) -> RangerPolicy:
     """Build the ``default - rw - <zone>`` policy.
 
     Read-write access on the developer catalog for editor and admin roles.
@@ -175,6 +178,7 @@ def _build_rw_policy(zone_name: str, service_name: str) -> RangerPolicy:
     Args:
         zone_name: the base zone / catalog name.
         service_name: the Trino service name.
+        allowed_roles: roles that may receive this policy's grants.
 
     Returns:
         A ``RangerPolicy`` ready to be created.
@@ -182,7 +186,21 @@ def _build_rw_policy(zone_name: str, service_name: str) -> RangerPolicy:
     dev_cat = f"{zone_name}_developer"
     roles = [f"{zone_name}-editor", f"{zone_name}-admin"]
     accesses = [_access(p) for p in ("select", "show", "use", "insert", "delete")]
-    item = RangerPolicyItem({"roles": roles, "accesses": accesses})
+    omitted_roles = [role for role in roles if role not in allowed_roles]
+    roles = [role for role in roles if role in allowed_roles]
+    logger.debug(
+        "policy decision for zone %s, policy default - rw - %s: omitted populated roles=%s",
+        zone_name,
+        zone_name,
+        omitted_roles,
+    )
+    if not roles:
+        logger.debug(
+            "policy for zone %s, policy default - rw - %s is an audit-only shell",
+            zone_name,
+            zone_name,
+        )
+    policy_items = [RangerPolicyItem({"roles": roles, "accesses": accesses})] if roles else []
 
     return RangerPolicy(
         {
@@ -206,7 +224,7 @@ def _build_rw_policy(zone_name: str, service_name: str) -> RangerPolicy:
                     "column": _resource(["*"]),
                 },
             ],
-            "policyItems": [item],
+            "policyItems": policy_items,
             "zoneName": zone_name,
             "isAuditEnabled": True,
             "isEnabled": True,
@@ -214,7 +232,7 @@ def _build_rw_policy(zone_name: str, service_name: str) -> RangerPolicy:
     )
 
 
-def _build_ddl_policy(zone_name: str, service_name: str) -> RangerPolicy:
+def _build_ddl_policy(zone_name: str, service_name: str, allowed_roles: Set[str]) -> RangerPolicy:
     """Build the ``default - ddl - <zone>`` policy.
 
     DDL operations on the developer catalog for admin role only.
@@ -222,6 +240,7 @@ def _build_ddl_policy(zone_name: str, service_name: str) -> RangerPolicy:
     Args:
         zone_name: the base zone / catalog name.
         service_name: the Trino service name.
+        allowed_roles: roles that may receive this policy's grants.
 
     Returns:
         A ``RangerPolicy`` ready to be created.
@@ -229,7 +248,21 @@ def _build_ddl_policy(zone_name: str, service_name: str) -> RangerPolicy:
     dev_cat = f"{zone_name}_developer"
     roles = [f"{zone_name}-admin"]
     accesses = [_access(p) for p in ("alter", "create", "drop")]
-    item = RangerPolicyItem({"roles": roles, "accesses": accesses})
+    omitted_roles = [role for role in roles if role not in allowed_roles]
+    roles = [role for role in roles if role in allowed_roles]
+    logger.debug(
+        "policy decision for zone %s, policy default - ddl - %s: omitted populated roles=%s",
+        zone_name,
+        zone_name,
+        omitted_roles,
+    )
+    if not roles:
+        logger.debug(
+            "policy for zone %s, policy default - ddl - %s is an audit-only shell",
+            zone_name,
+            zone_name,
+        )
+    policy_items = [RangerPolicyItem({"roles": roles, "accesses": accesses})] if roles else []
 
     return RangerPolicy(
         {
@@ -246,7 +279,7 @@ def _build_ddl_policy(zone_name: str, service_name: str) -> RangerPolicy:
                     "table": _resource(["*"]),
                 },
             ],
-            "policyItems": [item],
+            "policyItems": policy_items,
             "zoneName": zone_name,
             "isAuditEnabled": True,
             "isEnabled": True,
@@ -254,7 +287,7 @@ def _build_ddl_policy(zone_name: str, service_name: str) -> RangerPolicy:
     )
 
 
-def _build_is_policy(zone_name: str, service_name: str) -> RangerPolicy:
+def _build_is_policy(zone_name: str, service_name: str, allowed_roles: Set[str]) -> RangerPolicy:
     """Build the ``default - is - <zone>`` policy.
 
     Information-schema access on both catalogs for ``{USER}`` macro.
@@ -262,6 +295,7 @@ def _build_is_policy(zone_name: str, service_name: str) -> RangerPolicy:
     Args:
         zone_name: the base zone / catalog name.
         service_name: the Trino service name.
+        allowed_roles: accepted for a consistent policy-builder interface.
 
     Returns:
         A ``RangerPolicy`` ready to be created.
@@ -269,6 +303,12 @@ def _build_is_policy(zone_name: str, service_name: str) -> RangerPolicy:
     cats = [zone_name, f"{zone_name}_developer"]
     accesses = [_access(p) for p in ("select", "show", "use")]
     item = RangerPolicyItem({"users": ["{USER}"], "accesses": accesses})
+    logger.debug(
+        "policy decision for zone %s, policy default - is - %s: omitted populated roles=%s",
+        zone_name,
+        zone_name,
+        [],
+    )
 
     return RangerPolicy(
         {
@@ -330,56 +370,96 @@ class TrinoCatalogReconciler:
         self._client = client
         self._service_name = service_name
 
-    def reconcile(self, catalogs: List[Dict]) -> None:
-        """Run the full reconciliation loop.
+    def reconcile(
+        self,
+        catalogs: List[Dict],
+        *,
+        strict: bool = True,
+    ) -> None:
+        """Create missing Ranger resources for Trino catalogs.
+
+        Existing zones without Ranger's auto-generated policies are considered
+        complete and are never modified.
 
         Args:
             catalogs: list of catalog dicts (each with at least ``"name"``).
+            strict: omit populated roles from newly created default policies.
         """
+        if not strict:
+            # Log the security opt-out with every run so it is never forgotten.
+            logger.info(
+                "strict reconciliation is disabled; this run is an authorized security opt-out"
+            )
         desired_zones = _catalogs_to_zones(catalogs)
-        logger.info("reconciling zones: desired=%s", sorted(desired_zones))
+        logger.debug("reconciling zones: desired=%s", sorted(desired_zones))
 
-        existing_zones = self._client.list_zones()
-        existing_zone_names = {z.name for z in existing_zones}
-
+        existing_zone_names = {zone.name for zone in self._client.list_zones()}
         existing_roles = self._client.list_roles()
-        existing_role_names = {r.name for r in existing_roles}
+        existing_roles_by_name = {role.name: role for role in existing_roles}
+        policies_by_zone = self._policies_by_zone(
+            self._client.list_service_policies(self._service_name)
+        )
 
-        # --- Create missing roles and zones ---
         for zone_name in sorted(desired_zones):
-            self._ensure_roles(zone_name, existing_role_names)
-            if zone_name not in existing_zone_names:
-                zone = _build_zone(zone_name, self._service_name)
-                try:
-                    self._client.create_zone(zone)
-                except RangerAPIError as exc:
-                    logger.warning(
-                        "failed to create zone %s: %s",
-                        zone_name,
-                        exc.message,
-                    )
-                    continue
-                logger.info("created zone %s", zone_name)
-                self._purge_auto_policies(zone_name)
+            zone_exists = zone_name in existing_zone_names
+            zone_policies = policies_by_zone.get(zone_name, [])
 
-        # --- Ensure default policies for desired zones ---
-        for zone_name in sorted(desired_zones):
-            self._ensure_policies(zone_name)
+            if zone_exists and not self._has_auto_policies(zone_policies):
+                logger.debug("zone %s is already provisioned", zone_name)
+                continue
+            self._provision_zone(
+                zone_name,
+                zone_exists,
+                existing_roles_by_name,
+                zone_policies,
+                strict,
+            )
 
-        # --- Clean up stale zones ---
-        stale_zones = existing_zone_names - desired_zones
-        for zone_name in sorted(stale_zones):
-            self._cleanup_zone(zone_name)
+    @staticmethod
+    def _policies_by_zone(policies: List[RangerPolicy]) -> Dict[str, List[RangerPolicy]]:
+        """Group service policies by their Ranger security-zone name."""
+        policies_by_zone: Dict[str, List[RangerPolicy]] = {}
+        for policy in policies:
+            if policy.zoneName:
+                policies_by_zone.setdefault(policy.zoneName, []).append(policy)
+        return policies_by_zone
 
-    def _ensure_roles(self, zone_name: str, existing_role_names: Set[str]) -> None:
+    @staticmethod
+    def _has_auto_policies(policies: List[RangerPolicy]) -> bool:
+        """Return whether Ranger's zone-creation policies are present."""
+        # DEFAULT_POLICIES must exactly match Ranger's auto-policy names for the done-marker/purge.
+        return any(policy.name in DEFAULT_POLICIES for policy in policies)
+
+    def _provision_zone(
+        self,
+        zone_name: str,
+        zone_exists: bool,
+        existing_roles_by_name: Dict[str, RangerRole],
+        zone_policies: List[RangerPolicy],
+        strict: bool,
+    ) -> None:
+        """Create the missing resources for a new or interrupted zone."""
+        self._ensure_roles(zone_name, existing_roles_by_name)
+        if not zone_exists and not self._create_zone(zone_name):
+            return
+        self._create_missing_policies(
+            zone_name,
+            zone_policies,
+            existing_roles_by_name,
+            strict,
+        )
+        current_zone_policies = self._client.list_policies(zone_name, self._service_name)
+        self._purge_auto_policies(zone_name, current_zone_policies)
+
+    def _ensure_roles(self, zone_name: str, existing_roles_by_name: Dict[str, RangerRole]) -> None:
         """Create any missing roles for the given zone.
 
         Args:
             zone_name: the base zone / catalog name.
-            existing_role_names: set of role names already in Ranger.
+            existing_roles_by_name: roles already in Ranger, keyed by name.
         """
         for role_name in _role_names(zone_name):
-            if role_name not in existing_role_names:
+            if role_name not in existing_roles_by_name:
                 role = RangerRole({"name": role_name})
                 try:
                     self._client.create_role(role)
@@ -389,29 +469,73 @@ class TrinoCatalogReconciler:
                         role_name,
                         exc.message,
                     )
-                existing_role_names.add(role_name)
+                    continue
+                existing_roles_by_name[role_name] = role
                 logger.info("created role %s", role_name)
 
-    def _purge_auto_policies(self, zone_name: str) -> None:
-        """Delete Ranger auto-generated policies from a newly created zone.
-
-        Ranger creates default policies when a zone is first created.
-        These are not tracked by the charm and would later block zone
-        cleanup by being mistaken for custom policies.
+    def _create_zone(self, zone_name: str) -> bool:
+        """Create a zone and report whether creation succeeded.
 
         Args:
             zone_name: the base zone / catalog name.
+
+        Returns:
+            Whether the zone was created.
         """
         try:
-            auto_policies = self._client.list_policies(zone_name, self._service_name)
+            self._client.create_zone(_build_zone(zone_name, self._service_name))
         except RangerAPIError as exc:
             logger.warning(
-                "failed to list auto-policies for zone %s, skipping purge: %s",
+                "failed to create zone %s: %s",
                 zone_name,
                 exc.message,
             )
-            return
-        for policy in auto_policies:
+            return False
+        logger.info("created zone %s", zone_name)
+        return True
+
+    def _create_missing_policies(
+        self,
+        zone_name: str,
+        zone_policies: List[RangerPolicy],
+        existing_roles_by_name: Dict[str, RangerRole],
+        strict: bool,
+    ) -> None:
+        """Create managed default policies that do not already exist."""
+        existing_policy_names = {policy.name for policy in zone_policies}
+        allowed_roles = set(_role_names(zone_name))
+        if strict:
+            allowed_roles = {
+                role_name
+                for role_name in allowed_roles
+                if (role := existing_roles_by_name.get(role_name)) is None
+                or not (role.users or role.groups or role.roles is not None)
+            }
+        for suffix, builder in _POLICY_BUILDERS.items():
+            policy_name = f"default - {suffix} - {zone_name}"
+            if policy_name in existing_policy_names:
+                continue
+            try:
+                self._client.create_policy(builder(zone_name, self._service_name, allowed_roles))
+            except RangerAPIError as exc:
+                logger.warning(
+                    "failed to create policy %s: %s",
+                    policy_name,
+                    exc.message,
+                )
+                continue
+            logger.info("created policy %s", policy_name)
+
+    def _purge_auto_policies(self, zone_name: str, zone_policies: List[RangerPolicy]) -> None:
+        """Delete Ranger auto-generated policies for a zone.
+
+        Args:
+            zone_name: the base zone / catalog name.
+            zone_policies: the current policies for this zone.
+        """
+        for policy in zone_policies:
+            if policy.name not in DEFAULT_POLICIES:
+                continue
             try:
                 self._client.delete_policy_by_id(policy.id)
             except RangerAPIError as exc:
@@ -429,183 +553,3 @@ class TrinoCatalogReconciler:
                 policy.id,
                 zone_name,
             )
-
-    def _ensure_policies(self, zone_name: str) -> None:
-        """Ensure default policies exist and are correct for a zone.
-
-        Args:
-            zone_name: the base zone / catalog name.
-        """
-        try:
-            policies = self._client.list_policies(zone_name, self._service_name)
-        except RangerAPIError as exc:
-            logger.warning(
-                "failed to list policies for zone %s, skipping: %s",
-                zone_name,
-                exc.message,
-            )
-            return
-        existing_by_name = {p.name: p for p in policies}
-
-        for suffix, builder in _POLICY_BUILDERS.items():
-            policy_name = f"default - {suffix} - {zone_name}"
-            desired = builder(zone_name, self._service_name)
-
-            if policy_name not in existing_by_name:
-                try:
-                    self._client.create_policy(desired)
-                except RangerAPIError as exc:
-                    logger.warning(
-                        "failed to create policy %s: %s",
-                        policy_name,
-                        exc.message,
-                    )
-                    continue
-                logger.info("created policy %s", policy_name)
-            else:
-                existing = existing_by_name[policy_name]
-                if self._policy_needs_update(existing, desired):
-                    desired.id = existing.id
-                    try:
-                        self._client.update_policy(existing.id, desired)
-                    except RangerAPIError as exc:
-                        logger.warning(
-                            "failed to update policy %s: %s",
-                            policy_name,
-                            exc.message,
-                        )
-                        continue
-                    logger.info("updated policy %s", policy_name)
-
-    def _cleanup_zone(self, zone_name: str) -> None:
-        """Remove a stale zone if it only contains default policies.
-
-        Zones with custom (non-default) policies are left untouched.
-
-        Args:
-            zone_name: the zone to potentially remove.
-        """
-        try:
-            policies = self._client.list_policies(zone_name, self._service_name)
-        except RangerAPIError as exc:
-            logger.warning(
-                "failed to list policies for zone %s, skipping cleanup: %s",
-                zone_name,
-                exc.message,
-            )
-            return
-        default_names = _default_policy_names(zone_name)
-
-        for policy in policies:
-            if policy.name not in default_names:
-                logger.warning(
-                    "zone %s has custom policy %s, skipping cleanup",
-                    zone_name,
-                    policy.name,
-                )
-                return
-
-        try:
-            self._client.delete_zone(zone_name)
-        except RangerAPIError as exc:
-            logger.warning(
-                "failed to delete stale zone %s: %s",
-                zone_name,
-                exc.message,
-            )
-            return
-        logger.info("deleted stale zone %s", zone_name)
-
-        for role_name in _role_names(zone_name):
-            try:
-                self._client.delete_role(role_name)
-                logger.info("deleted stale role %s", role_name)
-            except RangerAPIError as exc:
-                logger.warning(
-                    "could not delete role %s: %s",
-                    role_name,
-                    exc.message,
-                )
-
-    @staticmethod
-    def _policy_needs_update(existing: RangerPolicy, desired: RangerPolicy) -> bool:
-        """Check whether an existing policy differs from the desired state.
-
-        Compares resource blocks and policy items (roles/users/accesses).
-
-        Args:
-            existing: the current policy from Ranger.
-            desired: the desired policy definition.
-
-        Returns:
-            True if the existing policy needs to be updated.
-        """
-        if _serialise_resources(existing) != _serialise_resources(desired):
-            return True
-        if _serialise_items(existing.policyItems) != _serialise_items(desired.policyItems):
-            return True
-        return False
-
-
-def _serialise_resources(policy: RangerPolicy) -> list:
-    """Serialise a policy's resource blocks into a comparable structure.
-
-    Args:
-        policy: the ``RangerPolicy`` to serialise.
-
-    Returns:
-        A sorted list of frozen resource representations.
-    """
-    blocks = []
-    if policy.resources:
-        blocks.append(_freeze_resource_block(policy.resources))
-    for block in policy.additionalResources or []:
-        blocks.append(_freeze_resource_block(block))
-    return sorted(blocks)
-
-
-def _freeze_resource_block(block: dict) -> tuple:
-    """Convert a resource block dict into a frozen comparable tuple.
-
-    Args:
-        block: dict mapping resource key to ``RangerPolicyResource``
-            or dict.
-
-    Returns:
-        A sorted tuple of (key, frozenset(values)) pairs.
-    """
-    items = []
-    for key, res in sorted(block.items()):
-        if isinstance(res, RangerPolicyResource):
-            values = frozenset(res.values or [])
-        elif isinstance(res, dict):
-            values = frozenset(res.get("values", []))
-        else:
-            values = frozenset()
-        items.append((key, values))
-    return tuple(items)
-
-
-def _serialise_items(items: list) -> set:
-    """Serialise policy items into a comparable frozen set.
-
-    Args:
-        items: list of ``RangerPolicyItem`` or dicts.
-
-    Returns:
-        A frozenset of serialised item tuples.
-    """
-    result = set()
-    for item in items or []:
-        if isinstance(item, RangerPolicyItem):
-            users = frozenset(item.users or [])
-            roles = frozenset(item.roles or [])
-            accesses = frozenset((a.type, a.isAllowed) for a in (item.accesses or []))
-        else:
-            users = frozenset(item.get("users", []))
-            roles = frozenset(item.get("roles", []))
-            accesses = frozenset(
-                (a.get("type"), a.get("isAllowed", True)) for a in item.get("accesses", [])
-            )
-        result.add((users, roles, accesses))
-    return result

@@ -234,4 +234,10 @@ config:
         Password should be minimum 8 characters with min one alphabet and one numeric.
       type: string
       default: rangerR0cks!
- 
+    enforce-strict-reconciliation:
+      description: |
+        Exclude populated roles from newly created default policies so reconciliation does not grant access.
+        Disabling this is an authorized security opt-out that includes default roles in default policies
+        even if they are already populated.
+      type: boolean
+      default: true

@@ -5,6 +5,7 @@
 
 import logging
 from typing import List, Optional, Tuple
+from urllib.parse import urljoin
 
 from apache_ranger.client.ranger_client import RangerClient
 from apache_ranger.exceptions import RangerServiceException
@@ -12,6 +13,7 @@ from apache_ranger.model.ranger_policy import RangerPolicy
 from apache_ranger.model.ranger_role import RangerRole
 from apache_ranger.model.ranger_security_zone import RangerSecurityZone
 from apache_ranger.model.ranger_service import RangerService
+from requests import RequestException
 
 from literals import ADMIN_USER
 
@@ -29,6 +31,19 @@ class RangerAPIError(Exception):
         """
         self.message = message
         super().__init__(self.message)
+
+
+class RangerAuthenticationError(RangerAPIError):
+    """Raised when Ranger rejects API credentials."""
+
+    def __init__(self, status_code: int) -> None:
+        """Construct RangerAuthenticationError.
+
+        Args:
+            status_code: HTTP status returned by Ranger.
+        """
+        self.status_code = status_code
+        super().__init__(f"Ranger API authentication was rejected with HTTP {status_code}.")
 
 
 class RangerAPIClient:
@@ -50,6 +65,29 @@ class RangerAPIClient:
             auth: tuple of ``(username, password)`` for basic authentication.
         """
         self._client = RangerClient(url, auth)
+
+    def authenticate(self, timeout: float) -> None:
+        """Check whether the configured credentials can authenticate with Ranger.
+
+        Args:
+            timeout: Maximum number of seconds to wait for the API response.
+
+        Raises:
+            RangerAuthenticationError: If Ranger returns HTTP 401 or 403.
+            RangerAPIError: If the API cannot be reached or returns another error.
+        """
+        try:
+            response = self._client.session.get(
+                urljoin(self._client.client_http.url, RangerClient.FIND_SERVICES.path),
+                timeout=timeout,
+            )
+        except RequestException as exc:
+            raise RangerAPIError("Failed to reach Ranger API.") from exc
+
+        if response.status_code in (401, 403):
+            raise RangerAuthenticationError(response.status_code)
+        if not response.ok:
+            raise RangerAPIError(f"Ranger API returned HTTP {response.status_code}.")
 
     def list_services_by_type(self, service_type: str) -> List[RangerService]:
         """List services filtered by type.

@@ -15,8 +15,10 @@ from unittest import TestCase, mock
 
 import pytest
 from ops import pebble, testing
+from requests import ConnectionError, Timeout
 
 from charm import RangerK8SCharm
+from ranger_client import RangerAPIClient, RangerAPIError, RangerAuthenticationError
 from relations.trino import TrinoCatalogRelationHandler
 from state import State
 
@@ -362,6 +364,120 @@ def test_admin_ready(ctx):
     container_out = state_out.get_container(RANGER)
     assert container_out.service_statuses["ranger"] == pebble.ServiceStatus.ACTIVE
     assert state_out.unit_status == testing.MaintenanceStatus("replanning application")
+
+
+@pytest.mark.parametrize("status_code", [401, 403])
+def test_ranger_client_authenticate_rejects_invalid_credentials(status_code):
+    """Ranger HTTP authentication rejections raise a dedicated exception."""
+    client = RangerAPIClient("http://ranger:6080", ("admin", "RangerAdmin1"))
+    response = mock.Mock(status_code=status_code, ok=False)
+
+    with mock.patch.object(client._client.session, "get", return_value=response) as get:
+        with pytest.raises(RangerAuthenticationError) as error:
+            client.authenticate(timeout=5)
+
+    assert error.value.status_code == status_code
+    get.assert_called_once_with(
+        "http://ranger:6080/service/public/v2/api/service",
+        timeout=5,
+    )
+
+
+@pytest.mark.parametrize("error", [ConnectionError(), Timeout()])
+def test_ranger_client_authenticate_treats_api_errors_as_unknown(error):
+    """Connection and timeout errors do not become authentication failures."""
+    client = RangerAPIClient("http://ranger:6080", ("admin", "RangerAdmin1"))
+
+    with mock.patch.object(client._client.session, "get", side_effect=error):
+        with pytest.raises(RangerAPIError, match="Failed to reach Ranger API"):
+            client.authenticate(timeout=5)
+
+
+def test_authentication_probe_blocks_rejected_admin_credentials(ctx):
+    """Rejected admin credentials block without exposing the configured password."""
+    client = mock.MagicMock()
+    client.authenticate.side_effect = RangerAuthenticationError(401)
+    state_in = _state(
+        leader=True,
+        containers={_container()},
+        relations={_peer({"database_connection": DATABASE_CONNECTION})},
+    )
+
+    with mock.patch("charm.RangerAPIClient", return_value=client) as client_cls:
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+    assert state_out.unit_status == testing.BlockedStatus(
+        "Ranger authentication failed for admin. Revert the system-users secret and change "
+        "the password in the Ranger UI."
+    )
+    assert "RangerAdmin1" not in state_out.unit_status.message
+    client_cls.assert_called_once_with("http://localhost:6080", ("admin", "RangerAdmin1"))
+    client.authenticate.assert_called_once_with(5)
+
+
+@pytest.mark.parametrize(
+    "error", [RangerAPIError("connection refused"), RangerAPIError("timeout")]
+)
+def test_authentication_probe_does_not_block_when_ranger_is_unreachable(ctx, error):
+    """Unreachable Ranger APIs leave reconciliation unblocked for a later retry."""
+    client = mock.MagicMock()
+    client.authenticate.side_effect = error
+    state_in = _state(
+        leader=True,
+        containers={_container()},
+        relations={_peer({"database_connection": DATABASE_CONNECTION})},
+    )
+
+    with mock.patch("charm.RangerAPIClient", return_value=client):
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+    assert state_out.unit_status == testing.MaintenanceStatus("replanning application")
+
+
+def test_authentication_probe_uses_usersync_credentials_and_policy_manager_url(ctx):
+    """Usersync probes the configured policy manager with rangerusersync credentials."""
+    ldap_rel = testing.Relation(
+        "ldap",
+        remote_app_name="comsys-openldap-k8s",
+        remote_app_data=LDAP_RELATION_CHANGED_DATA,
+    )
+    client = mock.MagicMock()
+    state_in = _state(
+        leader=True,
+        config={"charm-function": "usersync", "policy-mgr-url": "http://ranger-k8s:6080"},
+        containers={_container()},
+        relations={_peer(), ldap_rel},
+    )
+
+    with mock.patch("charm.RangerAPIClient", return_value=client) as client_cls:
+        state_out = ctx.run(ctx.on.relation_changed(ldap_rel), state_in)
+
+    assert state_out.unit_status == testing.MaintenanceStatus("replanning application")
+    client_cls.assert_called_once_with(
+        "http://ranger-k8s:6080",
+        ("rangerusersync", "RangerUsersync1"),
+    )
+    client.authenticate.assert_called_once_with(5)
+
+
+def test_update_status_blocks_rejected_credentials(ctx):
+    """Status checks continue to detect credentials changed after reconciliation."""
+    state_in = _state(
+        leader=True,
+        model=testing.Model(name="ranger-model"),
+        containers={_container()},
+        relations={_peer({"database_connection": DATABASE_CONNECTION})},
+    )
+    client = mock.MagicMock()
+    with mock.patch("charm.RangerAPIClient", return_value=client):
+        state = ctx.run(ctx.on.config_changed(), state_in)
+        client.authenticate.side_effect = RangerAuthenticationError(403)
+        state_out = ctx.run(ctx.on.update_status(), _carry(state))
+
+    assert state_out.unit_status == testing.BlockedStatus(
+        "Ranger authentication failed for admin. Revert the system-users secret and change "
+        "the password in the Ranger UI."
+    )
 
 
 def test_usersync_ready(ctx):

@@ -32,8 +32,10 @@ from pydantic.error_wrappers import ErrorWrapper
 
 from literals import (
     ADMIN_ENTRYPOINT,
+    ADMIN_USER,
     APP_NAME,
     APPLICATION_PORT,
+    LOCALHOST_URL,
     LOG_FILES,
     METRICS_PORT,
     RELATION_VALUES,
@@ -41,6 +43,7 @@ from literals import (
     USERSYNC_CONFIG_MAPPING,
     USERSYNC_ENTRYPOINT,
 )
+from ranger_client import RangerAPIClient, RangerAPIError, RangerAuthenticationError
 from relations.ldap import LDAPRelationHandler
 from relations.opensearch import OpensearchRelationHandler
 from relations.postgres import PostgresRelationHandler
@@ -62,6 +65,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
     """
 
     config_type = CharmConfig
+    API_PROBE_TIMEOUT = 5
 
     def __init__(self, *args):
         """Construct.
@@ -319,6 +323,8 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             charm_function = self.config["charm-function"].value
         except ValidationError:
             return
+        if self._probe_configured_credentials():
+            return
         if charm_function == "usersync":
             self.unit.status = ActiveStatus("Status check: UP")
             return
@@ -481,6 +487,36 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         if self._state.opensearch and charm_function != "admin":
             raise ValueError("Only Ranger admin can relate to OpenSearch.")
 
+    def _probe_configured_credentials(self) -> bool:
+        """Authenticate configured system-user credentials against the Ranger API.
+
+        Returns:
+            Whether Ranger rejected the configured credentials.
+        """
+        charm_function = self.config["charm-function"].value
+        if charm_function == "usersync":
+            url = self.config["policy-mgr-url"]
+            username = "rangerusersync"
+            password = self.config["ranger-usersync-password"]
+        else:
+            url = f"{LOCALHOST_URL}:{APPLICATION_PORT}"
+            username = ADMIN_USER
+            password = self.config["ranger-admin-password"]
+
+        try:
+            RangerAPIClient(url, (username, password)).authenticate(self.API_PROBE_TIMEOUT)
+        except RangerAuthenticationError:
+            self.unit.status = BlockedStatus(
+                f"Ranger authentication failed for {username}. Revert the system-users secret "
+                "and change the password in the Ranger UI."
+            )
+            return True
+        except RangerAPIError:
+            logger.info(
+                "Ranger API is unavailable; authentication probe will retry on the next hook."
+            )
+        return False
+
     @staticmethod
     def _format_validation_error(error: ValidationError) -> str:
         """Format a validation error for Juju status output.
@@ -515,6 +551,9 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             return
         except ValueError as err:
             self.unit.status = BlockedStatus(str(err))
+            return
+
+        if self._probe_configured_credentials():
             return
 
         container = self.unit.get_container(self.name)

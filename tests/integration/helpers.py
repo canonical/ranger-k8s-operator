@@ -24,12 +24,11 @@ TRAEFIK_NAME = "traefik-k8s"
 TRINO_SERVICE = "trino-service"
 TRINO_NAME = "trino-k8s"
 RANGER_URL = "http://localhost:6080"
-RANGER_AUTH = ("admin", "rangerR0cks!")
+RANGER_AUTH = ("admin", "RangerAdmin1")
 HEADERS = {
     "Accept": "application/json",
     "Content-Type": "application/json",
 }
-SECURE_PWD = "ubuntuR0cks!"  # nosec
 LDAP_NAME = "comsys-openldap-k8s"
 
 LXD_MODEL_CONFIG = {

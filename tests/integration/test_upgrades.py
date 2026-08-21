@@ -12,7 +12,6 @@ import requests
 from integration.helpers import (
     APP_NAME,
     POSTGRES_NAME,
-    SECURE_PWD,
     get_unit_url,
     wait_for_apps,
 )
@@ -54,7 +53,7 @@ class TestUpgrade:
         secret_name = "ranger-upgrade-system-users"  # nosec B105
         secret_uri = juju.add_secret(
             secret_name,
-            {"admin": SECURE_PWD, "rangerusersync": "RangerUsersync1"},
+            {"admin": "rangerR0cks!", "rangerusersync": "RangerUsersync1"},  # nosec B105
         )
         juju.grant_secret(secret_name, APP_NAME)
 

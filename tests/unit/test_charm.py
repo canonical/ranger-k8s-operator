@@ -120,15 +120,6 @@ DATABASE_CONNECTION = {
     "user": "postgres_user",
 }
 
-LDAP_STATE = {
-    "sync_ldap_bind_password": "huedw7uiedw7",  # nosec
-    "sync_ldap_bind_dn": "cn=admin,dc=canonical,dc=dev,dc=com",
-    "sync_ldap_search_base": "dc=canonical,dc=dev,dc=com",
-    "sync_ldap_user_search_base": "dc=canonical,dc=dev,dc=com",
-    "sync_group_search_base": "dc=canonical,dc=dev,dc=com",
-    "sync_ldap_url": "ldap://comsys-openldap-k8s:389",
-}
-
 SYSTEM_USERS_SECRET = testing.Secret(
     {
         "admin": "RangerAdmin1",
@@ -720,7 +711,33 @@ def test_on_policy_relation_broken(ctx):
 
 
 def test_ldap_relation_changed(ctx):
-    """The charm uses the configuration values from ldap relation."""
+    """The charm uses live LDAP relation values without writing peer data."""
+    ldap_rel = testing.Relation(
+        "ldap",
+        remote_app_name="comsys-openldap-k8s",
+        remote_app_data=LDAP_RELATION_CHANGED_DATA,
+    )
+    peer_rel = _peer()
+    state_in = _state(
+        leader=True,
+        config={"charm-function": "usersync", "policy-mgr-url": "http://ranger-k8s:6080"},
+        containers={_container()},
+        relations={peer_rel, ldap_rel},
+    )
+    state_out = ctx.run(ctx.on.relation_changed(ldap_rel), state_in)
+
+    env = _service_env(state_out)
+    assert env["SYNC_LDAP_URL"] == "ldap://comsys-openldap-k8s:389"
+    assert env["SYNC_LDAP_BIND_DN"] == "cn=admin,dc=canonical,dc=dev,dc=com"
+    assert env["SYNC_LDAP_BIND_PASSWORD"] == LDAP_RELATION_CHANGED_DATA["admin_password"]
+    assert env["SYNC_GROUP_OBJECT_CLASS"] == "posixGroup"
+    peer_data = state_out.get_relation(peer_rel).local_app_data
+    assert "ldap" not in peer_data
+    assert LDAP_RELATION_CHANGED_DATA["admin_password"] not in peer_data.values()
+
+
+def test_ldap_relation_broken(ctx):
+    """Broken LDAP relations do not override LDAP credentials."""
     ldap_rel = testing.Relation(
         "ldap",
         remote_app_name="comsys-openldap-k8s",
@@ -728,20 +745,23 @@ def test_ldap_relation_changed(ctx):
     )
     state_in = _state(
         leader=True,
-        config={"charm-function": "usersync", "policy-mgr-url": "http://ranger-k8s:6080"},
+        config={
+            "charm-function": "usersync",
+            "policy-mgr-url": "http://ranger-k8s:6080",
+            **USERSYNC_CONFIG_VALUES,
+        },
         containers={_container()},
         relations={_peer(), ldap_rel},
     )
-    state_out = ctx.run(ctx.on.relation_changed(ldap_rel), state_in)
+    state_out = ctx.run(ctx.on.relation_broken(ldap_rel), state_in)
 
-    env = _service_env(state_out)
-    assert env["SYNC_LDAP_URL"] == "ldap://comsys-openldap-k8s:389"
-    assert env["SYNC_GROUP_OBJECT_CLASS"] == "posixGroup"
+    environment = _service_env(state_out)
+    assert environment["SYNC_LDAP_URL"] == LDAP_CREDENTIALS_CONTENT["sync-ldap-url"]
+    assert environment["SYNC_LDAP_BIND_DN"] == LDAP_CREDENTIALS_CONTENT["sync-ldap-bind-dn"]
 
 
-def test_ldap_relation_broken(ctx):
-    """The charm enters a blocked state if no LDAP parameters."""
-    ldap_rel = testing.Relation("ldap", remote_app_name="comsys-openldap-k8s")
+def test_usersync_blocks_without_ldap_source(ctx):
+    """Usersync blocks when neither LDAP source is available."""
     state_in = _state(
         leader=True,
         config={
@@ -749,9 +769,10 @@ def test_ldap_relation_broken(ctx):
             "policy-mgr-url": "http://ranger-k8s:6080",
         },
         containers={_container()},
-        relations={_peer({"ldap": LDAP_STATE}), ldap_rel},
+        relations={_peer()},
     )
-    state_out = ctx.run(ctx.on.relation_broken(ldap_rel), state_in)
+
+    state_out = ctx.run(ctx.on.config_changed(), state_in)
 
     assert state_out.unit_status == testing.BlockedStatus(
         "Add an LDAP relation or set ldap-credentials."
@@ -801,9 +822,14 @@ def test_ldap_credentials_render_all_values(ctx):
 def test_ldap_relation_values_override_secret_per_key(ctx):
     """LDAP relation values override only their corresponding secret values."""
     relation_values = {
-        "sync_ldap_url": "ldap://relation-openldap-k8s:389",
-        "sync_ldap_bind_dn": "cn=relation,dc=canonical,dc=com",
+        "base_dn": "dc=relation,dc=canonical,dc=com",
+        "ldap_url": "ldap://relation-openldap-k8s:389",
     }
+    ldap_rel = testing.Relation(
+        "ldap",
+        remote_app_name="comsys-openldap-k8s",
+        remote_app_data=relation_values,
+    )
     state_in = _state(
         leader=True,
         config={
@@ -812,21 +838,49 @@ def test_ldap_relation_values_override_secret_per_key(ctx):
             **USERSYNC_CONFIG_VALUES,
         },
         containers={_container()},
-        relations={_peer({"ldap": relation_values})},
+        relations={_peer(), ldap_rel},
     )
 
     state_out = ctx.run(ctx.on.config_changed(), state_in)
 
     environment = _service_env(state_out)
-    assert environment["SYNC_LDAP_URL"] == relation_values["sync_ldap_url"]
-    assert environment["SYNC_LDAP_BIND_DN"] == relation_values["sync_ldap_bind_dn"]
+    assert environment["SYNC_LDAP_URL"] == relation_values["ldap_url"]
+    assert environment["SYNC_LDAP_BIND_DN"] == f"cn=admin,{relation_values['base_dn']}"
     assert (
         environment["SYNC_LDAP_BIND_PASSWORD"]
         == LDAP_CREDENTIALS_CONTENT["sync-ldap-bind-password"]
     )
-    assert (
-        environment["SYNC_LDAP_SEARCH_BASE"] == LDAP_CREDENTIALS_CONTENT["sync-ldap-search-base"]
+    assert environment["SYNC_LDAP_SEARCH_BASE"] == relation_values["base_dn"]
+
+
+@pytest.mark.parametrize(
+    "remote_app_data",
+    [{}, {"ldap_url": "ldap://relation-openldap-k8s:389"}],
+)
+def test_incomplete_ldap_relation_falls_back_to_secret(ctx, remote_app_data):
+    """Incomplete LDAP relation data falls back to ldap-credentials."""
+    ldap_rel = testing.Relation(
+        "ldap",
+        remote_app_name="comsys-openldap-k8s",
+        remote_app_data=remote_app_data,
     )
+    state_in = _state(
+        leader=True,
+        config={
+            "charm-function": "usersync",
+            "policy-mgr-url": "http://ranger-k8s:6080",
+            **USERSYNC_CONFIG_VALUES,
+        },
+        containers={_container()},
+        relations={_peer(), ldap_rel},
+    )
+
+    state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+    environment = _service_env(state_out)
+    assert environment["SYNC_LDAP_URL"] == LDAP_CREDENTIALS_CONTENT["sync-ldap-url"]
+    assert environment["SYNC_LDAP_BIND_DN"] == LDAP_CREDENTIALS_CONTENT["sync-ldap-bind-dn"]
+    assert "None" not in environment.values()
 
 
 def test_partial_ldap_credentials_secret_blocks(ctx):

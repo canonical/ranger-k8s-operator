@@ -470,7 +470,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             USERSYNC_ENTRYPOINT: Entrypoint path for Ranger Usersync startup.
             context: Environment variables for pebble plan.
         """
-        ldap = self._state.ldap or {}
+        ldap = self.ldap.relation_values()
         context = {}
         for config_key, ranger_property in USERSYNC_CONFIG_MAPPING.items():
             value = (

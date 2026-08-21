@@ -74,17 +74,6 @@ class LDAPRelationHandler(framework.Object):
             event.defer()
             return
 
-        event_data = event.relation.data[event.app]
-        base_dn = event_data.get("base_dn")
-        self.charm._state.ldap = {
-            "sync_ldap_bind_password": event_data.get("admin_password"),
-            "sync_ldap_bind_dn": f"cn=admin,{base_dn}",
-            "sync_ldap_search_base": base_dn,
-            "sync_ldap_user_search_base": base_dn,
-            "sync_group_search_base": base_dn,
-            "sync_ldap_url": event_data.get("ldap_url"),
-        }
-
         self.charm.update(event)
 
     @log_event_handler(logger)
@@ -105,8 +94,31 @@ class LDAPRelationHandler(framework.Object):
             event.defer()
             return
 
-        self.charm._state.ldap = {}
         self.charm.update(event)
+
+    def relation_values(self):
+        """Return usersync values derived from the active LDAP relation.
+
+        Returns:
+            LDAP values derived from remote application data, or an empty mapping.
+        """
+        relation = self.charm.model.get_relation(self.relation_name)
+        if not relation or not relation.active or not relation.app:
+            return {}
+
+        event_data = relation.data[relation.app]
+        base_dn = event_data.get("base_dn")
+        if not base_dn:
+            return {}
+
+        return {
+            "sync_ldap_bind_password": event_data.get("admin_password"),
+            "sync_ldap_bind_dn": f"cn=admin,{base_dn}",
+            "sync_ldap_search_base": base_dn,
+            "sync_ldap_user_search_base": base_dn,
+            "sync_group_search_base": base_dn,
+            "sync_ldap_url": event_data.get("ldap_url"),
+        }
 
     def validate(self):
         """Check if the required ldap parameters are available.
@@ -114,5 +126,5 @@ class LDAPRelationHandler(framework.Object):
         Raises:
             ValueError: if ldap parameters are not available.
         """
-        if not self.charm._state.ldap and not self.charm.config["ldap-credentials"]:
+        if not self.relation_values() and not self.charm.config["ldap-credentials"]:
             raise ValueError("Add an LDAP relation or set ldap-credentials.")

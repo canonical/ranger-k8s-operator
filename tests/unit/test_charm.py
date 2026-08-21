@@ -29,7 +29,7 @@ LDAP_RELATION_CHANGED_DATA = {
     "base_dn": "dc=canonical,dc=dev,dc=com",
     "ldap_url": "ldap://comsys-openldap-k8s:389",
 }
-USERSYNC_CONFIG_VALUES = {
+LDAP_CREDENTIALS_CONTENT = {
     "sync-ldap-url": "ldap://config-openldap-k8s:389",
     "sync-ldap-bind-password": "admin",  # nosec
     "sync-ldap-search-base": "dc=canonical,dc=dev,dc=com",
@@ -135,6 +135,8 @@ SYSTEM_USERS_SECRET = testing.Secret(
         "rangerusersync": "RangerUsersync1",
     }
 )
+LDAP_CREDENTIALS_SECRET = testing.Secret(LDAP_CREDENTIALS_CONTENT)
+USERSYNC_CONFIG_VALUES = {"ldap-credentials": LDAP_CREDENTIALS_SECRET.id}
 
 
 @pytest.fixture
@@ -159,6 +161,8 @@ def _state(*args, **kwargs):
     """
     config = kwargs.pop("config", {})
     secrets = kwargs.pop("secrets", set())
+    if config.get("ldap-credentials") == LDAP_CREDENTIALS_SECRET.id:
+        secrets = {LDAP_CREDENTIALS_SECRET, *secrets}
     return testing.State(
         *args,
         config={"system-users": SYSTEM_USERS_SECRET.id, **config},
@@ -750,12 +754,12 @@ def test_ldap_relation_broken(ctx):
     state_out = ctx.run(ctx.on.relation_broken(ldap_rel), state_in)
 
     assert state_out.unit_status == testing.BlockedStatus(
-        "Add an LDAP relation or update config values."
+        "Add an LDAP relation or set ldap-credentials."
     )
 
 
 def test_ldap_config_updated(ctx):
-    """The charm uses the configuration values from config relation."""
+    """The charm uses LDAP values from ldap-credentials."""
     state_in = _state(
         leader=True,
         config={
@@ -769,6 +773,150 @@ def test_ldap_config_updated(ctx):
     state_out = ctx.run(ctx.on.config_changed(), state_in)
 
     assert _service_env(state_out)["SYNC_LDAP_URL"] == "ldap://config-openldap-k8s:389"
+
+
+def test_ldap_credentials_render_all_values(ctx):
+    """Every LDAP credential value reaches usersync install.properties."""
+    state_in = _state(
+        leader=True,
+        config={
+            "charm-function": "usersync",
+            "policy-mgr-url": "http://ranger-k8s:6080",
+            **USERSYNC_CONFIG_VALUES,
+        },
+        containers={_container()},
+        relations={_peer()},
+    )
+
+    state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+    install_properties = (
+        state_out.get_container(RANGER).get_filesystem(ctx)
+        / "usr/lib/ranger/usersync/install.properties"
+    ).read_text()
+    for key, value in LDAP_CREDENTIALS_CONTENT.items():
+        assert f"{key.replace('-', '_').upper()} = {value}" in install_properties
+
+
+def test_ldap_relation_values_override_secret_per_key(ctx):
+    """LDAP relation values override only their corresponding secret values."""
+    relation_values = {
+        "sync_ldap_url": "ldap://relation-openldap-k8s:389",
+        "sync_ldap_bind_dn": "cn=relation,dc=canonical,dc=com",
+    }
+    state_in = _state(
+        leader=True,
+        config={
+            "charm-function": "usersync",
+            "policy-mgr-url": "http://ranger-k8s:6080",
+            **USERSYNC_CONFIG_VALUES,
+        },
+        containers={_container()},
+        relations={_peer({"ldap": relation_values})},
+    )
+
+    state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+    environment = _service_env(state_out)
+    assert environment["SYNC_LDAP_URL"] == relation_values["sync_ldap_url"]
+    assert environment["SYNC_LDAP_BIND_DN"] == relation_values["sync_ldap_bind_dn"]
+    assert (
+        environment["SYNC_LDAP_BIND_PASSWORD"]
+        == LDAP_CREDENTIALS_CONTENT["sync-ldap-bind-password"]
+    )
+    assert (
+        environment["SYNC_LDAP_SEARCH_BASE"] == LDAP_CREDENTIALS_CONTENT["sync-ldap-search-base"]
+    )
+
+
+def test_partial_ldap_credentials_secret_blocks(ctx):
+    """A partial LDAP secret reports every missing key without exposing values."""
+    secret = testing.Secret({"sync-ldap-url": "ldap://ldap-k8s:389"})
+    state_in = _state(
+        leader=True,
+        config={
+            "charm-function": "usersync",
+            "policy-mgr-url": "http://ranger-k8s:6080",
+            "ldap-credentials": secret.id,
+        },
+        secrets={secret},
+        containers={_container()},
+        relations={_peer()},
+    )
+
+    state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+    assert state_out.unit_status == testing.BlockedStatus(
+        "Invalid configuration: ldap-credentials secret is missing required keys: "
+        "sync-ldap-bind-dn, sync-ldap-bind-password, sync-ldap-search-base, "
+        "sync-ldap-user-search-base, sync-group-search-base"
+    )
+
+
+@pytest.mark.parametrize("missing_key", LDAP_CREDENTIALS_CONTENT)
+def test_empty_ldap_credentials_value_blocks(ctx, missing_key):
+    """An empty LDAP secret value is treated as a missing required key."""
+    secret = testing.Secret({**LDAP_CREDENTIALS_CONTENT, missing_key: ""})
+    state_in = _state(
+        leader=True,
+        config={
+            "charm-function": "usersync",
+            "policy-mgr-url": "http://ranger-k8s:6080",
+            "ldap-credentials": secret.id,
+        },
+        secrets={secret},
+        containers={_container()},
+        relations={_peer()},
+    )
+
+    state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+    assert state_out.unit_status == testing.BlockedStatus(
+        f"Invalid configuration: ldap-credentials secret is missing required keys: {missing_key}"
+    )
+
+
+def test_missing_ldap_credentials_secret_blocks(ctx):
+    """An ungranted LDAP secret produces an actionable blocked status."""
+    state_in = _state(
+        leader=True,
+        config={
+            "charm-function": "usersync",
+            "policy-mgr-url": "http://ranger-k8s:6080",
+            "ldap-credentials": "secret:missing",
+        },
+        containers={_container()},
+        relations={_peer()},
+    )
+
+    state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+    assert state_out.unit_status == testing.BlockedStatus(
+        "Invalid configuration: ldap-credentials: cannot be resolved; ensure the secret ID "
+        "is valid and granted to this application."
+    )
+
+
+def test_invalid_ldap_credentials_url_blocks(ctx):
+    """An LDAP URL from the secret is validated before usersync is configured."""
+    secret = testing.Secret({**LDAP_CREDENTIALS_CONTENT, "sync-ldap-url": "not-an-ldap-url"})
+    state_in = _state(
+        leader=True,
+        config={
+            "charm-function": "usersync",
+            "policy-mgr-url": "http://ranger-k8s:6080",
+            "ldap-credentials": secret.id,
+        },
+        secrets={secret},
+        containers={_container()},
+        relations={_peer()},
+    )
+
+    state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+    assert state_out.unit_status == testing.BlockedStatus(
+        "Invalid configuration: sync-ldap-url: Value incorrectly formatted."
+    )
 
 
 def test_on_opensearch_index_created(ctx):

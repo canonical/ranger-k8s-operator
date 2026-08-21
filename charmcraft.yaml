@@ -104,23 +104,13 @@ config:
         `juju add-secret system-users admin=<password> rangerusersync=<password>`.
         Grant the secret to this application with `juju grant-secret system-users <application>`.
       type: string
-    sync-ldap-url:
+    ldap-credentials:
       description: |
-        The url of the ldap to synchronize users from.
-        In format `ldap://<host>:<port>`.
-      type: string
-    sync-ldap-bind-dn:
-      description: |
-        The bind domain name for ldap synchronization.
-      type: string
-    sync-ldap-bind-password:
-      description: |
-          The bind password for ldap synchronization.
-      type: string
-      default: admin
-    sync-ldap-search-base:
-      description: |
-        Search base for ldap users and groups.
+        The Juju secret ID containing LDAP connection credentials, in `secret:...` format.
+        This is a secret ID, not the secret name. Create it with
+        `juju add-secret ldap-credentials sync-ldap-url=<url> sync-ldap-bind-dn=<dn> sync-ldap-bind-password=<password> sync-ldap-search-base=<base> sync-ldap-user-search-base=<base> sync-group-search-base=<base>`.
+        Grant the secret to this application with
+        `juju grant-secret ldap-credentials <application>`.
       type: string
     sync-ldap-user-object-class:
       description: |
@@ -132,10 +122,6 @@ config:
         The object class corresponding to groups for ldapsearch.
       type: string
       default: posixGroup
-    sync-ldap-user-search-base:
-      description: |
-        Search base for ldap users.
-      type: string
     sync-group-user-map-sync-enabled:
       description: |
         Set to true to synchronize memberships of groups found through group search.
@@ -146,11 +132,6 @@ config:
         Set to true to perform an ldapsearch to find groups rather than relying on user entry attributes.
       type: boolean
       default: true
-    sync-group-search-base:
-      description: |
-        Search base for ldap groups.
-        If not specified this takes the value of `sync-ldap-search-base`.
-      type: string
     sync-ldap-user-search-scope:
       description: |
         Search scope for the users.

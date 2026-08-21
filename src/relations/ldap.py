@@ -7,7 +7,6 @@ import logging
 
 from ops import framework
 
-from literals import RELATION_VALUES
 from utils import log_event_handler
 
 logger = logging.getLogger(__name__)
@@ -115,8 +114,5 @@ class LDAPRelationHandler(framework.Object):
         Raises:
             ValueError: if ldap parameters are not available.
         """
-        config = vars(self.charm.config)
-        if not self.charm._state.ldap:
-            for value in RELATION_VALUES:
-                if not config.get(value):
-                    raise ValueError("Add an LDAP relation or update config values.")
+        if not self.charm._state.ldap and not self.charm.config["ldap-credentials"]:
+            raise ValueError("Add an LDAP relation or set ldap-credentials.")

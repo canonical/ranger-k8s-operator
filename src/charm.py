@@ -154,22 +154,22 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         if self._cached_config is None:
             config = {key.replace("-", "_"): value for key, value in self.model.config.items()}
             self._inject_system_users(config)
+            self._inject_ldap_credentials(config)
             self._cached_config = CharmConfig(**config)
         return self._cached_config
 
     @staticmethod
-    def _secret_validation_error(message: str) -> ValidationError:
-        """Create a configuration validation error for the system-users option.
+    def _secret_validation_error(option: str, message: str) -> ValidationError:
+        """Create a configuration validation error for a secret option.
 
         Args:
+            option: Secret configuration option associated with the error.
             message: Actionable validation message that excludes secret contents.
 
         Returns:
-            A validation error located at the system-users configuration option.
+            A validation error located at the secret configuration option.
         """
-        return ValidationError(
-            [ErrorWrapper(ValueError(message), loc="system_users")], CharmConfig
-        )
+        return ValidationError([ErrorWrapper(ValueError(message), loc=option)], CharmConfig)
 
     def _inject_system_users(self, config: dict) -> None:
         """Resolve the system-users secret and add its passwords to the configuration.
@@ -183,15 +183,16 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         secret_id = config.get("system_users")
         if not secret_id:
             raise self._secret_validation_error(
-                "must be a Juju secret ID granted to this application."
+                "system_users", "must be a Juju secret ID granted to this application."
             )
 
         try:
             content = self.model.get_secret(id=secret_id).get_content(refresh=True)
         except ops.SecretNotFoundError as err:
             raise self._secret_validation_error(
+                "system_users",
                 "cannot be resolved; ensure the secret ID is valid and granted "
-                "to this application."
+                "to this application.",
             ) from err
 
         required_keys = {
@@ -201,9 +202,36 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         for key, field in required_keys.items():
             if key not in content:
                 raise self._secret_validation_error(
-                    f"secret 'system-users' is missing required key '{key}'."
+                    "system_users", f"secret 'system-users' is missing required key '{key}'."
                 )
             if content[key] != "":
+                config[field] = content[key]
+
+    def _inject_ldap_credentials(self, config: dict) -> None:
+        """Resolve an optional LDAP secret and add its values to the configuration.
+
+        Args:
+            config: Translated Juju configuration values to augment.
+
+        Raises:
+            ValidationError: If the supplied secret cannot be resolved.
+        """
+        secret_id = config.get("ldap_credentials")
+        if not secret_id:
+            return
+
+        try:
+            content = self.model.get_secret(id=secret_id).get_content(refresh=True)
+        except ops.SecretNotFoundError as err:
+            raise self._secret_validation_error(
+                "ldap_credentials",
+                "cannot be resolved; ensure the secret ID is valid and granted "
+                "to this application.",
+            ) from err
+
+        for field in RELATION_VALUES:
+            key = field.replace("_", "-")
+            if key in content:
                 config[field] = content[key]
 
     def _invalidate_config_cache(self) -> None:

@@ -19,6 +19,14 @@ SYSTEM_USERS_SECRET = testing.Secret(
         "rangerusersync": "RangerUsersync1",
     }
 )
+LDAP_CREDENTIALS = {
+    "sync-ldap-url": "ldap://ldap-k8s:389",
+    "sync-ldap-bind-dn": "cn=admin,dc=canonical,dc=com",
+    "sync-ldap-bind-password": "admin",  # nosec
+    "sync-ldap-search-base": "dc=canonical,dc=com",
+    "sync-ldap-user-search-base": "dc=canonical,dc=com",
+    "sync-group-search-base": "dc=canonical,dc=com",
+}
 
 
 @pytest.fixture
@@ -27,19 +35,20 @@ def ctx():
     return testing.Context(RangerK8SCharm)
 
 
-def _state(config=None, secret=SYSTEM_USERS_SECRET):
+def _state(config=None, secret=SYSTEM_USERS_SECRET, secrets=None):
     """Build a Scenario state with a system-users secret.
 
     Args:
         config: Configuration overrides.
         secret: The system-users secret available to the charm.
+        secrets: Additional secrets available to the charm.
 
     Returns:
         A state configured to resolve the supplied secret.
     """
     return testing.State(
         config={"system-users": secret.id, **(config or {})},
-        secrets={secret},
+        secrets={secret, *(secrets or set())},
     )
 
 
@@ -72,10 +81,9 @@ def test_string_values(ctx) -> None:
     with ctx(ctx.on.config_changed(), state) as manager:
         assert manager.charm.config["charm-function"] == "usersync"
 
-    # sync-ldap-url
-    check_invalid_values(ctx, "sync-ldap-url", erroneus_values)
-    accepted_values = ["ldap://ldap-k8s:3893", "ldaps://example-host:636"]
-    check_valid_values(ctx, "sync-ldap-url", accepted_values)
+    # LDAP credentials
+    check_invalid_ldap_urls(ctx, erroneus_values)
+    check_valid_ldap_urls(ctx, ["ldap://ldap-k8s:3893", "ldaps://example-host:636"])
 
 
 def test_ldap_search_scopes(ctx) -> None:
@@ -188,3 +196,38 @@ def check_invalid_values(ctx, field: str, erroneus_values: list) -> None:
         with ctx(ctx.on.config_changed(), state) as manager:
             with pytest.raises(ValueError):
                 _ = manager.charm.config[field]
+
+
+def check_valid_ldap_urls(ctx, accepted_values: list) -> None:
+    """Check LDAP URLs supplied through ldap-credentials.
+
+    Args:
+        ctx: Scenario context.
+        accepted_values: LDAP URLs expected to pass validation.
+    """
+    for value in accepted_values:
+        secret = testing.Secret({**LDAP_CREDENTIALS, "sync-ldap-url": value})
+        state = _state(
+            config={"ldap-credentials": secret.id},
+            secrets={secret},
+        )
+        with ctx(ctx.on.config_changed(), state) as manager:
+            assert manager.charm.config["sync-ldap-url"] == value
+
+
+def check_invalid_ldap_urls(ctx, erroneous_values: list) -> None:
+    """Check malformed LDAP URLs supplied through ldap-credentials.
+
+    Args:
+        ctx: Scenario context.
+        erroneous_values: LDAP URLs expected to fail validation.
+    """
+    for value in erroneous_values:
+        secret = testing.Secret({**LDAP_CREDENTIALS, "sync-ldap-url": value})
+        state = _state(
+            config={"ldap-credentials": secret.id},
+            secrets={secret},
+        )
+        with ctx(ctx.on.config_changed(), state) as manager:
+            with pytest.raises(ValueError):
+                _ = manager.charm.config["sync-ldap-url"]

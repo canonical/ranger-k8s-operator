@@ -47,6 +47,7 @@ class CharmConfig(BaseConfigModel):
     """Manager for the structured configuration."""
 
     system_users: str
+    ldap_credentials: Optional[str]
     ranger_admin_password: str
     ranger_usersync_password: str
     sync_ldap_url: Optional[str]
@@ -108,22 +109,59 @@ class CharmConfig(BaseConfigModel):
 
     @validator("sync_ldap_url")
     @classmethod
-    def sync_ldap_url_validator(cls, value: str) -> Optional[str]:
+    def sync_ldap_url_validator(cls, value: Optional[str]) -> Optional[str]:
         """Check validity of `sync_ldap_url` field.
 
         Args:
-            value: sync-ldap-url value
+            value: LDAP URL value
 
         Returns:
-            int_value: integer for sync-ldap-url configuration
+            LDAP URL value
 
         Raises:
-            ValueError: in the case when the value incorrectly formatted.
+            ValueError: If the URL is incorrectly formatted.
         """
+        if value is None:
+            return value
+
         ldap_url_pattern = r"^ldaps?://.*:\d+$"
         if re.match(ldap_url_pattern, value) is not None:
             return value
         raise ValueError("Value incorrectly formatted.")
+
+    @root_validator(skip_on_failure=True)
+    @classmethod
+    def ldap_credentials_completeness_validator(cls, values):
+        """Require every LDAP credential field when an LDAP secret is supplied.
+
+        Args:
+            values: Parsed configuration values.
+
+        Returns:
+            The validated configuration values.
+
+        Raises:
+            ValueError: If an LDAP secret omits a required value.
+        """
+        if not values.get("ldap_credentials"):
+            return values
+
+        required_fields = (
+            "sync_ldap_url",
+            "sync_ldap_bind_dn",
+            "sync_ldap_bind_password",
+            "sync_ldap_search_base",
+            "sync_ldap_user_search_base",
+            "sync_group_search_base",
+        )
+        missing_keys = [
+            field.replace("_", "-") for field in required_fields if values.get(field) is None
+        ]
+        if missing_keys:
+            raise ValueError(
+                "ldap-credentials secret is missing required keys: " + ", ".join(missing_keys)
+            )
+        return values
 
     @validator("policy_mgr_url")
     @classmethod

@@ -33,6 +33,26 @@ RELATION_VALUES = [
     "sync_group_search_base",
     "sync_ldap_url",
 ]
+USERSYNC_CONFIG_MAPPING = {
+    "sync_interval": "SYNC_INTERVAL",
+    "sync_ldap_url": "SYNC_LDAP_URL",
+    "sync_ldap_bind_dn": "SYNC_LDAP_BIND_DN",
+    "sync_ldap_bind_password": "SYNC_LDAP_BIND_PASSWORD",  # nosec B105
+    "sync_ldap_deltasync": "SYNC_LDAP_DELTASYNC",
+    "sync_ldap_search_base": "SYNC_LDAP_SEARCH_BASE",
+    "sync_ldap_user_search_base": "SYNC_LDAP_USER_SEARCH_BASE",
+    "sync_ldap_user_search_scope": "SYNC_LDAP_USER_SEARCH_SCOPE",
+    "sync_ldap_user_object_class": "SYNC_LDAP_USER_OBJECT_CLASS",
+    "sync_ldap_user_search_filter": "SYNC_LDAP_USER_SEARCH_FILTER",
+    "sync_ldap_user_name_attribute": "SYNC_LDAP_USER_NAME_ATTRIBUTE",
+    "sync_ldap_user_group_name_attribute": "SYNC_LDAP_USER_GROUP_NAME_ATTRIBUTE",
+    "sync_group_search_enabled": "SYNC_GROUP_SEARCH_ENABLED",
+    "sync_group_user_map_sync_enabled": "SYNC_GROUP_USER_MAP_SYNC_ENABLED",
+    "sync_group_search_base": "SYNC_GROUP_SEARCH_BASE",
+    "sync_ldap_group_search_scope": "SYNC_GROUP_SEARCH_SCOPE",
+    "sync_group_object_class": "SYNC_GROUP_OBJECT_CLASS",
+    "sync_group_member_attribute_name": "SYNC_GROUP_MEMBER_ATTRIBUTE_NAME",
+}
 
 # Observability literals
 METRICS_PORT = 6080

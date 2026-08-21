@@ -37,6 +37,7 @@ from literals import (
     METRICS_PORT,
     RELATION_VALUES,
     SUPPRESS_DEBUG_LOGS,
+    USERSYNC_CONFIG_MAPPING,
     USERSYNC_ENTRYPOINT,
 )
 from relations.ldap import LDAPRelationHandler
@@ -353,17 +354,15 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             USERSYNC_ENTRYPOINT: Entrypoint path for Ranger Usersync startup.
             context: Environment variables for pebble plan.
         """
-        context = {}
         ldap = self._state.ldap or {}
-        for key, value in vars(self.config).items():
-            if not key.startswith("sync"):
-                continue
-
-            if key in RELATION_VALUES:
-                value = ldap.get(key) or self.config[key]
-
-            updated_key = key.upper()
-            context[updated_key] = value
+        context = {}
+        for config_key, ranger_property in USERSYNC_CONFIG_MAPPING.items():
+            value = (
+                ldap.get(config_key) or self.config[config_key]
+                if config_key in RELATION_VALUES
+                else self.config[config_key]
+            )
+            context[ranger_property] = "" if value is None else value
 
         context.update(
             {

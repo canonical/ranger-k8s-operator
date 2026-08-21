@@ -218,6 +218,38 @@ def _service_dict(state_out):
     return service
 
 
+def _usersync_install_properties(ctx, config):
+    """Render usersync configuration and return its install.properties content.
+
+    Args:
+        ctx: Scenario context for the Ranger charm.
+        config: Usersync configuration overrides.
+
+    Returns:
+        Rendered usersync install.properties content.
+    """
+    ldap_rel = testing.Relation(
+        "ldap",
+        remote_app_name="comsys-openldap-k8s",
+        remote_app_data=LDAP_RELATION_CHANGED_DATA,
+    )
+    state_out = ctx.run(
+        ctx.on.relation_changed(ldap_rel),
+        testing.State(
+            leader=True,
+            config={
+                "charm-function": "usersync",
+                "policy-mgr-url": "http://ranger-k8s:6080",
+                **config,
+            },
+            containers={_container()},
+            relations={_peer(), ldap_rel},
+        ),
+    )
+    filesystem = state_out.get_container(RANGER).get_filesystem(ctx)
+    return (filesystem / "usr/lib/ranger/usersync/install.properties").read_text()
+
+
 def _carry(state):
     """Reset a carried-forward container's check to a healthy UP status.
 
@@ -336,9 +368,9 @@ def test_usersync_ready(ctx):
             "SYNC_INTERVAL": 3600,
             "SYNC_LDAP_BIND_DN": "cn=admin,dc=canonical,dc=dev,dc=com",
             "SYNC_LDAP_BIND_PASSWORD": "huedw7uiedw7",  # nosec
-            "SYNC_LDAP_GROUP_SEARCH_SCOPE": "sub",
+            "SYNC_GROUP_SEARCH_SCOPE": "sub",
             "SYNC_LDAP_SEARCH_BASE": "dc=canonical,dc=dev,dc=com",
-            "SYNC_LDAP_USER_SEARCH_FILTER": None,
+            "SYNC_LDAP_USER_SEARCH_FILTER": "",
             "SYNC_LDAP_URL": "ldap://comsys-openldap-k8s:389",
             "SYNC_LDAP_USER_GROUP_NAME_ATTRIBUTE": "memberOf",
             "SYNC_LDAP_USER_NAME_ATTRIBUTE": "uid",
@@ -353,6 +385,38 @@ def test_usersync_ready(ctx):
     assert (
         state_out.get_container(RANGER).service_statuses["ranger"] == pebble.ServiceStatus.ACTIVE
     )
+
+
+def test_usersync_renders_ldap_user_search_filter(ctx):
+    """Configured LDAP user search filters are rendered for Ranger."""
+    install_properties = _usersync_install_properties(
+        ctx,
+        {"sync-ldap-user-search-filter": "(department=engineering)"},
+    )
+
+    assert "SYNC_LDAP_USER_SEARCH_FILTER = (department=engineering)" in install_properties
+    assert "SYNC_GROUP_NAME_ATTRIBUTE= \n" in install_properties
+
+
+def test_usersync_renders_unset_values_as_empty(ctx):
+    """Unset usersync options render as empty property values."""
+    install_properties = _usersync_install_properties(ctx, {})
+
+    assert "SYNC_LDAP_USER_SEARCH_FILTER = \n" in install_properties
+    rendered_values = [
+        line.partition("=")[2].strip() for line in install_properties.splitlines() if "=" in line
+    ]
+    assert "None" not in rendered_values
+
+
+def test_usersync_renders_group_search_scope(ctx):
+    """Configured LDAP group search scopes are rendered for Ranger."""
+    install_properties = _usersync_install_properties(
+        ctx,
+        {"sync-ldap-group-search-scope": "one"},
+    )
+
+    assert "SYNC_GROUP_SEARCH_SCOPE= one" in install_properties
 
 
 def test_config_changed(ctx):

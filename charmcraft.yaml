@@ -139,12 +139,12 @@ config:
       type: string
     sync-group-user-map-sync-enabled:
       description: |
-        Set to true to sync groups without users.
+        Set to true to synchronize memberships of groups found through group search.
       type: boolean
       default: true
     sync-group-search-enabled:
       description: |
-        Set to true to sync groups without users.
+        Set to true to perform an ldapsearch to find groups rather than relying on user entry attributes.
       type: boolean
       default: true
     sync-group-search-base:
@@ -214,6 +214,7 @@ config:
       description: |
         The default timeout for the resource auto-complete
         functionality for Ranger service in ms.
+        Applies only to Ranger services created after the value is changed.
       type: int
       default: 3000
     ranger-usersync-password:

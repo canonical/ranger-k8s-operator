@@ -27,6 +27,7 @@ from ops.model import (
     WaitingStatus,
 )
 from ops.pebble import CheckStatus, ExecError
+from pydantic import ValidationError
 
 from literals import (
     ADMIN_ENTRYPOINT,
@@ -156,20 +157,6 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
 
         return f"http://{self.app.name}.{self.model.name}.svc.cluster.local:{APPLICATION_PORT}"
 
-    def _warn_deprecated_config(self):
-        """Log warnings if deprecated configuration options are set."""
-        raw = self.model.config
-        if raw.get("external-hostname"):
-            logger.warning(
-                "Config option 'external-hostname' is deprecated and has no effect. "
-                "Remove it from your configuration."
-            )
-        if raw.get("tls-secret-name"):
-            logger.warning(
-                "Config option 'tls-secret-name' is deprecated and has no effect. "
-                "Remove it from your configuration."
-            )
-
     @staticmethod
     def _configure_logging():
         """Suppress noisy third-party HTTP debug logs when enabled."""
@@ -202,7 +189,6 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         Args:
             event: The event triggered when the relation changed.
         """
-        self._warn_deprecated_config()
         self.update(event)
 
     @log_event_handler(logger)
@@ -246,7 +232,10 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         if not self._state.is_ready():
             return
 
-        charm_function = self.config["charm-function"].value
+        try:
+            charm_function = self.config["charm-function"].value
+        except ValidationError:
+            return
         if charm_function == "usersync":
             self.unit.status = ActiveStatus("Status check: UP")
             return
@@ -418,20 +407,17 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         Raises:
             ValueError: in case of invalid configuration.
         """
+        config = self.config
+
         if not self._state.is_ready():
             raise ValueError("peer relation not ready")
 
-        charm_function = self.config["charm-function"].value
+        charm_function = config["charm-function"].value
         if charm_function == "admin":
             self.postgres_relation_handler.validate()
 
         if charm_function == "usersync":
             self.ldap.validate()
-
-        if charm_function == "usersync" and not self.resolve_policy_manager_url():
-            raise ValueError(
-                "Missing required configuration: set 'policy-mgr-url' for usersync function."
-            )
 
         if self._state.opensearch and charm_function != "admin":
             raise ValueError("Only Ranger admin can relate to OpenSearch.")
@@ -450,6 +436,27 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             "ranger_usersync_password",
         )
 
+    @staticmethod
+    def _format_validation_error(error: ValidationError) -> str:
+        """Format a validation error for Juju status output.
+
+        Args:
+            error: The Pydantic validation error to format.
+
+        Returns:
+            A concise, actionable configuration error message.
+        """
+        messages = []
+        for validation_error in error.errors():
+            location = validation_error["loc"]
+            message = validation_error["msg"]
+            if location == ("__root__",):
+                messages.append(message)
+                continue
+            option = ".".join(str(part) for part in location).replace("_", "-")
+            messages.append(f"{option}: {message}")
+        return f"Invalid configuration: {'; '.join(messages)}"
+
     def update(self, event):
         """Update the Ranger server configuration and re-plan its execution.
 
@@ -458,6 +465,9 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         """
         try:
             self.validate()
+        except ValidationError as err:
+            self.unit.status = BlockedStatus(self._format_validation_error(err))
+            return
         except ValueError as err:
             self.unit.status = BlockedStatus(str(err))
             return

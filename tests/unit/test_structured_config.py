@@ -38,13 +38,48 @@ def test_string_values(ctx) -> None:
 
     # charm-function
     check_invalid_values(ctx, "charm-function", erroneus_values)
-    accepted_values = ["admin", "usersync"]
+    accepted_values = ["admin"]
     check_valid_values(ctx, "charm-function", accepted_values)
+    state = testing.State(
+        config={
+            "charm-function": "usersync",
+            "policy-mgr-url": "http://ranger-k8s:6080",
+        }
+    )
+    with ctx(ctx.on.config_changed(), state) as manager:
+        assert manager.charm.config["charm-function"] == "usersync"
 
     # sync-ldap-url
     check_invalid_values(ctx, "sync-ldap-url", erroneus_values)
     accepted_values = ["ldap://ldap-k8s:3893", "ldaps://example-host:636"]
     check_valid_values(ctx, "sync-ldap-url", accepted_values)
+
+
+def test_ldap_search_scopes(ctx) -> None:
+    """LDAP search scopes accept only Ranger-supported values."""
+    valid_scopes = ["base", "one", "sub"]
+    invalid_scopes = ["test-value", "foo", "bar"]
+    check_valid_values(ctx, "sync-ldap-user-search-scope", valid_scopes)
+    check_valid_values(ctx, "sync-ldap-group-search-scope", valid_scopes)
+    check_invalid_values(ctx, "sync-ldap-user-search-scope", invalid_scopes)
+    check_invalid_values(ctx, "sync-ldap-group-search-scope", invalid_scopes)
+
+
+def test_policy_mgr_url_values(ctx) -> None:
+    """Policy manager URLs require an HTTP(S) URL with a hostname."""
+    check_invalid_values(
+        ctx,
+        "policy-mgr-url",
+        ["ranger-k8s:6080", "ldap://ranger-k8s:6080", "https:///ranger-k8s"],
+    )
+    check_valid_values(
+        ctx,
+        "policy-mgr-url",
+        [
+            "http://ranger-k8s.my-model.svc.cluster.local:6080",
+            "https://host:443",
+        ],
+    )
 
 
 def test_password_fields(ctx) -> None:

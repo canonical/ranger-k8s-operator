@@ -553,7 +553,10 @@ def test_ldap_relation_broken(ctx):
     ldap_rel = testing.Relation("ldap", remote_app_name="comsys-openldap-k8s")
     state_in = testing.State(
         leader=True,
-        config={"charm-function": "usersync"},
+        config={
+            "charm-function": "usersync",
+            "policy-mgr-url": "http://ranger-k8s:6080",
+        },
         containers={_container()},
         relations={_peer({"ldap": LDAP_STATE}), ldap_rel},
     )
@@ -651,26 +654,26 @@ def test_usersync_blocked_without_policy_mgr_url(ctx):
         containers={_container()},
         relations={_peer(), ldap_rel},
     )
-    state_out = ctx.run(ctx.on.relation_changed(ldap_rel), state_in)
+    state_out = ctx.run(ctx.on.config_changed(), state_in)
 
     assert state_out.unit_status == testing.BlockedStatus(
-        "Missing required configuration: set 'policy-mgr-url' for usersync function."
+        "Invalid configuration: policy-mgr-url is required when charm-function is usersync."
     )
 
 
-def test_deprecated_config_no_error(ctx):
-    """Setting deprecated config options does not raise a validation error."""
+def test_invalid_config_blocks_without_hook_error(ctx):
+    """Invalid config values produce an actionable blocked status."""
     state_in = testing.State(
         leader=True,
-        model=testing.Model(name="ranger-model"),
-        config={"external-hostname": "my-hostname", "tls-secret-name": "my-tls-secret"},
+        config={"lookup-timeout": 999},
         containers={_container()},
         relations={_peer({"database_connection": DATABASE_CONNECTION})},
     )
     state_out = ctx.run(ctx.on.config_changed(), state_in)
 
-    assert state_out.unit_status != testing.BlockedStatus("external-hostname")
-    assert state_out.unit_status != testing.BlockedStatus("tls-secret-name")
+    assert state_out.unit_status == testing.BlockedStatus(
+        "Invalid configuration: lookup-timeout: Value out of range."
+    )
 
 
 def test_policy_mgr_url_from_ingress(ctx):

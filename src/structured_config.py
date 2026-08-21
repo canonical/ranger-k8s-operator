@@ -2,15 +2,16 @@
 # Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Structured configuration for the Superset charm."""
+"""Structured configuration for the Ranger charm."""
 
 import logging
 import re
 from enum import Enum
 from typing import Optional
+from urllib.parse import urlparse
 
 from charms.data_platform_libs.v0.data_models import BaseConfigModel
-from pydantic import validator
+from pydantic import root_validator, validator
 
 logger = logging.getLogger(__name__)
 
@@ -34,12 +35,18 @@ class FunctionType(str, Enum):
     usersync = "usersync"
 
 
+class SearchScope(BaseEnumStr):
+    """Enum for LDAP search scope fields."""
+
+    base = "base"
+    one = "one"
+    sub = "sub"
+
+
 class CharmConfig(BaseConfigModel):
     """Manager for the structured configuration."""
 
     ranger_admin_password: str
-    tls_secret_name: Optional[str]
-    external_hostname: Optional[str]
     sync_ldap_url: Optional[str]
     sync_ldap_bind_dn: Optional[str]
     sync_ldap_bind_password: Optional[str]
@@ -51,8 +58,8 @@ class CharmConfig(BaseConfigModel):
     sync_group_search_enabled: Optional[bool]
     sync_group_member_attribute_name: Optional[str]
     sync_group_search_base: Optional[str]
-    sync_ldap_user_search_scope: Optional[str]
-    sync_ldap_group_search_scope: Optional[str]
+    sync_ldap_user_search_scope: Optional[SearchScope]
+    sync_ldap_group_search_scope: Optional[SearchScope]
     sync_ldap_user_search_filter: Optional[str]
     sync_ldap_user_name_attribute: Optional[str]
     sync_ldap_user_group_name_attribute: Optional[str]
@@ -117,6 +124,32 @@ class CharmConfig(BaseConfigModel):
             return value
         raise ValueError("Value incorrectly formatted.")
 
+    @validator("policy_mgr_url")
+    @classmethod
+    def policy_mgr_url_validator(cls, value: Optional[str]) -> Optional[str]:
+        """Validate the policy manager URL format.
+
+        Args:
+            value: Policy manager URL.
+
+        Returns:
+            The validated URL.
+
+        Raises:
+            ValueError: If the URL does not use HTTP(S) or lacks a hostname.
+        """
+        if value is None:
+            return value
+
+        parsed = urlparse(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ValueError("Value incorrectly formatted.")
+        try:
+            parsed.port
+        except ValueError as err:
+            raise ValueError("Value incorrectly formatted.") from err
+        return value
+
     @validator("lookup_timeout")
     @classmethod
     def lookup_timeout_validator(cls, value: str) -> Optional[int]:
@@ -158,3 +191,23 @@ class CharmConfig(BaseConfigModel):
         if pattern.match(value):
             return value
         raise ValueError("Password does not match requirements.")
+
+    @root_validator
+    @classmethod
+    def usersync_policy_mgr_url_validator(cls, values):
+        """Require a policy manager URL for usersync deployments.
+
+        Args:
+            values: Parsed configuration values.
+
+        Returns:
+            The validated configuration values.
+
+        Raises:
+            ValueError: If usersync is configured without a policy manager URL.
+        """
+        if values.get("charm_function") == FunctionType.usersync and not values.get(
+            "policy_mgr_url"
+        ):
+            raise ValueError("policy-mgr-url is required when charm-function is usersync.")
+        return values

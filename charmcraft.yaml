@@ -105,16 +105,6 @@ config:
         Password should be minimum 8 characters with min one alphabet and one numeric.
       default: "rangerR0cks!"
       type: string
-    tls-secret-name:
-      description: |
-          DEPRECATED — no longer used. Remove this option from your config.
-          Name of the k8s secret which contains the TLS certificate to be used by ingress.
-      type: string
-    external-hostname:
-      description: |
-          DEPRECATED — no longer used. Remove this option from your config.
-          The DNS listing used for external connections.
-      type: string
     sync-ldap-url:
       description: |
         The url of the ldap to synchronize users from.

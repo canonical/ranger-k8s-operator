@@ -46,6 +46,11 @@ def deploy(juju: jubilant.Juju, charm: str, charm_image: str):
     resources = {
         "ranger-image": charm_image,
     }
+    secret_name = "ranger-system-users"  # nosec B105
+    secret_uri = juju.add_secret(
+        secret_name,
+        {"admin": "RangerAdmin1", "rangerusersync": "RangerUsersync1"},
+    )
     juju.deploy(POSTGRES_NAME, channel="14", trust=True)
     wait_for_apps(juju, [POSTGRES_NAME], status="active", timeout=1000)
 
@@ -54,9 +59,10 @@ def deploy(juju: jubilant.Juju, charm: str, charm_image: str):
         app=APP_NAME,
         resources=resources,
         num_units=1,
-        config={"ranger-usersync-password": "P@ssw0rd1234"},
+        config={"system-users": secret_uri.unique_identifier},
     )
     wait_for_apps(juju, [APP_NAME], status="blocked", timeout=1000)
+    juju.grant_secret(secret_name, APP_NAME)
 
     juju.integrate(APP_NAME, POSTGRES_NAME)
 

@@ -11,7 +11,7 @@ import string
 import time
 
 from apache_ranger.exceptions import RangerServiceException
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 
 def render(template_name, context):
@@ -27,7 +27,16 @@ def render(template_name, context):
     charm_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
     loader = FileSystemLoader(os.path.join(charm_dir, "templates"))
     return (
-        Environment(loader=loader, autoescape=True).get_template(template_name).render(**context)
+        Environment(
+            loader=loader,
+            autoescape=select_autoescape(
+                enabled_extensions=("html", "xml"),
+                default_for_string=False,
+                default=False,
+            ),
+        )
+        .get_template(template_name)
+        .render(**context)
     )
 
 

@@ -28,6 +28,7 @@ from ops.model import (
 )
 from ops.pebble import CheckStatus, ExecError
 from pydantic import ValidationError
+from pydantic.error_wrappers import ErrorWrapper
 
 from literals import (
     ADMIN_ENTRYPOINT,
@@ -69,6 +70,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             args: Ignore.
         """
         super().__init__(*args)
+        self._cached_config: Optional[CharmConfig] = None
         self._configure_logging()
         self._state = State(self.app, lambda: self.model.get_relation("peer"))
         self.name = "ranger"
@@ -76,6 +78,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         self.framework.observe(self.on.install, self._on_install)
         self.framework.observe(self.on.ranger_pebble_ready, self._on_ranger_pebble_ready)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
+        self.framework.observe(self.on.secret_changed, self._on_secret_changed)
         self.framework.observe(self.on.update_status, self._on_update_status)
         self.framework.observe(self.on.restart_action, self._on_restart)
         self.framework.observe(self.on.peer_relation_changed, self._on_peer_relation_changed)
@@ -134,6 +137,75 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             self, relation_name="grafana-dashboard"
         )
 
+    @property
+    def config(self) -> CharmConfig:
+        """Return the structured configuration resolved from Juju secrets.
+
+        Returns:
+            The cached configuration for the current hook.
+
+        Raises:
+            ValidationError: If configuration or the system-users secret is invalid.
+        """
+        if self._cached_config is None:
+            config = {key.replace("-", "_"): value for key, value in self.model.config.items()}
+            self._inject_system_users(config)
+            self._cached_config = CharmConfig(**config)
+        return self._cached_config
+
+    @staticmethod
+    def _secret_validation_error(message: str) -> ValidationError:
+        """Create a configuration validation error for the system-users option.
+
+        Args:
+            message: Actionable validation message that excludes secret contents.
+
+        Returns:
+            A validation error located at the system-users configuration option.
+        """
+        return ValidationError(
+            [ErrorWrapper(ValueError(message), loc="system_users")], CharmConfig
+        )
+
+    def _inject_system_users(self, config: dict) -> None:
+        """Resolve the system-users secret and add its passwords to the configuration.
+
+        Args:
+            config: Translated Juju configuration values to augment.
+
+        Raises:
+            ValidationError: If the secret cannot be resolved or is incomplete.
+        """
+        secret_id = config.get("system_users")
+        if not secret_id:
+            raise self._secret_validation_error(
+                "must be a Juju secret ID granted to this application."
+            )
+
+        try:
+            content = self.model.get_secret(id=secret_id).get_content(refresh=True)
+        except ops.SecretNotFoundError as err:
+            raise self._secret_validation_error(
+                "cannot be resolved; ensure the secret ID is valid and granted "
+                "to this application."
+            ) from err
+
+        required_keys = {
+            "admin": "ranger_admin_password",
+            "rangerusersync": "ranger_usersync_password",
+        }
+        for key, field in required_keys.items():
+            if key not in content:
+                raise self._secret_validation_error(
+                    f"secret 'system-users' is missing required key '{key}'."
+                )
+            if content[key] != "":
+                config[field] = content[key]
+
+    def _invalidate_config_cache(self) -> None:
+        """Discard the cached configuration before a new reconciliation."""
+        self._cached_config = None
+
     def resolve_policy_manager_url(self) -> Optional[str]:
         """Resolve the policy manager URL for the current charm function.
 
@@ -190,6 +262,16 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         Args:
             event: The event triggered when the relation changed.
         """
+        self.update(event)
+
+    @log_event_handler(logger)
+    def _on_secret_changed(self, event: ops.SecretChangedEvent):
+        """Reconcile after secret content changes.
+
+        Args:
+            event: The secret changed event.
+        """
+        self._invalidate_config_cache()
         self.update(event)
 
     @log_event_handler(logger)
@@ -378,28 +460,6 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         )
         return USERSYNC_ENTRYPOINT, context
 
-    def _validate_password(self, password, config_key, state_key):
-        """Validate that the admin and usersync passwords are not changed after deployment.
-
-        Args:
-            password: the deployment password.
-            config_key: the config key for the password.
-            state_key: the key the password is stored in state.
-
-        Raises:
-            ValueError: in case the password has been changed.
-        """
-        if password is None:
-            if self.unit.is_leader():
-                setattr(self._state, state_key, self.config[config_key])
-        elif password != self.config[config_key]:
-            message = (
-                f"value of '{config_key}' config cannot be changed after deployment. "
-                f"Value should be {password}"
-            )
-            logger.error(message)
-            raise ValueError(message)
-
     def validate(self):
         """Validate that configuration and relations are valid and ready.
 
@@ -420,20 +480,6 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
 
         if self._state.opensearch and charm_function != "admin":
             raise ValueError("Only Ranger admin can relate to OpenSearch.")
-
-        ranger_admin_password = self._state.ranger_admin_password
-        ranger_usersync_password = self._state.ranger_usersync_password
-
-        self._validate_password(
-            ranger_admin_password,
-            "ranger-admin-password",
-            "ranger_admin_password",
-        )
-        self._validate_password(
-            ranger_usersync_password,
-            "ranger-usersync-password",
-            "ranger_usersync_password",
-        )
 
     @staticmethod
     def _format_validation_error(error: ValidationError) -> str:

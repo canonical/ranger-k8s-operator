@@ -46,7 +46,9 @@ class SearchScope(BaseEnumStr):
 class CharmConfig(BaseConfigModel):
     """Manager for the structured configuration."""
 
+    system_users: str
     ranger_admin_password: str
+    ranger_usersync_password: str
     sync_ldap_url: Optional[str]
     sync_ldap_bind_dn: Optional[str]
     sync_ldap_bind_password: Optional[str]
@@ -65,7 +67,6 @@ class CharmConfig(BaseConfigModel):
     sync_ldap_user_group_name_attribute: Optional[str]
     sync_ldap_deltasync: bool
     sync_interval: Optional[int]
-    ranger_usersync_password: str
     policy_mgr_url: Optional[str]
     charm_function: FunctionType
     lookup_timeout: int
@@ -172,11 +173,13 @@ class CharmConfig(BaseConfigModel):
     @validator("ranger_admin_password", "ranger_usersync_password")
     @classmethod
     def password_validator(cls, value: str) -> str:
-        """Validate if the password meets the following requirements.
+        r"""Validate if the password meets the following requirements.
 
         - Minimum 8 characters in length
-        - Contains at least one alphabetic character
+        - Contains at least one uppercase character
+        - Contains at least one lowercase character
         - Contains at least one numeric character
+        - Does not contain `"`, `'`, `\`, or `` ` ``
 
         Args:
             value: The password to validate.
@@ -187,7 +190,7 @@ class CharmConfig(BaseConfigModel):
         Raises:
             ValueError: If the password does not meet the requirements.
         """
-        pattern = re.compile(r"^(?=.*[A-Za-z])(?=.*\d)(?=.*[\W_])[A-Za-z\d\W_]{8,}$")
+        pattern = re.compile(r"^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?!.*[\"'\\`]).{8,}$")
         if pattern.match(value):
             return value
         raise ValueError("Password does not match requirements.")

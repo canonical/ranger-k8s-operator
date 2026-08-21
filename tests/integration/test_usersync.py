@@ -33,8 +33,13 @@ class TestUserSync:
 
         ranger_config = {
             "charm-function": "usersync",
-            "ranger-usersync-password": "P@ssw0rd1234",
         }
+        secret_name = "ranger-usersync-system-users"  # nosec B105
+        secret_uri = juju.add_secret(
+            secret_name,
+            {"admin": "RangerAdmin1", "rangerusersync": "RangerUsersync1"},
+        )
+        ranger_config["system-users"] = secret_uri.unique_identifier
 
         resources = {
             "ranger-image": charm_image,
@@ -52,6 +57,7 @@ class TestUserSync:
             config=ranger_config,
         )
 
+        juju.grant_secret(secret_name, USERSYNC_NAME)
         juju.integrate(USERSYNC_NAME, LDAP_NAME)
         wait_for_apps(juju, [USERSYNC_NAME, LDAP_NAME], status="active", timeout=1500)
 

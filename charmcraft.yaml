@@ -97,13 +97,12 @@ actions:
 
 config:
   options:
-    ranger-admin-password:
+    system-users:
       description: |
-        The password for Ranger Admin user.
-        Password can not be changed using this property after initial deployment. 
-        It can be changed in the UI.
-        Password should be minimum 8 characters with min one alphabet and one numeric.
-      default: "rangerR0cks!"
+        The Juju secret ID containing Ranger internal user passwords, in `secret:...` format.
+        This is a secret ID, not the secret name. Create it with
+        `juju add-secret system-users admin=<password> rangerusersync=<password>`.
+        Grant the secret to this application with `juju grant-secret system-users <application>`.
       type: string
     sync-ldap-url:
       description: |
@@ -217,14 +216,6 @@ config:
         Applies only to Ranger services created after the value is changed.
       type: int
       default: 3000
-    ranger-usersync-password:
-      description: |
-        The password for the user that synchronizes users and groups from LDAP to Ranger admin.
-        Password can not be changed using this property after initial deployment. 
-        It can be changed in the UI.
-        Password should be minimum 8 characters with min one alphabet and one numeric.
-      type: string
-      default: rangerR0cks!
     enforce-strict-reconciliation:
       description: |
         Exclude populated roles from newly created default policies so reconciliation does not grant access.

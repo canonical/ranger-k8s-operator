@@ -13,11 +13,34 @@ from charm import RangerK8SCharm
 
 logger = logging.getLogger(__name__)
 
+SYSTEM_USERS_SECRET = testing.Secret(
+    {
+        "admin": "RangerAdmin1",
+        "rangerusersync": "RangerUsersync1",
+    }
+)
+
 
 @pytest.fixture
 def ctx():
     """Scenario context for the charm."""
     return testing.Context(RangerK8SCharm)
+
+
+def _state(config=None, secret=SYSTEM_USERS_SECRET):
+    """Build a Scenario state with a system-users secret.
+
+    Args:
+        config: Configuration overrides.
+        secret: The system-users secret available to the charm.
+
+    Returns:
+        A state configured to resolve the supplied secret.
+    """
+    return testing.State(
+        config={"system-users": secret.id, **(config or {})},
+        secrets={secret},
+    )
 
 
 def test_config_parsing_parameters_integer_values(ctx) -> None:
@@ -40,7 +63,7 @@ def test_string_values(ctx) -> None:
     check_invalid_values(ctx, "charm-function", erroneus_values)
     accepted_values = ["admin"]
     check_valid_values(ctx, "charm-function", accepted_values)
-    state = testing.State(
+    state = _state(
         config={
             "charm-function": "usersync",
             "policy-mgr-url": "http://ranger-k8s:6080",
@@ -83,35 +106,53 @@ def test_policy_mgr_url_values(ctx) -> None:
 
 
 def test_password_fields(ctx) -> None:
-    """Test password fields validation."""
+    """Passwords in system-users match Ranger's validation rules."""
     erroneous_passwords = [
-        "onlyletters",  # No numbers
-        "12345678",  # No letters
-        "NoSpecialChar123",  # No special characters
-        "Short1!",  # Too short
+        "Short1a",  # Too short
+        "nouppercase1",  # No uppercase character
+        "NOLOWERCASE1",  # No lowercase character
+        "NoNumbersHere",  # No numeric character
+        'Invalid"1Password',
+        "Invalid'1Password",
+        "Invalid\\1Password",
+        "Invalid`1Password",
     ]
 
     valid_passwords = [
-        "Valid1Pass!",
         "AnotherValid2#Password",
         "Password1$",
         "P@ssw0rd1234",
+        "NoSpecialChar123",
     ]
 
-    check_invalid_values(ctx, "ranger-admin-password", erroneous_passwords)
-    check_valid_values(ctx, "ranger-admin-password", valid_passwords)
+    for password in erroneous_passwords:
+        secret = testing.Secret({"admin": password, "rangerusersync": "RangerUsersync1"})
+        with ctx(ctx.on.config_changed(), _state(secret=secret)) as manager:
+            with pytest.raises(ValueError):
+                _ = manager.charm.config
 
-    check_invalid_values(ctx, "ranger-usersync-password", erroneous_passwords)
-    check_valid_values(ctx, "ranger-usersync-password", valid_passwords)
+    for password in valid_passwords:
+        secret = testing.Secret({"admin": password, "rangerusersync": password})
+        with ctx(ctx.on.config_changed(), _state(secret=secret)) as manager:
+            assert manager.charm.config["ranger-admin-password"] == password
+            assert manager.charm.config["ranger-usersync-password"] == password
+
+
+def test_empty_system_user_password_is_required(ctx) -> None:
+    """An empty secret value produces Pydantic's required-field error."""
+    secret = testing.Secret({"admin": "", "rangerusersync": "RangerUsersync1"})
+    with ctx(ctx.on.config_changed(), _state(secret=secret)) as manager:
+        with pytest.raises(ValueError, match=r"(?s)ranger_admin_password.*field required"):
+            _ = manager.charm.config
 
 
 def test_strict_reconciliation_configuration(ctx) -> None:
     """Strict reconciliation uses its declared default and accepts a toggle."""
-    state = testing.State()
+    state = _state()
     with ctx(ctx.on.config_changed(), state) as manager:
         assert manager.charm.config["enforce-strict-reconciliation"] is True
 
-    state = testing.State(
+    state = _state(
         config={
             "enforce-strict-reconciliation": False,
         }
@@ -129,7 +170,7 @@ def check_valid_values(ctx, field: str, accepted_values: list) -> None:
         accepted_values: List of accepted values for this field.
     """
     for value in accepted_values:
-        state = testing.State(config={field: value})
+        state = _state(config={field: value})
         with ctx(ctx.on.config_changed(), state) as manager:
             assert manager.charm.config[field] == value
 
@@ -143,7 +184,7 @@ def check_invalid_values(ctx, field: str, erroneus_values: list) -> None:
         erroneus_values: List of invalid values for this field.
     """
     for value in erroneus_values:
-        state = testing.State(config={field: value})
+        state = _state(config={field: value})
         with ctx(ctx.on.config_changed(), state) as manager:
             with pytest.raises(ValueError):
                 _ = manager.charm.config[field]

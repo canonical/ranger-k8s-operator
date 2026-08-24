@@ -14,7 +14,7 @@ from types import SimpleNamespace
 from unittest import TestCase, mock
 
 import pytest
-from ops import pebble, testing
+from ops import ModelError, pebble, testing
 from requests import ConnectionError, Timeout
 
 from charm import RangerK8SCharm
@@ -1234,6 +1234,30 @@ def test_missing_system_user_passwords_secret_blocks(ctx):
     )
 
     state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+    assert state_out.unit_status == testing.BlockedStatus(
+        "Invalid configuration: system-users: cannot be resolved; ensure the secret ID is valid "
+        "and granted to this application."
+    )
+
+
+def test_ungranted_system_user_passwords_secret_blocks(ctx):
+    """An ungranted secret blocks rather than erroring the hook.
+
+    Juju raises a plain ModelError with 'permission denied' when a secret exists
+    but has not been granted to the application, which is not a SecretNotFoundError.
+    """
+    state_in = _state(
+        leader=True,
+        containers={_container()},
+        relations={_peer({"database_connection": DATABASE_CONNECTION})},
+    )
+
+    with mock.patch(
+        "ops.model.Model.get_secret",
+        side_effect=ModelError("ERROR permission denied"),
+    ):
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
 
     assert state_out.unit_status == testing.BlockedStatus(
         "Invalid configuration: system-users: cannot be resolved; ensure the secret ID is valid "

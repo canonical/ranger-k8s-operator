@@ -43,7 +43,6 @@ class TestUserSync:
             secret_name,
             {"admin": "RangerAdmin1", "rangerusersync": "RangerUsersync1"},
         )
-        ranger_config["system-users"] = secret_uri.unique_identifier
         ldap_secret_name = "ranger-usersync-ldap-credentials"  # nosec B105
         ldap_secret_uri = juju.add_secret(
             ldap_secret_name,
@@ -52,8 +51,10 @@ class TestUserSync:
                 "sync-ldap-bind-password": "admin",
             },
         )
-        ranger_config["ldap-credentials"] = ldap_secret_uri.unique_identifier
-
+        secret_config = {
+            "system-users": secret_uri.unique_identifier,
+            "ldap-credentials": ldap_secret_uri.unique_identifier,
+        }
         resources = {
             "ranger-image": charm_image,
         }
@@ -72,6 +73,7 @@ class TestUserSync:
 
         juju.grant_secret(secret_name, USERSYNC_NAME)
         juju.grant_secret(ldap_secret_name, USERSYNC_NAME)
+        juju.config(USERSYNC_NAME, secret_config)
         juju.integrate(USERSYNC_NAME, LDAP_NAME)
         wait_for_apps(juju, [USERSYNC_NAME, LDAP_NAME], status="active", timeout=1500)
 

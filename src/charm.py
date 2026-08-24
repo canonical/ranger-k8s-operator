@@ -199,7 +199,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             )
         try:
             content = self.model.get_secret(id=secret_id).get_content(refresh=True)
-        except ops.SecretNotFoundError as err:
+        except ops.ModelError as err:
             raise SecretValidationError(
                 f"Invalid configuration: {option}: cannot be resolved; ensure the secret ID "
                 "is valid and granted to this application."

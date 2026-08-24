@@ -59,10 +59,10 @@ def deploy(juju: jubilant.Juju, charm: str, charm_image: str):
         app=APP_NAME,
         resources=resources,
         num_units=1,
-        config={"system-users": secret_uri.unique_identifier},
     )
     wait_for_apps(juju, [APP_NAME], status="blocked", timeout=1000)
     juju.grant_secret(secret_name, APP_NAME)
+    juju.config(APP_NAME, {"system-users": secret_uri.unique_identifier})
 
     juju.integrate(APP_NAME, POSTGRES_NAME)
 

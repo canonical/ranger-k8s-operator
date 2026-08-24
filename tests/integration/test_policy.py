@@ -16,6 +16,7 @@ from integration.helpers import (
     TRINO_SERVICE,
     get_unit_url,
     wait_for_apps,
+    wait_for_ranger_service,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,7 @@ class TestPolicyRelation:
         url = get_unit_url(juju, application=APP_NAME, unit=0, port=6080)
         ranger = ranger_client.RangerClient(url, RANGER_AUTH)
 
-        new_service = ranger.get_service(TRINO_SERVICE)
+        new_service = wait_for_ranger_service(ranger, TRINO_SERVICE)
         logger.info(f"service: {new_service}")
         name = new_service.get("name")
         assert TRINO_SERVICE in name

@@ -18,6 +18,7 @@ from literals import (
     DEFAULT_POLICIES,
     LOCALHOST_URL,
 )
+from secret_models import SecretValidationError
 from utils import log_event_handler
 
 logger = logging.getLogger(__name__)
@@ -75,6 +76,9 @@ class RangerProvider(Object):
         try:
             ranger = self._create_ranger_client()
             service, is_created = self._create_ranger_service(ranger, data, event)
+        except SecretValidationError as err:
+            self.charm._block_on_validation_error(err)
+            return
         except RangerServiceException:
             event.defer()
             logger.exception(
@@ -116,6 +120,9 @@ class RangerProvider(Object):
         try:
             service_id = self.charm._state.services[f"relation_{event.relation.id}"]
             self._delete_ranger_service(service_id, event.relation.id)
+        except SecretValidationError as err:
+            self.charm._block_on_validation_error(err)
+            return
         except RangerServiceException:
             logger.exception(
                 "A Ranger Service Exception has occurred while attempting to delete a service:"
@@ -204,7 +211,7 @@ class RangerProvider(Object):
         Returns:
             ranger: ranger client
         """
-        ranger_auth = (ADMIN_USER, self.charm.config["ranger-admin-password"])
+        ranger_auth = (ADMIN_USER, self.charm.system_users.admin)
         ranger_url = f"{LOCALHOST_URL}:{APPLICATION_PORT}"
         ranger = ranger_client.RangerClient(ranger_url, ranger_auth)
         return ranger

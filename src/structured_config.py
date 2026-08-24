@@ -5,7 +5,6 @@
 """Structured configuration for the Ranger charm."""
 
 import logging
-import re
 from enum import Enum
 from typing import Optional
 from urllib.parse import urlparse
@@ -48,19 +47,11 @@ class CharmConfig(BaseConfigModel):
 
     system_users: str
     ldap_credentials: Optional[str]
-    ranger_admin_password: str
-    ranger_usersync_password: str
-    sync_ldap_url: Optional[str]
-    sync_ldap_bind_dn: Optional[str]
-    sync_ldap_bind_password: Optional[str]
-    sync_ldap_search_base: Optional[str]
     sync_ldap_user_object_class: Optional[str]
     sync_group_object_class: Optional[str]
-    sync_ldap_user_search_base: Optional[str]
     sync_group_user_map_sync_enabled: Optional[bool]
     sync_group_search_enabled: Optional[bool]
     sync_group_member_attribute_name: Optional[str]
-    sync_group_search_base: Optional[str]
     sync_ldap_user_search_scope: Optional[SearchScope]
     sync_ldap_group_search_scope: Optional[SearchScope]
     sync_ldap_user_search_filter: Optional[str]
@@ -107,62 +98,6 @@ class CharmConfig(BaseConfigModel):
             return int_value
         raise ValueError("Value out of range.")
 
-    @validator("sync_ldap_url")
-    @classmethod
-    def sync_ldap_url_validator(cls, value: Optional[str]) -> Optional[str]:
-        """Check validity of `sync_ldap_url` field.
-
-        Args:
-            value: LDAP URL value
-
-        Returns:
-            LDAP URL value
-
-        Raises:
-            ValueError: If the URL is incorrectly formatted.
-        """
-        if value is None:
-            return value
-
-        ldap_url_pattern = r"^ldaps?://.*:\d+$"
-        if re.match(ldap_url_pattern, value) is not None:
-            return value
-        raise ValueError("Value incorrectly formatted.")
-
-    @root_validator(skip_on_failure=True)
-    @classmethod
-    def ldap_credentials_completeness_validator(cls, values):
-        """Require every LDAP credential field when an LDAP secret is supplied.
-
-        Args:
-            values: Parsed configuration values.
-
-        Returns:
-            The validated configuration values.
-
-        Raises:
-            ValueError: If an LDAP secret omits a required value.
-        """
-        if not values.get("ldap_credentials"):
-            return values
-
-        required_fields = (
-            "sync_ldap_url",
-            "sync_ldap_bind_dn",
-            "sync_ldap_bind_password",
-            "sync_ldap_search_base",
-            "sync_ldap_user_search_base",
-            "sync_group_search_base",
-        )
-        missing_keys = [
-            field.replace("_", "-") for field in required_fields if values.get(field) is None
-        ]
-        if missing_keys:
-            raise ValueError(
-                "ldap-credentials secret is missing required keys: " + ", ".join(missing_keys)
-            )
-        return values
-
     @validator("policy_mgr_url")
     @classmethod
     def policy_mgr_url_validator(cls, value: Optional[str]) -> Optional[str]:
@@ -207,31 +142,6 @@ class CharmConfig(BaseConfigModel):
         if 1000 <= int_value <= 10000:
             return int_value
         raise ValueError("Value out of range.")
-
-    @validator("ranger_admin_password", "ranger_usersync_password")
-    @classmethod
-    def password_validator(cls, value: str) -> str:
-        r"""Validate if the password meets the following requirements.
-
-        - Minimum 8 characters in length
-        - Contains at least one uppercase character
-        - Contains at least one lowercase character
-        - Contains at least one numeric character
-        - Does not contain `"`, `'`, `\`, or `` ` ``
-
-        Args:
-            value: The password to validate.
-
-        Returns:
-            value: The validated password if it meets the requirements.
-
-        Raises:
-            ValueError: If the password does not meet the requirements.
-        """
-        pattern = re.compile(r"^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?!.*[\"'\\`]).{8,}$")
-        if pattern.match(value):
-            return value
-        raise ValueError("Password does not match requirements.")
 
     @root_validator
     @classmethod

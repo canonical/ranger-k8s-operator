@@ -8,8 +8,10 @@ import logging
 
 import pytest
 from ops import testing
+from pydantic import ValidationError
 
 from charm import RangerK8SCharm
+from secret_models import LdapCredentials, SystemUsers
 
 logger = logging.getLogger(__name__)
 
@@ -81,9 +83,8 @@ def test_string_values(ctx) -> None:
     with ctx(ctx.on.config_changed(), state) as manager:
         assert manager.charm.config["charm-function"] == "usersync"
 
-    # LDAP credentials
-    check_invalid_ldap_urls(ctx, erroneus_values)
-    check_valid_ldap_urls(ctx, ["ldap://ldap-k8s:3893", "ldaps://example-host:636"])
+    check_invalid_ldap_urls(erroneus_values)
+    check_valid_ldap_urls(["ldap://ldap-k8s:3893", "ldaps://example-host:636"])
 
 
 def test_ldap_search_scopes(ctx) -> None:
@@ -134,24 +135,19 @@ def test_password_fields(ctx) -> None:
     ]
 
     for password in erroneous_passwords:
-        secret = testing.Secret({"admin": password, "rangerusersync": "RangerUsersync1"})
-        with ctx(ctx.on.config_changed(), _state(secret=secret)) as manager:
-            with pytest.raises(ValueError):
-                _ = manager.charm.config
+        with pytest.raises(ValidationError):
+            SystemUsers(admin=password, rangerusersync="RangerUsersync1")
 
     for password in valid_passwords:
-        secret = testing.Secret({"admin": password, "rangerusersync": password})
-        with ctx(ctx.on.config_changed(), _state(secret=secret)) as manager:
-            assert manager.charm.config["ranger-admin-password"] == password
-            assert manager.charm.config["ranger-usersync-password"] == password
+        users = SystemUsers(admin=password, rangerusersync=password)
+        assert users.admin == password
+        assert users.rangerusersync == password
 
 
 def test_empty_system_user_password_is_required(ctx) -> None:
     """An empty secret value produces Pydantic's required-field error."""
-    secret = testing.Secret({"admin": "", "rangerusersync": "RangerUsersync1"})
-    with ctx(ctx.on.config_changed(), _state(secret=secret)) as manager:
-        with pytest.raises(ValueError, match=r"(?s)ranger_admin_password.*field required"):
-            _ = manager.charm.config
+    with pytest.raises(ValidationError, match=r"(?s)admin.*field required"):
+        SystemUsers(admin="", rangerusersync="RangerUsersync1")
 
 
 def test_strict_reconciliation_configuration(ctx) -> None:
@@ -198,36 +194,24 @@ def check_invalid_values(ctx, field: str, erroneus_values: list) -> None:
                 _ = manager.charm.config[field]
 
 
-def check_valid_ldap_urls(ctx, accepted_values: list) -> None:
+def check_valid_ldap_urls(accepted_values: list) -> None:
     """Check LDAP URLs supplied through ldap-credentials.
 
     Args:
-        ctx: Scenario context.
         accepted_values: LDAP URLs expected to pass validation.
     """
     for value in accepted_values:
-        secret = testing.Secret({**LDAP_CREDENTIALS, "sync-ldap-url": value})
-        state = _state(
-            config={"ldap-credentials": secret.id},
-            secrets={secret},
+        assert (
+            LdapCredentials(**{**LDAP_CREDENTIALS, "sync-ldap-url": value}).sync_ldap_url == value
         )
-        with ctx(ctx.on.config_changed(), state) as manager:
-            assert manager.charm.config["sync-ldap-url"] == value
 
 
-def check_invalid_ldap_urls(ctx, erroneous_values: list) -> None:
+def check_invalid_ldap_urls(erroneous_values: list) -> None:
     """Check malformed LDAP URLs supplied through ldap-credentials.
 
     Args:
-        ctx: Scenario context.
         erroneous_values: LDAP URLs expected to fail validation.
     """
     for value in erroneous_values:
-        secret = testing.Secret({**LDAP_CREDENTIALS, "sync-ldap-url": value})
-        state = _state(
-            config={"ldap-credentials": secret.id},
-            secrets={secret},
-        )
-        with ctx(ctx.on.config_changed(), state) as manager:
-            with pytest.raises(ValueError):
-                _ = manager.charm.config["sync-ldap-url"]
+        with pytest.raises(ValidationError):
+            LdapCredentials(**{**LDAP_CREDENTIALS, "sync-ldap-url": value})

@@ -126,5 +126,5 @@ class LDAPRelationHandler(framework.Object):
         Raises:
             ValueError: if ldap parameters are not available.
         """
-        if not self.relation_values() and not self.charm.config["ldap-credentials"]:
+        if not self.relation_values() and not self.charm.ldap_credentials:
             raise ValueError("Add an LDAP relation or set ldap-credentials.")

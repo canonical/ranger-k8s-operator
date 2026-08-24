@@ -20,6 +20,7 @@ from requests import ConnectionError, Timeout
 from charm import RangerK8SCharm
 from ranger_client import RangerAPIClient, RangerAPIError, RangerAuthenticationError
 from relations.trino import TrinoCatalogRelationHandler
+from secret_models import SecretValidationError
 from state import State
 
 logger = logging.getLogger(__name__)
@@ -475,6 +476,29 @@ def test_update_status_blocks_rejected_credentials(ctx):
     )
 
 
+def test_update_status_blocks_invalid_system_users_secret(ctx):
+    """Status checks block when the system-users secret becomes invalid."""
+    secret = testing.Secret(
+        {
+            "admin": "invalidpassword1",
+            "rangerusersync": "RangerUsersync1",
+        }
+    )
+    state_in = _state(
+        leader=True,
+        config={"system-users": secret.id},
+        secrets={secret},
+        containers={_container()},
+        relations={_peer({"database_connection": DATABASE_CONNECTION})},
+    )
+
+    state_out = ctx.run(ctx.on.update_status(), state_in)
+
+    assert state_out.unit_status == testing.BlockedStatus(
+        "Invalid configuration: system-users: admin: Password does not match requirements."
+    )
+
+
 def test_usersync_ready(ctx):
     """The pebble plan is correctly generated when the charm is ready."""
     ldap_rel = testing.Relation(
@@ -596,10 +620,8 @@ def _trino_handler(catalogs, strict=True):
     handler = object.__new__(TrinoCatalogRelationHandler)
     charm = mock.MagicMock()
     charm._state.trino_catalogs = catalogs
-    charm.config = {
-        "ranger-admin-password": "rangerR0cks!",
-        "enforce-strict-reconciliation": strict,
-    }
+    charm.config = {"enforce-strict-reconciliation": strict}
+    charm.system_users.admin = "rangerR0cks!"
     charm.model.relations = {"trino-catalog": [mock.sentinel.trino_relation]}
     handler.charm = charm
     handler.relation_name = "trino-catalog"
@@ -624,6 +646,25 @@ def test_trino_reconciliation_threads_strict_config():
         catalogs,
         strict=False,
     )
+
+
+def test_trino_reconciliation_blocks_on_system_users_resolution_failure():
+    """Secret resolution errors outside update are converted to a blocked status."""
+    handler, charm = _trino_handler([{"name": "marketing"}])
+
+    class FailingSystemUsers:
+        """Raise the resolution failure when Trino accesses the admin password."""
+
+        @property
+        def admin(self):
+            """Raise the configured secret validation failure."""
+            raise SecretValidationError("Invalid configuration: system-users")
+
+    charm.system_users = FailingSystemUsers()
+
+    handler.run_reconciliation()
+
+    charm._block_on_validation_error.assert_called_once()
 
 
 def test_trino_relation_broken_clears_state_without_reconciliation():
@@ -969,7 +1010,7 @@ def test_invalid_ldap_credentials_url_blocks(ctx):
     state_out = ctx.run(ctx.on.config_changed(), state_in)
 
     assert state_out.unit_status == testing.BlockedStatus(
-        "Invalid configuration: sync-ldap-url: Value incorrectly formatted."
+        "Invalid configuration: ldap-credentials: sync-ldap-url: Value incorrectly formatted."
     )
 
 
@@ -1137,7 +1178,7 @@ def test_invalid_system_users_secret_blocks(ctx):
     state_out = ctx.run(ctx.on.config_changed(), state_in)
 
     assert state_out.unit_status == testing.BlockedStatus(
-        "Invalid configuration: ranger-admin-password: Password does not match requirements."
+        "Invalid configuration: system-users: admin: Password does not match requirements."
     )
 
 
@@ -1166,13 +1207,13 @@ def test_system_users_password_renders_literal_ampersand(ctx):
 
 
 def test_system_users_secret_is_cached_per_hook(ctx):
-    """Repeated configuration access resolves system-users only once per hook."""
+    """Repeated system-users access resolves its secret only once per hook."""
     with ctx(ctx.on.config_changed(), _state()) as manager:
         with mock.patch.object(
             manager.charm.model, "get_secret", wraps=manager.charm.model.get_secret
         ) as get_secret:
-            assert manager.charm.config["ranger-admin-password"] == "RangerAdmin1"
-            assert manager.charm.config["ranger-usersync-password"] == "RangerUsersync1"
+            assert manager.charm.system_users.admin == "RangerAdmin1"
+            assert manager.charm.system_users.rangerusersync == "RangerUsersync1"
 
     get_secret.assert_called_once_with(id=SYSTEM_USERS_SECRET.id)
 

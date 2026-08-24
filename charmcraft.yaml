@@ -100,17 +100,18 @@ config:
     system-users:
       description: |
         The Juju secret ID containing Ranger internal user passwords, in `secret:...` format.
-        This is a secret ID, not the secret name. Create it with
-        `juju add-secret system-users admin=<password> rangerusersync=<password>`.
-        Grant the secret to this application with `juju grant-secret system-users <application>`.
+        This is a secret ID, not the secret name. The secret must contain `admin` and
+        `rangerusersync` keys and be granted to this application. Each password must be at
+        least 8 characters long, contain uppercase, lowercase, and numeric characters, and
+        not contain `"`, `'`, `\`, or `` ` ``.
       type: string
     ldap-credentials:
       description: |
-        The Juju secret ID containing LDAP connection credentials, in `secret:...` format.
-        This is a secret ID, not the secret name. Create it with
-        `juju add-secret ldap-credentials sync-ldap-url=<url> sync-ldap-bind-dn=<dn> sync-ldap-bind-password=<password> sync-ldap-search-base=<base> sync-ldap-user-search-base=<base> sync-group-search-base=<base>`.
-        Grant the secret to this application with
-        `juju grant-secret ldap-credentials <application>`.
+        Optional Juju secret ID containing LDAP connection credentials, in `secret:...` format.
+        This is a secret ID, not the secret name. If set, the secret must contain all of
+        `sync-ldap-url`, `sync-ldap-bind-dn`, `sync-ldap-bind-password`, `sync-ldap-search-base`,
+        `sync-ldap-user-search-base`, and `sync-group-search-base` and be granted to this
+        application. `sync-ldap-url` must use the `ldap://host:port` or `ldaps://host:port` form.
       type: string
     sync-ldap-user-object-class:
       description: |

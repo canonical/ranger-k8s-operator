@@ -6,6 +6,7 @@
 
 import logging
 import subprocess  # nosec B404
+from enum import Enum
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -471,6 +472,25 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         container.push("/usr/lib/ranger/admin/install.properties", config, make_dirs=True)
         return ADMIN_ENTRYPOINT, context
 
+    @staticmethod
+    def _render_config_value(value):
+        """Render a configuration value for install.properties and the Pebble layer.
+
+        Pebble layers are serialised to YAML, which has no representer for enum
+        members, so enums are reduced to their underlying value.
+
+        Args:
+            value: Configuration value to render.
+
+        Returns:
+            The rendered value, or an empty string when unset.
+        """
+        if value is None:
+            return ""
+        if isinstance(value, Enum):
+            return value.value
+        return value
+
     def _configure_ranger_usersync(self, container):
         """Prepare Ranger Usersync install.properties file.
 
@@ -494,7 +514,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
                     value = self.config[config_key]
             elif value is None:
                 value = self.config[config_key]
-            context[ranger_property] = "" if value is None else value
+            context[ranger_property] = self._render_config_value(value)
 
         context.update(
             {

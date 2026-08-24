@@ -14,6 +14,7 @@ from types import SimpleNamespace
 from unittest import TestCase, mock
 
 import pytest
+import yaml
 from ops import ModelError, pebble, testing
 from requests import ConnectionError, Timeout
 
@@ -588,6 +589,32 @@ def test_usersync_renders_group_search_scope(ctx):
     )
 
     assert "SYNC_GROUP_SEARCH_SCOPE= one" in install_properties
+
+
+def test_usersync_layer_is_yaml_serialisable(ctx):
+    """Enum-backed options reach the Pebble layer as plain strings.
+
+    Pebble serialises layers to YAML, which cannot represent enum members, and an
+    equality assertion cannot catch this because SearchScope subclasses str.
+    """
+    ldap_rel = testing.Relation(
+        "ldap",
+        remote_app_name="comsys-openldap-k8s",
+        remote_app_data=LDAP_RELATION_CHANGED_DATA,
+    )
+    state_in = _state(
+        leader=True,
+        model=testing.Model(name="ranger-model"),
+        config={"charm-function": "usersync", "policy-mgr-url": "http://ranger-k8s:6080"},
+        containers={_container()},
+        relations={_peer(), ldap_rel},
+    )
+    state_out = ctx.run(ctx.on.relation_changed(ldap_rel), state_in)
+
+    environment = _service_dict(state_out)["environment"]
+    for name in ("SYNC_LDAP_USER_SEARCH_SCOPE", "SYNC_GROUP_SEARCH_SCOPE"):
+        assert type(environment[name]) is str, f"{name} is not a plain string"
+    yaml.safe_dump(environment)
 
 
 def test_ingress_requirer_publishes_app_data(ctx):
@@ -1239,6 +1266,34 @@ def test_missing_system_user_passwords_secret_blocks(ctx):
         "Invalid configuration: system-users: cannot be resolved; ensure the secret ID is valid "
         "and granted to this application."
     )
+
+
+def test_policy_relation_defers_when_secret_is_unresolvable(ctx):
+    """An unresolvable secret must not silently discard the policy relation event.
+
+    Dropping the event would leave the Ranger service uncreated with no later
+    trigger to retry, because service creation only happens on relation-changed.
+    """
+    policy_rel = testing.Relation(
+        "policy",
+        remote_app_name="trino-k8s",
+        remote_app_data=POLICY_RELATION_DATA,
+    )
+    state_in = _state(
+        leader=True,
+        model=testing.Model(name="ranger-model"),
+        containers={_container()},
+        relations={_peer({"database_connection": DATABASE_CONNECTION}), policy_rel},
+    )
+
+    with mock.patch(
+        "ops.model.Model.get_secret",
+        side_effect=ModelError("ERROR permission denied"),
+    ):
+        state_out = ctx.run(ctx.on.relation_changed(policy_rel), state_in)
+
+    assert state_out.deferred, "policy relation event was dropped instead of deferred"
+    assert isinstance(state_out.unit_status, testing.BlockedStatus)
 
 
 def test_ungranted_system_user_passwords_secret_blocks(ctx):

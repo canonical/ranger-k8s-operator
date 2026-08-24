@@ -78,11 +78,10 @@ class RangerProvider(Object):
         try:
             ranger = self._create_ranger_client()
             service, is_created = self._create_ranger_service(ranger, data, event)
-        except SecretValidationError as err:
+        except (SecretValidationError, ValidationError) as err:
             self.charm._block_on_validation_error(err)
+            event.defer()
             return
-        except ValidationError:
-            raise
         except RangerServiceException:
             event.defer()
             logger.exception(
@@ -97,6 +96,8 @@ class RangerProvider(Object):
         if not service:
             logger.debug("Unable to create service, deferring event.")
             event.defer()
+            self._set_policy_manager(event)
+            return
 
         if not is_created:
             self._set_policy_manager(event)

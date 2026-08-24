@@ -7,7 +7,7 @@ import logging
 
 from ops import framework
 
-from utils import log_event_handler
+from utils import log_event_handler, validation_error_handler
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +41,7 @@ class LDAPRelationHandler(framework.Object):
         )
 
     @log_event_handler(logger)
+    @validation_error_handler
     def _on_relation_created(self, event):
         """Handle ldap relation created.
 
@@ -57,6 +58,7 @@ class LDAPRelationHandler(framework.Object):
             event.relation.data[self.charm.app].update({"user": "admin"})
 
     @log_event_handler(logger)
+    @validation_error_handler
     def _on_relation_changed(self, event):
         """Handle ldap relation changed.
 
@@ -77,6 +79,7 @@ class LDAPRelationHandler(framework.Object):
         self.charm.update(event)
 
     @log_event_handler(logger)
+    @validation_error_handler
     def _on_relation_broken(self, event):
         """Handle ldap relation broken.
 
@@ -126,5 +129,15 @@ class LDAPRelationHandler(framework.Object):
         Raises:
             ValueError: if ldap parameters are not available.
         """
-        if not self.relation_values() and not self.charm.ldap_credentials:
-            raise ValueError("Add an LDAP relation or set ldap-credentials.")
+        if self.relation_values():
+            return
+
+        missing = []
+        if not self.charm.ldap_credentials:
+            missing.append("ldap-credentials")
+        if not self.charm.config["sync-ldap-url"]:
+            missing.append("sync-ldap-url")
+        if not self.charm.config["sync-ldap-search-base"]:
+            missing.append("sync-ldap-search-base")
+        if missing:
+            raise ValueError(f"Missing required LDAP configuration: {', '.join(missing)}.")

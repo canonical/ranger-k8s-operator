@@ -45,6 +45,15 @@ USERSYNC_CONFIG_MAPPING = {
     "sync_group_object_class": "SYNC_GROUP_OBJECT_CLASS",
     "sync_group_member_attribute_name": "SYNC_GROUP_MEMBER_ATTRIBUTE_NAME",
 }
+LDAP_BIND_CREDENTIAL_CONFIG_KEYS = frozenset({"sync_ldap_bind_dn", "sync_ldap_bind_password"})
+LDAP_TOPOLOGY_CONFIG_KEYS = frozenset(
+    {
+        "sync_ldap_url",
+        "sync_ldap_search_base",
+        "sync_ldap_user_search_base",
+        "sync_group_search_base",
+    }
+)
 
 # Observability literals
 METRICS_PORT = 6080

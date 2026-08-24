@@ -9,7 +9,7 @@ from charms.data_platform_libs.v0.data_interfaces import DatabaseCreatedEvent
 from ops import framework
 from ops.model import WaitingStatus
 
-from utils import log_event_handler
+from utils import log_event_handler, validation_error_handler
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,7 @@ class PostgresRelationHandler(framework.Object):
         )
 
     @log_event_handler(logger)
+    @validation_error_handler
     def _on_database_changed(self, event: DatabaseCreatedEvent) -> None:
         """Handle database creation/change events.
 
@@ -64,6 +65,7 @@ class PostgresRelationHandler(framework.Object):
         self.update(event)
 
     @log_event_handler(logger)
+    @validation_error_handler
     def _on_database_relation_broken(self, event: DatabaseCreatedEvent) -> None:
         """Handle broken relations with the database.
 

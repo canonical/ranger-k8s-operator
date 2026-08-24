@@ -19,6 +19,10 @@ from requests import ConnectionError, Timeout
 
 from charm import RangerK8SCharm
 from ranger_client import RangerAPIClient, RangerAPIError, RangerAuthenticationError
+from relations.ldap import LDAPRelationHandler
+from relations.opensearch import OpensearchRelationHandler
+from relations.postgres import PostgresRelationHandler
+from relations.provider import RangerProvider
 from relations.trino import TrinoCatalogRelationHandler
 from secret_models import SecretValidationError
 from state import State
@@ -31,10 +35,12 @@ LDAP_RELATION_CHANGED_DATA = {
     "ldap_url": "ldap://comsys-openldap-k8s:389",
 }
 LDAP_CREDENTIALS_CONTENT = {
-    "sync-ldap-url": "ldap://config-openldap-k8s:389",
     "sync-ldap-bind-password": "admin",  # nosec
-    "sync-ldap-search-base": "dc=canonical,dc=dev,dc=com",
     "sync-ldap-bind-dn": "dc=canonical,dc=dev,dc=com",
+}
+LDAP_CONFIG_VALUES = {
+    "sync-ldap-url": "ldap://config-openldap-k8s:389",
+    "sync-ldap-search-base": "dc=canonical,dc=dev,dc=com",
     "sync-ldap-user-search-base": "dc=canonical,dc=dev,dc=com",
     "sync-group-search-base": "dc=canonical,dc=dev,dc=com",
 }
@@ -128,7 +134,10 @@ SYSTEM_USERS_SECRET = testing.Secret(
     }
 )
 LDAP_CREDENTIALS_SECRET = testing.Secret(LDAP_CREDENTIALS_CONTENT)
-USERSYNC_CONFIG_VALUES = {"ldap-credentials": LDAP_CREDENTIALS_SECRET.id}
+USERSYNC_CONFIG_VALUES = {
+    "ldap-credentials": LDAP_CREDENTIALS_SECRET.id,
+    **LDAP_CONFIG_VALUES,
+}
 
 
 @pytest.fixture
@@ -476,7 +485,7 @@ def test_update_status_blocks_rejected_credentials(ctx):
     )
 
 
-def test_update_status_blocks_invalid_system_users_secret(ctx):
+def test_update_status_blocks_invalid_system_user_passwords_secret(ctx):
     """Status checks block when the system-users secret becomes invalid."""
     secret = testing.Secret(
         {
@@ -621,7 +630,7 @@ def _trino_handler(catalogs, strict=True):
     charm = mock.MagicMock()
     charm._state.trino_catalogs = catalogs
     charm.config = {"enforce-strict-reconciliation": strict}
-    charm.system_users.admin = "rangerR0cks!"
+    charm.system_user_passwords.admin = "rangerR0cks!"
     charm.model.relations = {"trino-catalog": [mock.sentinel.trino_relation]}
     handler.charm = charm
     handler.relation_name = "trino-catalog"
@@ -648,11 +657,11 @@ def test_trino_reconciliation_threads_strict_config():
     )
 
 
-def test_trino_reconciliation_blocks_on_system_users_resolution_failure():
+def test_trino_reconciliation_blocks_on_system_user_passwords_resolution_failure():
     """Secret resolution errors outside update are converted to a blocked status."""
     handler, charm = _trino_handler([{"name": "marketing"}])
 
-    class FailingSystemUsers:
+    class FailingSystemUserPasswords:
         """Raise the resolution failure when Trino accesses the admin password."""
 
         @property
@@ -660,7 +669,7 @@ def test_trino_reconciliation_blocks_on_system_users_resolution_failure():
             """Raise the configured secret validation failure."""
             raise SecretValidationError("Invalid configuration: system-users")
 
-    charm.system_users = FailingSystemUsers()
+    charm.system_user_passwords = FailingSystemUserPasswords()
 
     handler.run_reconciliation()
 
@@ -751,6 +760,87 @@ def test_on_policy_relation_broken(ctx):
     )
 
 
+INVALID_FUNCTION_STATUS = testing.BlockedStatus(
+    "Invalid configuration: charm-function: value is not a valid enumeration member; "
+    "permitted: 'admin', 'usersync'"
+)
+
+
+def _invalid_function_state():
+    """Return a ready state with invalid charm-function configuration.
+
+    Returns:
+        A charm state whose structured configuration cannot be resolved.
+    """
+    return _state(
+        leader=True,
+        config={"charm-function": "invalid"},
+        containers={_container()},
+        relations={_peer({"database_connection": DATABASE_CONNECTION})},
+    )
+
+
+def test_ldap_relation_handler_blocks_invalid_config(ctx):
+    """LDAP relation-created converts invalid configuration to blocked status."""
+    with ctx(ctx.on.config_changed(), _invalid_function_state()) as manager:
+        handler: LDAPRelationHandler = manager.charm.ldap
+        handler._on_relation_created(mock.MagicMock())
+
+        assert manager.charm.unit.status == INVALID_FUNCTION_STATUS
+
+
+def test_postgres_relation_handler_blocks_invalid_config(ctx):
+    """Postgres relation handling converts invalid configuration to blocked status."""
+    with ctx(ctx.on.config_changed(), _invalid_function_state()) as manager:
+        handler: PostgresRelationHandler = manager.charm.postgres_relation_handler
+        handler.update = mock.MagicMock(
+            side_effect=lambda event: manager.charm.config["charm-function"]
+        )
+        event = mock.MagicMock()
+        event.relation.name = "database"
+        handler._on_database_changed(event)
+
+        assert manager.charm.unit.status == INVALID_FUNCTION_STATUS
+
+
+def test_opensearch_relation_handler_blocks_invalid_config(ctx):
+    """OpenSearch relation handling converts invalid configuration to blocked status."""
+    with ctx(ctx.on.config_changed(), _invalid_function_state()) as manager:
+        handler: OpensearchRelationHandler = manager.charm.opensearch_relation_handler
+        handler.update = mock.MagicMock(
+            side_effect=lambda event, relation_broken=False: manager.charm.config["charm-function"]
+        )
+        handler._on_relation_broken(mock.MagicMock())
+
+        assert manager.charm.unit.status == INVALID_FUNCTION_STATUS
+
+
+def test_provider_relation_handler_blocks_validation_error(ctx):
+    """Provider re-raises a validation error to its hook-boundary guard."""
+    with ctx(ctx.on.config_changed(), _invalid_function_state()) as manager:
+        handler: RangerProvider = manager.charm.provider
+        ranger = mock.MagicMock()
+        ranger.get_service.return_value = None
+        handler._create_ranger_client = mock.MagicMock(return_value=ranger)
+        event = mock.MagicMock()
+        event.relation.data = {event.app: POLICY_RELATION_DATA}
+        handler._on_relation_changed(event)
+
+        assert manager.charm.unit.status == INVALID_FUNCTION_STATUS
+
+
+def test_trino_relation_handler_blocks_invalid_config(ctx):
+    """Trino relation handling converts invalid configuration to blocked status."""
+    with ctx(ctx.on.config_changed(), _invalid_function_state()) as manager:
+        handler: TrinoCatalogRelationHandler = manager.charm.trino_catalog_handler
+        manager.charm.update = mock.MagicMock(
+            side_effect=lambda event: manager.charm.config["charm-function"]
+        )
+        handler._on_relation_broken(mock.MagicMock())
+
+        assert manager.charm.unit.status == INVALID_FUNCTION_STATUS
+
+
 def test_ldap_relation_changed(ctx):
     """The charm uses live LDAP relation values without writing peer data."""
     ldap_rel = testing.Relation(
@@ -797,12 +887,12 @@ def test_ldap_relation_broken(ctx):
     state_out = ctx.run(ctx.on.relation_broken(ldap_rel), state_in)
 
     environment = _service_env(state_out)
-    assert environment["SYNC_LDAP_URL"] == LDAP_CREDENTIALS_CONTENT["sync-ldap-url"]
+    assert environment["SYNC_LDAP_URL"] == LDAP_CONFIG_VALUES["sync-ldap-url"]
     assert environment["SYNC_LDAP_BIND_DN"] == LDAP_CREDENTIALS_CONTENT["sync-ldap-bind-dn"]
 
 
 def test_usersync_blocks_without_ldap_source(ctx):
-    """Usersync blocks when neither LDAP source is available."""
+    """Usersync blocks when LDAP credentials and required topology are absent."""
     state_in = _state(
         leader=True,
         config={
@@ -816,12 +906,37 @@ def test_usersync_blocks_without_ldap_source(ctx):
     state_out = ctx.run(ctx.on.config_changed(), state_in)
 
     assert state_out.unit_status == testing.BlockedStatus(
-        "Add an LDAP relation or set ldap-credentials."
+        "Missing required LDAP configuration: ldap-credentials, sync-ldap-url, "
+        "sync-ldap-search-base."
     )
 
 
-def test_ldap_config_updated(ctx):
-    """The charm uses LDAP values from ldap-credentials."""
+@pytest.mark.parametrize("missing_option", ["sync-ldap-url", "sync-ldap-search-base"])
+def test_usersync_blocks_when_required_ldap_topology_is_missing(ctx, missing_option):
+    """Usersync blocks when required LDAP topology is missing without a relation."""
+    config = {
+        "charm-function": "usersync",
+        "policy-mgr-url": "http://ranger-k8s:6080",
+        **USERSYNC_CONFIG_VALUES,
+    }
+    del config[missing_option]
+    state_out = ctx.run(
+        ctx.on.config_changed(),
+        _state(
+            leader=True,
+            config=config,
+            containers={_container()},
+            relations={_peer()},
+        ),
+    )
+
+    assert state_out.unit_status == testing.BlockedStatus(
+        f"Missing required LDAP configuration: {missing_option}."
+    )
+
+
+def test_ldap_config_supplies_topology(ctx):
+    """The charm uses config values for LDAP topology."""
     state_in = _state(
         leader=True,
         config={
@@ -837,8 +952,8 @@ def test_ldap_config_updated(ctx):
     assert _service_env(state_out)["SYNC_LDAP_URL"] == "ldap://config-openldap-k8s:389"
 
 
-def test_ldap_credentials_render_all_values(ctx):
-    """Every LDAP credential value reaches usersync install.properties."""
+def test_ldap_credentials_and_config_render_all_values(ctx):
+    """LDAP bind credentials and topology config reach usersync install.properties."""
     state_in = _state(
         leader=True,
         config={
@@ -856,12 +971,12 @@ def test_ldap_credentials_render_all_values(ctx):
         state_out.get_container(RANGER).get_filesystem(ctx)
         / "usr/lib/ranger/usersync/install.properties"
     ).read_text()
-    for key, value in LDAP_CREDENTIALS_CONTENT.items():
+    for key, value in {**LDAP_CREDENTIALS_CONTENT, **LDAP_CONFIG_VALUES}.items():
         assert f"{key.replace('-', '_').upper()} = {value}" in install_properties
 
 
-def test_ldap_relation_values_override_secret_per_key(ctx):
-    """LDAP relation values override only their corresponding secret values."""
+def test_ldap_relation_values_override_secret_and_config_per_key(ctx):
+    """LDAP relation values override corresponding secret and config values."""
     relation_values = {
         "base_dn": "dc=relation,dc=canonical,dc=com",
         "ldap_url": "ldap://relation-openldap-k8s:389",
@@ -892,14 +1007,16 @@ def test_ldap_relation_values_override_secret_per_key(ctx):
         == LDAP_CREDENTIALS_CONTENT["sync-ldap-bind-password"]
     )
     assert environment["SYNC_LDAP_SEARCH_BASE"] == relation_values["base_dn"]
+    assert environment["SYNC_LDAP_USER_SEARCH_BASE"] == relation_values["base_dn"]
+    assert environment["SYNC_GROUP_SEARCH_BASE"] == relation_values["base_dn"]
 
 
 @pytest.mark.parametrize(
     "remote_app_data",
     [{}, {"ldap_url": "ldap://relation-openldap-k8s:389"}],
 )
-def test_incomplete_ldap_relation_falls_back_to_secret(ctx, remote_app_data):
-    """Incomplete LDAP relation data falls back to ldap-credentials."""
+def test_incomplete_ldap_relation_falls_back_to_secret_and_config(ctx, remote_app_data):
+    """Incomplete LDAP relation data falls back to secret and config."""
     ldap_rel = testing.Relation(
         "ldap",
         remote_app_name="comsys-openldap-k8s",
@@ -919,20 +1036,21 @@ def test_incomplete_ldap_relation_falls_back_to_secret(ctx, remote_app_data):
     state_out = ctx.run(ctx.on.config_changed(), state_in)
 
     environment = _service_env(state_out)
-    assert environment["SYNC_LDAP_URL"] == LDAP_CREDENTIALS_CONTENT["sync-ldap-url"]
+    assert environment["SYNC_LDAP_URL"] == LDAP_CONFIG_VALUES["sync-ldap-url"]
     assert environment["SYNC_LDAP_BIND_DN"] == LDAP_CREDENTIALS_CONTENT["sync-ldap-bind-dn"]
     assert "None" not in environment.values()
 
 
 def test_partial_ldap_credentials_secret_blocks(ctx):
     """A partial LDAP secret reports every missing key without exposing values."""
-    secret = testing.Secret({"sync-ldap-url": "ldap://ldap-k8s:389"})
+    secret = testing.Secret({"sync-ldap-bind-dn": "cn=admin,dc=canonical,dc=com"})
     state_in = _state(
         leader=True,
         config={
             "charm-function": "usersync",
             "policy-mgr-url": "http://ranger-k8s:6080",
             "ldap-credentials": secret.id,
+            **LDAP_CONFIG_VALUES,
         },
         secrets={secret},
         containers={_container()},
@@ -943,8 +1061,7 @@ def test_partial_ldap_credentials_secret_blocks(ctx):
 
     assert state_out.unit_status == testing.BlockedStatus(
         "Invalid configuration: ldap-credentials secret is missing required keys: "
-        "sync-ldap-bind-dn, sync-ldap-bind-password, sync-ldap-search-base, "
-        "sync-ldap-user-search-base, sync-group-search-base"
+        "sync-ldap-bind-password"
     )
 
 
@@ -958,6 +1075,7 @@ def test_empty_ldap_credentials_value_blocks(ctx, missing_key):
             "charm-function": "usersync",
             "policy-mgr-url": "http://ranger-k8s:6080",
             "ldap-credentials": secret.id,
+            **LDAP_CONFIG_VALUES,
         },
         secrets={secret},
         containers={_container()},
@@ -979,6 +1097,7 @@ def test_missing_ldap_credentials_secret_blocks(ctx):
             "charm-function": "usersync",
             "policy-mgr-url": "http://ranger-k8s:6080",
             "ldap-credentials": "secret:missing",
+            **LDAP_CONFIG_VALUES,
         },
         containers={_container()},
         relations={_peer()},
@@ -992,17 +1111,16 @@ def test_missing_ldap_credentials_secret_blocks(ctx):
     )
 
 
-def test_invalid_ldap_credentials_url_blocks(ctx):
-    """An LDAP URL from the secret is validated before usersync is configured."""
-    secret = testing.Secret({**LDAP_CREDENTIALS_CONTENT, "sync-ldap-url": "not-an-ldap-url"})
+def test_invalid_ldap_config_url_blocks(ctx):
+    """An LDAP URL from config is validated before usersync is configured."""
     state_in = _state(
         leader=True,
         config={
             "charm-function": "usersync",
             "policy-mgr-url": "http://ranger-k8s:6080",
-            "ldap-credentials": secret.id,
+            **USERSYNC_CONFIG_VALUES,
+            "sync-ldap-url": "not-an-ldap-url",
         },
-        secrets={secret},
         containers={_container()},
         relations={_peer()},
     )
@@ -1010,7 +1128,7 @@ def test_invalid_ldap_credentials_url_blocks(ctx):
     state_out = ctx.run(ctx.on.config_changed(), state_in)
 
     assert state_out.unit_status == testing.BlockedStatus(
-        "Invalid configuration: ldap-credentials: sync-ldap-url: Value incorrectly formatted."
+        "Invalid configuration: sync-ldap-url: Value incorrectly formatted."
     )
 
 
@@ -1106,7 +1224,7 @@ def test_invalid_config_blocks_without_hook_error(ctx):
     )
 
 
-def test_missing_system_users_secret_blocks(ctx):
+def test_missing_system_user_passwords_secret_blocks(ctx):
     """A missing or ungranted system-users secret blocks without a hook error."""
     state_in = testing.State(
         leader=True,
@@ -1123,7 +1241,7 @@ def test_missing_system_users_secret_blocks(ctx):
     )
 
 
-def test_malformed_system_users_secret_id_blocks(ctx):
+def test_malformed_system_user_passwords_secret_id_blocks(ctx):
     """A malformed system-users secret ID blocks without a hook error."""
     state_in = testing.State(
         leader=True,
@@ -1140,7 +1258,7 @@ def test_malformed_system_users_secret_id_blocks(ctx):
     )
 
 
-def test_incomplete_system_users_secret_blocks(ctx):
+def test_incomplete_system_user_passwords_secret_blocks(ctx):
     """A system-users secret missing rangerusersync blocks admin deployment."""
     secret = testing.Secret({"admin": "RangerAdmin1"})
     state_in = _state(
@@ -1159,7 +1277,7 @@ def test_incomplete_system_users_secret_blocks(ctx):
     )
 
 
-def test_invalid_system_users_secret_blocks(ctx):
+def test_invalid_system_user_passwords_secret_blocks(ctx):
     """An invalid password in system-users blocks without exposing its value."""
     secret = testing.Secret(
         {
@@ -1182,7 +1300,7 @@ def test_invalid_system_users_secret_blocks(ctx):
     )
 
 
-def test_system_users_password_renders_literal_ampersand(ctx):
+def test_system_user_passwords_password_renders_literal_ampersand(ctx):
     """Allowed password characters remain literal in rendered install.properties."""
     secret = testing.Secret(
         {
@@ -1206,19 +1324,19 @@ def test_system_users_password_renders_literal_ampersand(ctx):
     assert "Pa55word&amp;x&lt;y" not in install_properties
 
 
-def test_system_users_secret_is_cached_per_hook(ctx):
+def test_system_user_passwords_secret_is_cached_per_hook(ctx):
     """Repeated system-users access resolves its secret only once per hook."""
     with ctx(ctx.on.config_changed(), _state()) as manager:
         with mock.patch.object(
             manager.charm.model, "get_secret", wraps=manager.charm.model.get_secret
         ) as get_secret:
-            assert manager.charm.system_users.admin == "RangerAdmin1"
-            assert manager.charm.system_users.rangerusersync == "RangerUsersync1"
+            assert manager.charm.system_user_passwords.admin == "RangerAdmin1"
+            assert manager.charm.system_user_passwords.rangerusersync == "RangerUsersync1"
 
     get_secret.assert_called_once_with(id=SYSTEM_USERS_SECRET.id)
 
 
-def test_secret_changed_reconciles_with_latest_system_users_content(ctx):
+def test_secret_changed_reconciles_with_latest_system_user_passwords_content(ctx):
     """A secret-changed event bypasses stale cached configuration."""
     secret = testing.Secret(
         {
@@ -1272,6 +1390,29 @@ def test_policy_mgr_url_from_ingress(ctx):
     assert state_out.get_relation(policy_rel.id).local_app_data == {
         "policy_manager_url": "http://ranger-k8s.example.com:80",
     }
+
+
+def test_ingress_handler_blocks_invalid_config(ctx):
+    """Ingress readiness blocks malformed configuration without a hook error."""
+    ingress_rel = testing.Relation(
+        "ingress",
+        remote_app_name="traefik-k8s",
+        remote_app_data={"ingress": '{"url": "http://ranger-k8s.example.com/"}'},
+    )
+    state_out = ctx.run(
+        ctx.on.relation_changed(ingress_rel),
+        _state(
+            leader=True,
+            config={"charm-function": "invalid"},
+            containers={_container()},
+            relations={_peer({"database_connection": DATABASE_CONNECTION}), ingress_rel},
+        ),
+    )
+
+    assert state_out.unit_status == testing.BlockedStatus(
+        "Invalid configuration: charm-function: value is not a valid enumeration member; "
+        "permitted: 'admin', 'usersync'"
+    )
 
 
 class TestState(TestCase):

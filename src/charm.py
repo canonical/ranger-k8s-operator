@@ -34,6 +34,8 @@ from literals import (
     ADMIN_USER,
     APP_NAME,
     APPLICATION_PORT,
+    LDAP_BIND_CREDENTIAL_CONFIG_KEYS,
+    LDAP_TOPOLOGY_CONFIG_KEYS,
     LOCALHOST_URL,
     LOG_FILES,
     METRICS_PORT,
@@ -47,10 +49,10 @@ from relations.opensearch import OpensearchRelationHandler
 from relations.postgres import PostgresRelationHandler
 from relations.provider import RangerProvider
 from relations.trino import TrinoCatalogRelationHandler
-from secret_models import LdapCredentials, SecretValidationError, SystemUsers
+from secret_models import LdapCredentials, SecretValidationError, SystemUserPasswords
 from state import State
 from structured_config import CharmConfig
-from utils import generate_password, log_event_handler, render
+from utils import generate_password, log_event_handler, render, validation_error_handler
 
 # Log messages can be retrieved using juju debug-log
 logger = logging.getLogger(__name__)
@@ -73,7 +75,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             args: Ignore.
         """
         super().__init__(*args)
-        self._system_users: Optional[SystemUsers] = None
+        self._system_user_passwords: Optional[SystemUserPasswords] = None
         self._ldap_credentials: Optional[LdapCredentials] = None
         self._configure_logging()
         self._state = State(self.app, lambda: self.model.get_relation("peer"))
@@ -142,7 +144,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         )
 
     @property
-    def system_users(self) -> SystemUsers:
+    def system_user_passwords(self) -> SystemUserPasswords:
         """Resolve the system-users secret once for the current hook.
 
         Returns:
@@ -151,11 +153,11 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         Raises:
             SecretValidationError: If the configured secret is unavailable or invalid.
         """
-        if self._system_users is None:
-            self._system_users = self._resolve_secret(
-                "system-users", self.config["system-users"], SystemUsers
+        if self._system_user_passwords is None:
+            self._system_user_passwords = self._resolve_secret(
+                "system-users", self.config["system-users"], SystemUserPasswords
             )
-        return self._system_users
+        return self._system_user_passwords
 
     @property
     def ldap_credentials(self) -> Optional[LdapCredentials]:
@@ -241,7 +243,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
 
     def _clear_secret_cache(self) -> None:
         """Discard resolved secret models before reconciliation."""
-        self._system_users = None
+        self._system_user_passwords = None
         self._ldap_credentials = None
 
     def resolve_policy_manager_url(self) -> Optional[str]:
@@ -285,6 +287,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         self.unit.status = MaintenanceStatus("installing Ranger")
 
     @log_event_handler(logger)
+    @validation_error_handler
     def _on_ranger_pebble_ready(self, event: ops.PebbleReadyEvent):
         """Define and start ranger using the Pebble API.
 
@@ -294,6 +297,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         self.update(event)
 
     @log_event_handler(logger)
+    @validation_error_handler
     def _on_config_changed(self, event: ops.ConfigChangedEvent):
         """Handle configuration changes.
 
@@ -303,6 +307,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         self.update(event)
 
     @log_event_handler(logger)
+    @validation_error_handler
     def _on_secret_changed(self, event: ops.SecretChangedEvent):
         """Reconcile after secret content changes.
 
@@ -312,6 +317,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         self.update(event)
 
     @log_event_handler(logger)
+    @validation_error_handler
     def _on_ingress_ready(self, event):
         """Handle ingress URL becoming available.
 
@@ -321,6 +327,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         self.provider.reconcile_policy_manager_url()
 
     @log_event_handler(logger)
+    @validation_error_handler
     def _on_ingress_revoked(self, event):
         """Handle ingress URL being revoked.
 
@@ -330,6 +337,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         self.provider.reconcile_policy_manager_url()
 
     @log_event_handler(logger)
+    @validation_error_handler
     def _on_peer_relation_changed(self, event):
         """Handle peer relation changes.
 
@@ -343,6 +351,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         self.update(event)
 
     @log_event_handler(logger)
+    @validation_error_handler
     def _on_update_status(self, event):
         """Handle `update-status` events.
 
@@ -352,18 +361,10 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         if not self._state.is_ready():
             return
 
-        try:
-            charm_function = self.config["charm-function"].value
-        except ValidationError:
-            return
-        try:
-            credentials_rejected = self._probe_configured_credentials()
-        except SecretValidationError as err:
-            self._block_on_validation_error(err)
-            return
+        credentials_rejected = self._probe_configured_credentials()
         if credentials_rejected:
             return
-        if charm_function == "usersync":
+        if self.config["charm-function"].value == "usersync":
             self.unit.status = ActiveStatus("Status check: UP")
             return
 
@@ -459,12 +460,12 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             "OPENSEARCH_PWD": opensearch.get("password"),
             "OPENSEARCH_USER": opensearch.get("username"),
             "OPENSEARCH_ENABLED": opensearch.get("is_enabled"),
-            "RANGER_ADMIN_PWD": self.system_users.admin,
+            "RANGER_ADMIN_PWD": self.system_user_passwords.admin,
             "JAVA_OPTS": (
                 f"-Duser.timezone=UTC0"
                 f" -Djavax.net.ssl.trustStorePassword={self._state.truststore_pwd}"
             ),
-            "RANGER_USERSYNC_PWD": self.system_users.rangerusersync,
+            "RANGER_USERSYNC_PWD": self.system_user_passwords.rangerusersync,
         }
         config = render("admin-config.jinja", context)
         container.push("/usr/lib/ranger/admin/install.properties", config, make_dirs=True)
@@ -484,18 +485,21 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         ldap_credentials = self.ldap_credentials
         context = {}
         for config_key, ranger_property in USERSYNC_CONFIG_MAPPING.items():
-            if config_key in LdapCredentials.__fields__:
-                value = ldap.get(config_key) or (
-                    getattr(ldap_credentials, config_key) if ldap_credentials else None
-                )
-            else:
+            value = ldap.get(config_key)
+            if config_key in LDAP_BIND_CREDENTIAL_CONFIG_KEYS:
+                if not value:
+                    value = getattr(ldap_credentials, config_key) if ldap_credentials else None
+            elif config_key in LDAP_TOPOLOGY_CONFIG_KEYS:
+                if not value:
+                    value = self.config[config_key]
+            elif value is None:
                 value = self.config[config_key]
             context[ranger_property] = "" if value is None else value
 
         context.update(
             {
                 "POLICY_MGR_URL": self.resolve_policy_manager_url(),
-                "RANGER_USERSYNC_PWD": self.system_users.rangerusersync,
+                "RANGER_USERSYNC_PWD": self.system_user_passwords.rangerusersync,
             }
         )
         config = render("ranger-usersync-config.jinja", context)
@@ -513,7 +517,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             ValueError: in case of invalid configuration.
         """
         config = self.config
-        _ = self.system_users
+        _ = self.system_user_passwords
         if config["ldap-credentials"]:
             _ = self.ldap_credentials
 
@@ -535,16 +539,19 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
 
         Returns:
             Whether Ranger rejected the configured credentials.
+
+        Raises:
+            SecretValidationError: If the system-users secret is unavailable or invalid.
         """
         charm_function = self.config["charm-function"].value
         if charm_function == "usersync":
             url = self.config["policy-mgr-url"]
             username = "rangerusersync"
-            password = self.system_users.rangerusersync
+            password = self.system_user_passwords.rangerusersync
         else:
             url = f"{LOCALHOST_URL}:{APPLICATION_PORT}"
             username = ADMIN_USER
-            password = self.system_users.admin
+            password = self.system_user_passwords.admin
 
         try:
             RangerAPIClient(url, (username, password)).authenticate(self.API_PROBE_TIMEOUT)

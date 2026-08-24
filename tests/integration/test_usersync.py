@@ -33,6 +33,10 @@ class TestUserSync:
 
         ranger_config = {
             "charm-function": "usersync",
+            "sync-ldap-url": "ldap://comsys-openldap-k8s:389",
+            "sync-ldap-search-base": "dc=canonical,dc=dev,dc=com",
+            "sync-ldap-user-search-base": "dc=canonical,dc=dev,dc=com",
+            "sync-group-search-base": "dc=canonical,dc=dev,dc=com",
         }
         secret_name = "ranger-usersync-system-users"  # nosec B105
         secret_uri = juju.add_secret(
@@ -44,12 +48,8 @@ class TestUserSync:
         ldap_secret_uri = juju.add_secret(
             ldap_secret_name,
             {
-                "sync-ldap-url": "ldap://comsys-openldap-k8s:389",
                 "sync-ldap-bind-dn": "cn=admin,dc=canonical,dc=dev,dc=com",
                 "sync-ldap-bind-password": "admin",
-                "sync-ldap-search-base": "dc=canonical,dc=dev,dc=com",
-                "sync-ldap-user-search-base": "dc=canonical,dc=dev,dc=com",
-                "sync-group-search-base": "dc=canonical,dc=dev,dc=com",
             },
         )
         ranger_config["ldap-credentials"] = ldap_secret_uri.unique_identifier

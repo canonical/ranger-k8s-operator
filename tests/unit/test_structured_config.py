@@ -11,7 +11,7 @@ from ops import testing
 from pydantic import ValidationError
 
 from charm import RangerK8SCharm
-from secret_models import LdapCredentials, SystemUsers
+from secret_models import SystemUserPasswords
 
 logger = logging.getLogger(__name__)
 
@@ -21,14 +21,6 @@ SYSTEM_USERS_SECRET = testing.Secret(
         "rangerusersync": "RangerUsersync1",
     }
 )
-LDAP_CREDENTIALS = {
-    "sync-ldap-url": "ldap://ldap-k8s:389",
-    "sync-ldap-bind-dn": "cn=admin,dc=canonical,dc=com",
-    "sync-ldap-bind-password": "admin",  # nosec
-    "sync-ldap-search-base": "dc=canonical,dc=com",
-    "sync-ldap-user-search-base": "dc=canonical,dc=com",
-    "sync-group-search-base": "dc=canonical,dc=com",
-}
 
 
 @pytest.fixture
@@ -83,8 +75,18 @@ def test_string_values(ctx) -> None:
     with ctx(ctx.on.config_changed(), state) as manager:
         assert manager.charm.config["charm-function"] == "usersync"
 
-    check_invalid_ldap_urls(erroneus_values)
-    check_valid_ldap_urls(["ldap://ldap-k8s:3893", "ldaps://example-host:636"])
+    check_invalid_values(ctx, "sync-ldap-url", erroneus_values)
+    check_valid_values(ctx, "sync-ldap-url", ["ldap://ldap-k8s:3893", "ldaps://example-host:636"])
+
+
+@pytest.mark.parametrize("value", [None, ""])
+def test_unset_ldap_url_is_accepted(ctx, value):
+    """Unset and blank LDAP URLs do not cause a validation type error."""
+    config = {} if value is None else {"sync-ldap-url": value}
+    state = _state(config=config)
+
+    with ctx(ctx.on.config_changed(), state) as manager:
+        assert manager.charm.config["sync-ldap-url"] is None
 
 
 def test_ldap_search_scopes(ctx) -> None:
@@ -136,10 +138,10 @@ def test_password_fields(ctx) -> None:
 
     for password in erroneous_passwords:
         with pytest.raises(ValidationError):
-            SystemUsers(admin=password, rangerusersync="RangerUsersync1")
+            SystemUserPasswords(admin=password, rangerusersync="RangerUsersync1")
 
     for password in valid_passwords:
-        users = SystemUsers(admin=password, rangerusersync=password)
+        users = SystemUserPasswords(admin=password, rangerusersync=password)
         assert users.admin == password
         assert users.rangerusersync == password
 
@@ -147,7 +149,7 @@ def test_password_fields(ctx) -> None:
 def test_empty_system_user_password_is_required(ctx) -> None:
     """An empty secret value produces Pydantic's required-field error."""
     with pytest.raises(ValidationError, match=r"(?s)admin.*field required"):
-        SystemUsers(admin="", rangerusersync="RangerUsersync1")
+        SystemUserPasswords(admin="", rangerusersync="RangerUsersync1")
 
 
 def test_strict_reconciliation_configuration(ctx) -> None:
@@ -192,26 +194,3 @@ def check_invalid_values(ctx, field: str, erroneus_values: list) -> None:
         with ctx(ctx.on.config_changed(), state) as manager:
             with pytest.raises(ValueError):
                 _ = manager.charm.config[field]
-
-
-def check_valid_ldap_urls(accepted_values: list) -> None:
-    """Check LDAP URLs supplied through ldap-credentials.
-
-    Args:
-        accepted_values: LDAP URLs expected to pass validation.
-    """
-    for value in accepted_values:
-        assert (
-            LdapCredentials(**{**LDAP_CREDENTIALS, "sync-ldap-url": value}).sync_ldap_url == value
-        )
-
-
-def check_invalid_ldap_urls(erroneous_values: list) -> None:
-    """Check malformed LDAP URLs supplied through ldap-credentials.
-
-    Args:
-        erroneous_values: LDAP URLs expected to fail validation.
-    """
-    for value in erroneous_values:
-        with pytest.raises(ValidationError):
-            LdapCredentials(**{**LDAP_CREDENTIALS, "sync-ldap-url": value})

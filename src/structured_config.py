@@ -5,6 +5,7 @@
 """Structured configuration for the Ranger charm."""
 
 import logging
+import re
 from enum import Enum
 from typing import Optional
 from urllib.parse import urlparse
@@ -57,6 +58,10 @@ class CharmConfig(BaseConfigModel):
     sync_ldap_user_search_filter: Optional[str]
     sync_ldap_user_name_attribute: Optional[str]
     sync_ldap_user_group_name_attribute: Optional[str]
+    sync_ldap_url: Optional[str]
+    sync_ldap_search_base: Optional[str]
+    sync_ldap_user_search_base: Optional[str]
+    sync_group_search_base: Optional[str]
     sync_ldap_deltasync: bool
     sync_interval: Optional[int]
     policy_mgr_url: Optional[str]
@@ -123,6 +128,27 @@ class CharmConfig(BaseConfigModel):
         except ValueError as err:
             raise ValueError("Value incorrectly formatted.") from err
         return value
+
+    @validator("sync_ldap_url")
+    @classmethod
+    def sync_ldap_url_validator(cls, value: Optional[str]) -> Optional[str]:
+        """Validate the LDAP URL format.
+
+        Args:
+            value: LDAP URL to validate.
+
+        Returns:
+            The validated LDAP URL, or None when it is unset.
+
+        Raises:
+            ValueError: If the URL is incorrectly formatted.
+        """
+        if value is None:
+            return value
+        ldap_url_pattern = r"^ldaps?://.*:\d+$"
+        if re.match(ldap_url_pattern, value) is not None:
+            return value
+        raise ValueError("Value incorrectly formatted.")
 
     @validator("lookup_timeout")
     @classmethod

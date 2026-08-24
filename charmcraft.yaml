@@ -107,11 +107,27 @@ config:
       type: string
     ldap-credentials:
       description: |
-        Optional Juju secret ID containing LDAP connection credentials, in `secret:...` format.
-        This is a secret ID, not the secret name. If set, the secret must contain all of
-        `sync-ldap-url`, `sync-ldap-bind-dn`, `sync-ldap-bind-password`, `sync-ldap-search-base`,
-        `sync-ldap-user-search-base`, and `sync-group-search-base` and be granted to this
-        application. `sync-ldap-url` must use the `ldap://host:port` or `ldaps://host:port` form.
+        Optional Juju secret ID containing LDAP bind credentials, in `secret:...` format.
+        This is a secret ID, not the secret name. If set, the secret must contain
+        `sync-ldap-bind-dn` and `sync-ldap-bind-password` and be granted to this application.
+      type: string
+    sync-ldap-url:
+      description: |
+        The URL of the LDAP server to synchronise users from, in `ldap://<host>:<port>` or
+        `ldaps://<host>:<port>` format.
+      type: string
+    sync-ldap-search-base:
+      description: |
+        Search base for LDAP users and groups.
+      type: string
+    sync-ldap-user-search-base:
+      description: |
+        Search base for LDAP users. Overrides `sync-ldap-search-base`.
+      type: string
+    sync-group-search-base:
+      description: |
+        Search base for LDAP groups. If unset, Ranger uses `sync-ldap-search-base`; if that is
+        also unset, Ranger uses `sync-ldap-user-search-base`.
       type: string
     sync-ldap-user-object-class:
       description: |

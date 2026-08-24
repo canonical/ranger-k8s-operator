@@ -73,7 +73,7 @@ class TestUpgrade:
         response = requests.get(url, timeout=300)
         assert response.status_code == 200
 
-    def test_system_users_secret_applied(self, juju: jubilant.Juju):
+    def test_system_user_passwords_secret_applied(self, juju: jubilant.Juju):
         """Validate the application remains active after the secret-backed upgrade."""
         status = juju.status()
         assert status.apps[APP_NAME].units[f"{APP_NAME}/0"].workload_status.current == "active"

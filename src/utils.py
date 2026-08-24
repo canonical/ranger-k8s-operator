@@ -12,6 +12,9 @@ import time
 
 from apache_ranger.exceptions import RangerServiceException
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from pydantic import ValidationError
+
+from secret_models import SecretValidationError
 
 
 def render(template_name, context):
@@ -80,6 +83,34 @@ def log_event_handler(logger):
         return decorated
 
     return decorator
+
+
+def validation_error_handler(method):
+    """Contain configuration and secret validation failures at hook boundaries.
+
+    Args:
+        method: Event handler to wrap.
+
+    Returns:
+        The guarded event handler.
+    """
+
+    @functools.wraps(method)
+    def guarded(self, event):
+        """Run an event handler and convert validation errors to blocked status.
+
+        Args:
+            self: Object owning the event handler.
+            event: Event dispatched by the Juju framework.
+        """
+        try:
+            return method(self, event)
+        except (ValidationError, SecretValidationError) as err:
+            charm = getattr(self, "charm", self)
+            charm._block_on_validation_error(err)
+            return None
+
+    return guarded
 
 
 def retry(max_retries=3, delay=2, backoff=2):

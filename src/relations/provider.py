@@ -11,6 +11,7 @@ from apache_ranger.model import ranger_service
 from ops.charm import CharmBase
 from ops.framework import Object
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
+from pydantic import ValidationError
 
 from literals import (
     ADMIN_USER,
@@ -19,7 +20,7 @@ from literals import (
     LOCALHOST_URL,
 )
 from secret_models import SecretValidationError
-from utils import log_event_handler
+from utils import log_event_handler, validation_error_handler
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ class RangerProvider(Object):
         self.charm = charm
 
     @log_event_handler(logger)
+    @validation_error_handler
     def _on_relation_changed(self, event):
         """Handle policy relation changed event.
 
@@ -79,6 +81,8 @@ class RangerProvider(Object):
         except SecretValidationError as err:
             self.charm._block_on_validation_error(err)
             return
+        except ValidationError:
+            raise
         except RangerServiceException:
             event.defer()
             logger.exception(
@@ -105,6 +109,7 @@ class RangerProvider(Object):
         self.charm.unit.status = ActiveStatus()
 
     @log_event_handler(logger)
+    @validation_error_handler
     def _on_relation_broken(self, event):
         """Handle on relation broken event.
 
@@ -211,7 +216,7 @@ class RangerProvider(Object):
         Returns:
             ranger: ranger client
         """
-        ranger_auth = (ADMIN_USER, self.charm.system_users.admin)
+        ranger_auth = (ADMIN_USER, self.charm.system_user_passwords.admin)
         ranger_url = f"{LOCALHOST_URL}:{APPLICATION_PORT}"
         ranger = ranger_client.RangerClient(ranger_url, ranger_auth)
         return ranger

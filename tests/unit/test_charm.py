@@ -413,7 +413,7 @@ def test_authentication_probe_blocks_rejected_admin_credentials(ctx):
         state_out = ctx.run(ctx.on.config_changed(), state_in)
 
     assert state_out.unit_status == testing.BlockedStatus(
-        "Ranger authentication failed for admin. Revert the system-users secret and change "
+        "Ranger authentication failed for admin. Revert the system-users secret or change "
         "the password in the Ranger UI."
     )
     assert "RangerAdmin1" not in state_out.unit_status.message
@@ -481,7 +481,7 @@ def test_update_status_blocks_rejected_credentials(ctx):
         state_out = ctx.run(ctx.on.update_status(), _carry(state))
 
     assert state_out.unit_status == testing.BlockedStatus(
-        "Ranger authentication failed for admin. Revert the system-users secret and change "
+        "Ranger authentication failed for admin. Revert the system-users secret or change "
         "the password in the Ranger UI."
     )
 

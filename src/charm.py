@@ -578,7 +578,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         except RangerAuthenticationError:
             self.unit.status = BlockedStatus(
                 f"Ranger authentication failed for {username}. Revert the system-users secret "
-                "and change the password in the Ranger UI."
+                "or change the password in the Ranger UI."
             )
             return True
         except RangerAPIError:

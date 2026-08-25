@@ -8,12 +8,13 @@ summary: Kubernetes operator for Apache Ranger
 description: |
   Apache Ranger is a framework to enable, monitor, and manage comprehensive data security.
 
-platforms:
-  ubuntu-22.04-amd64:
-    build-on:
-      - ubuntu@22.04:amd64
-    build-for:
-      - ubuntu@22.04:amd64
+bases:
+  - build-on:
+    - name: ubuntu
+      channel: "22.04"
+    run-on:
+    - name: ubuntu
+      channel: "22.04"
 
 charm-libs:
   - lib: data_platform_libs.data_interfaces

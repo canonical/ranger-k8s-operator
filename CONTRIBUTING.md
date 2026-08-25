@@ -122,6 +122,15 @@ Then, deploy with the local resource:
 make deploy-local
 ```
 
+The charm requires a `system-users` Juju secret before it can become active.
+Follow the [credential procedure in the README](./README.md#deploying-ranger-and-postgresql-database-in-microk8s),
+then grant the secret to the local application and configure its ID:
+
+```shell
+juju grant-secret system-users ranger-k8s
+juju config ranger-k8s system-users="$SYSTEM_USERS"
+```
+
 Relate it to dependencies:
 
 ```shell

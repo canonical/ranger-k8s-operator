@@ -12,7 +12,6 @@ import requests
 from integration.helpers import (
     APP_NAME,
     POSTGRES_NAME,
-    SECURE_PWD,
     get_unit_url,
     wait_for_apps,
 )
@@ -25,8 +24,7 @@ def deploy(juju: jubilant.Juju):
     """Deploy the app."""
     juju.deploy(POSTGRES_NAME, channel="14", trust=True)
 
-    ranger_config = {"ranger-admin-password": SECURE_PWD}
-    juju.deploy(APP_NAME, channel="edge", config=ranger_config)
+    juju.deploy(APP_NAME, channel="edge")
 
     wait_for_apps(juju, [POSTGRES_NAME], status="active", timeout=1500)
     wait_for_apps(juju, [APP_NAME], status="blocked", timeout=1000)
@@ -52,7 +50,15 @@ class TestUpgrade:
             "ranger-image": charm_image,
         }
 
+        secret_name = "ranger-upgrade-system-users"  # nosec B105
+        secret_uri = juju.add_secret(
+            secret_name,
+            {"admin": "rangerR0cks!", "rangerusersync": "RangerUsersync1"},  # nosec B105
+        )
+        juju.grant_secret(secret_name, APP_NAME)
+
         juju.refresh(APP_NAME, path=str(charm), resources=resources)
+        juju.config(APP_NAME, {"system-users": secret_uri.unique_identifier})
         wait_for_apps(juju, [APP_NAME], status="active", timeout=600, idle_period=30)
 
         status = juju.status()
@@ -67,7 +73,7 @@ class TestUpgrade:
         response = requests.get(url, timeout=300)
         assert response.status_code == 200
 
-    def test_config_unchanged(self, juju: jubilant.Juju):
-        """Validate config remains unchanged."""
-        password = juju.config(APP_NAME)["ranger-admin-password"]
-        assert password == SECURE_PWD
+    def test_system_user_passwords_secret_applied(self, juju: jubilant.Juju):
+        """Validate the application remains active after the secret-backed upgrade."""
+        status = juju.status()
+        assert status.apps[APP_NAME].units[f"{APP_NAME}/0"].workload_status.current == "active"

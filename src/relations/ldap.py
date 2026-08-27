@@ -7,8 +7,7 @@ import logging
 
 from ops import framework
 
-from literals import RELATION_VALUES
-from utils import log_event_handler
+from utils import log_event_handler, validation_error_handler
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +41,7 @@ class LDAPRelationHandler(framework.Object):
         )
 
     @log_event_handler(logger)
+    @validation_error_handler
     def _on_relation_created(self, event):
         """Handle ldap relation created.
 
@@ -58,6 +58,7 @@ class LDAPRelationHandler(framework.Object):
             event.relation.data[self.charm.app].update({"user": "admin"})
 
     @log_event_handler(logger)
+    @validation_error_handler
     def _on_relation_changed(self, event):
         """Handle ldap relation changed.
 
@@ -75,20 +76,10 @@ class LDAPRelationHandler(framework.Object):
             event.defer()
             return
 
-        event_data = event.relation.data[event.app]
-        base_dn = event_data.get("base_dn")
-        self.charm._state.ldap = {
-            "sync_ldap_bind_password": event_data.get("admin_password"),
-            "sync_ldap_bind_dn": f"cn=admin,{base_dn}",
-            "sync_ldap_search_base": base_dn,
-            "sync_ldap_user_search_base": base_dn,
-            "sync_group_search_base": base_dn,
-            "sync_ldap_url": event_data.get("ldap_url"),
-        }
-
         self.charm.update(event)
 
     @log_event_handler(logger)
+    @validation_error_handler
     def _on_relation_broken(self, event):
         """Handle ldap relation broken.
 
@@ -106,8 +97,31 @@ class LDAPRelationHandler(framework.Object):
             event.defer()
             return
 
-        self.charm._state.ldap = {}
         self.charm.update(event)
+
+    def relation_values(self):
+        """Return usersync values derived from the active LDAP relation.
+
+        Returns:
+            LDAP values derived from remote application data, or an empty mapping.
+        """
+        relation = self.charm.model.get_relation(self.relation_name)
+        if not relation or not relation.active or not relation.app:
+            return {}
+
+        event_data = relation.data[relation.app]
+        base_dn = event_data.get("base_dn")
+        if not base_dn:
+            return {}
+
+        return {
+            "sync_ldap_bind_password": event_data.get("admin_password"),
+            "sync_ldap_bind_dn": f"cn=admin,{base_dn}",
+            "sync_ldap_search_base": base_dn,
+            "sync_ldap_user_search_base": base_dn,
+            "sync_group_search_base": base_dn,
+            "sync_ldap_url": event_data.get("ldap_url"),
+        }
 
     def validate(self):
         """Check if the required ldap parameters are available.
@@ -115,8 +129,15 @@ class LDAPRelationHandler(framework.Object):
         Raises:
             ValueError: if ldap parameters are not available.
         """
-        config = vars(self.charm.config)
-        if not self.charm._state.ldap:
-            for value in RELATION_VALUES:
-                if not config.get(value):
-                    raise ValueError("Add an LDAP relation or update config values.")
+        if self.relation_values():
+            return
+
+        missing = []
+        if not self.charm.ldap_credentials:
+            missing.append("ldap-credentials")
+        if not self.charm.config["sync-ldap-url"]:
+            missing.append("sync-ldap-url")
+        if not self.charm.config["sync-ldap-search-base"]:
+            missing.append("sync-ldap-search-base")
+        if missing:
+            raise ValueError(f"Missing required LDAP configuration: {', '.join(missing)}.")

@@ -2,15 +2,16 @@
 # Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Structured configuration for the Superset charm."""
+"""Structured configuration for the Ranger charm."""
 
 import logging
 import re
 from enum import Enum
 from typing import Optional
+from urllib.parse import urlparse
 
 from charms.data_platform_libs.v0.data_models import BaseConfigModel
-from pydantic import validator
+from pydantic import root_validator, validator
 
 logger = logging.getLogger(__name__)
 
@@ -34,31 +35,35 @@ class FunctionType(str, Enum):
     usersync = "usersync"
 
 
+class SearchScope(BaseEnumStr):
+    """Enum for LDAP search scope fields."""
+
+    base = "base"
+    one = "one"
+    sub = "sub"
+
+
 class CharmConfig(BaseConfigModel):
     """Manager for the structured configuration."""
 
-    ranger_admin_password: str
-    tls_secret_name: Optional[str]
-    external_hostname: Optional[str]
-    sync_ldap_url: Optional[str]
-    sync_ldap_bind_dn: Optional[str]
-    sync_ldap_bind_password: Optional[str]
-    sync_ldap_search_base: Optional[str]
+    system_users: str
+    ldap_credentials: Optional[str]
     sync_ldap_user_object_class: Optional[str]
     sync_group_object_class: Optional[str]
-    sync_ldap_user_search_base: Optional[str]
     sync_group_user_map_sync_enabled: Optional[bool]
     sync_group_search_enabled: Optional[bool]
     sync_group_member_attribute_name: Optional[str]
-    sync_group_search_base: Optional[str]
-    sync_ldap_user_search_scope: Optional[str]
-    sync_ldap_group_search_scope: Optional[str]
+    sync_ldap_user_search_scope: Optional[SearchScope]
+    sync_ldap_group_search_scope: Optional[SearchScope]
     sync_ldap_user_search_filter: Optional[str]
     sync_ldap_user_name_attribute: Optional[str]
     sync_ldap_user_group_name_attribute: Optional[str]
+    sync_ldap_url: Optional[str]
+    sync_ldap_search_base: Optional[str]
+    sync_ldap_user_search_base: Optional[str]
+    sync_group_search_base: Optional[str]
     sync_ldap_deltasync: bool
     sync_interval: Optional[int]
-    ranger_usersync_password: str
     policy_mgr_url: Optional[str]
     charm_function: FunctionType
     lookup_timeout: int
@@ -98,20 +103,48 @@ class CharmConfig(BaseConfigModel):
             return int_value
         raise ValueError("Value out of range.")
 
-    @validator("sync_ldap_url")
+    @validator("policy_mgr_url")
     @classmethod
-    def sync_ldap_url_validator(cls, value: str) -> Optional[str]:
-        """Check validity of `sync_ldap_url` field.
+    def policy_mgr_url_validator(cls, value: Optional[str]) -> Optional[str]:
+        """Validate the policy manager URL format.
 
         Args:
-            value: sync-ldap-url value
+            value: Policy manager URL.
 
         Returns:
-            int_value: integer for sync-ldap-url configuration
+            The validated URL.
 
         Raises:
-            ValueError: in the case when the value incorrectly formatted.
+            ValueError: If the URL does not use HTTP(S) or lacks a hostname.
         """
+        if value is None:
+            return value
+
+        parsed = urlparse(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ValueError("Value incorrectly formatted.")
+        try:
+            parsed.port
+        except ValueError as err:
+            raise ValueError("Value incorrectly formatted.") from err
+        return value
+
+    @validator("sync_ldap_url")
+    @classmethod
+    def sync_ldap_url_validator(cls, value: Optional[str]) -> Optional[str]:
+        """Validate the LDAP URL format.
+
+        Args:
+            value: LDAP URL to validate.
+
+        Returns:
+            The validated LDAP URL, or None when it is unset.
+
+        Raises:
+            ValueError: If the URL is incorrectly formatted.
+        """
+        if value is None:
+            return value
         ldap_url_pattern = r"^ldaps?://.*:\d+$"
         if re.match(ldap_url_pattern, value) is not None:
             return value
@@ -136,25 +169,22 @@ class CharmConfig(BaseConfigModel):
             return int_value
         raise ValueError("Value out of range.")
 
-    @validator("ranger_admin_password", "ranger_usersync_password")
+    @root_validator
     @classmethod
-    def password_validator(cls, value: str) -> str:
-        """Validate if the password meets the following requirements.
-
-        - Minimum 8 characters in length
-        - Contains at least one alphabetic character
-        - Contains at least one numeric character
+    def usersync_policy_mgr_url_validator(cls, values):
+        """Require a policy manager URL for usersync deployments.
 
         Args:
-            value: The password to validate.
+            values: Parsed configuration values.
 
         Returns:
-            value: The validated password if it meets the requirements.
+            The validated configuration values.
 
         Raises:
-            ValueError: If the password does not meet the requirements.
+            ValueError: If usersync is configured without a policy manager URL.
         """
-        pattern = re.compile(r"^(?=.*[A-Za-z])(?=.*\d)(?=.*[\W_])[A-Za-z\d\W_]{8,}$")
-        if pattern.match(value):
-            return value
-        raise ValueError("Password does not match requirements.")
+        if values.get("charm_function") == FunctionType.usersync and not values.get(
+            "policy_mgr_url"
+        ):
+            raise ValueError("policy-mgr-url is required when charm-function is usersync.")
+        return values

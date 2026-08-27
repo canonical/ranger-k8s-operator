@@ -6,6 +6,7 @@
 
 import logging
 import subprocess  # nosec B404
+from enum import Enum
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -27,25 +28,32 @@ from ops.model import (
     WaitingStatus,
 )
 from ops.pebble import CheckStatus, ExecError
+from pydantic import ValidationError
 
 from literals import (
     ADMIN_ENTRYPOINT,
+    ADMIN_USER,
     APP_NAME,
     APPLICATION_PORT,
+    LDAP_BIND_CREDENTIAL_CONFIG_KEYS,
+    LDAP_TOPOLOGY_CONFIG_KEYS,
+    LOCALHOST_URL,
     LOG_FILES,
     METRICS_PORT,
-    RELATION_VALUES,
     SUPPRESS_DEBUG_LOGS,
+    USERSYNC_CONFIG_MAPPING,
     USERSYNC_ENTRYPOINT,
 )
+from ranger_client import RangerAPIClient, RangerAPIError, RangerAuthenticationError
 from relations.ldap import LDAPRelationHandler
 from relations.opensearch import OpensearchRelationHandler
 from relations.postgres import PostgresRelationHandler
 from relations.provider import RangerProvider
 from relations.trino import TrinoCatalogRelationHandler
+from secret_models import LdapCredentials, SecretValidationError, SystemUserPasswords
 from state import State
 from structured_config import CharmConfig
-from utils import generate_password, log_event_handler, render
+from utils import generate_password, log_event_handler, render, validation_error_handler
 
 # Log messages can be retrieved using juju debug-log
 logger = logging.getLogger(__name__)
@@ -59,6 +67,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
     """
 
     config_type = CharmConfig
+    API_PROBE_TIMEOUT = 5
 
     def __init__(self, *args):
         """Construct.
@@ -67,6 +76,8 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             args: Ignore.
         """
         super().__init__(*args)
+        self._system_user_passwords: Optional[SystemUserPasswords] = None
+        self._ldap_credentials: Optional[LdapCredentials] = None
         self._configure_logging()
         self._state = State(self.app, lambda: self.model.get_relation("peer"))
         self.name = "ranger"
@@ -74,6 +85,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         self.framework.observe(self.on.install, self._on_install)
         self.framework.observe(self.on.ranger_pebble_ready, self._on_ranger_pebble_ready)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
+        self.framework.observe(self.on.secret_changed, self._on_secret_changed)
         self.framework.observe(self.on.update_status, self._on_update_status)
         self.framework.observe(self.on.restart_action, self._on_restart)
         self.framework.observe(self.on.peer_relation_changed, self._on_peer_relation_changed)
@@ -132,6 +144,109 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             self, relation_name="grafana-dashboard"
         )
 
+    @property
+    def system_user_passwords(self) -> SystemUserPasswords:
+        """Resolve the system-users secret once for the current hook.
+
+        Returns:
+            The validated system-user passwords.
+
+        Raises:
+            SecretValidationError: If the configured secret is unavailable or invalid.
+        """
+        if self._system_user_passwords is None:
+            self._system_user_passwords = self._resolve_secret(
+                "system-users", self.config["system-users"], SystemUserPasswords
+            )
+        return self._system_user_passwords
+
+    @property
+    def ldap_credentials(self) -> Optional[LdapCredentials]:
+        """Resolve the optional ldap-credentials secret once for the current hook.
+
+        Returns:
+            The validated LDAP credentials, or None when no secret is configured.
+
+        Raises:
+            SecretValidationError: If the configured secret is unavailable or invalid.
+        """
+        secret_id = self.config["ldap-credentials"]
+        if not secret_id:
+            return None
+        if self._ldap_credentials is None:
+            self._ldap_credentials = self._resolve_secret(
+                "ldap-credentials", secret_id, LdapCredentials
+            )
+        return self._ldap_credentials
+
+    def _resolve_secret(self, option, secret_id, model_type):
+        """Resolve and validate a secret payload.
+
+        Args:
+            option: Hyphenated Juju configuration option naming the secret.
+            secret_id: Juju secret ID to resolve.
+            model_type: Pydantic model used to validate the secret payload.
+
+        Returns:
+            A validated secret model.
+
+        Raises:
+            SecretValidationError: If the secret is unavailable or its payload is invalid.
+        """
+        if not secret_id:
+            raise SecretValidationError(
+                f"Invalid configuration: {option}: must be a Juju secret ID granted "
+                "to this application."
+            )
+        try:
+            content = self.model.get_secret(id=secret_id).get_content(refresh=True)
+        except ops.ModelError as err:
+            raise SecretValidationError(
+                f"Invalid configuration: {option}: cannot be resolved; ensure the secret ID "
+                "is valid and granted to this application."
+            ) from err
+        try:
+            return model_type(**content)
+        except ValidationError as err:
+            raise SecretValidationError(self._format_secret_validation_error(option, err)) from err
+
+    @staticmethod
+    def _format_secret_validation_error(option: str, error: ValidationError) -> str:
+        """Format a secret payload validation error without including secret values.
+
+        Args:
+            option: Hyphenated Juju configuration option naming the secret.
+            error: Pydantic validation error for the secret payload.
+
+        Returns:
+            An actionable secret validation message.
+        """
+        errors = error.errors()
+        missing_keys = [
+            str(validation_error["loc"][-1])
+            for validation_error in errors
+            if validation_error["msg"] == "field required"
+        ]
+        if missing_keys:
+            if option == "ldap-credentials":
+                return (
+                    "Invalid configuration: ldap-credentials secret is missing required keys: "
+                    + ", ".join(missing_keys)
+                )
+            key = missing_keys[0]
+            return (
+                "Invalid configuration: system-users: secret 'system-users' is missing "
+                f"required key '{key}'."
+            )
+        validation_error = errors[0]
+        key = validation_error["loc"][-1]
+        return f"Invalid configuration: {option}: {key}: {validation_error['msg']}"
+
+    def _clear_secret_cache(self) -> None:
+        """Discard resolved secret models before reconciliation."""
+        self._system_user_passwords = None
+        self._ldap_credentials = None
+
     def resolve_policy_manager_url(self) -> Optional[str]:
         """Resolve the policy manager URL for the current charm function.
 
@@ -156,20 +271,6 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
 
         return f"http://{self.app.name}.{self.model.name}.svc.cluster.local:{APPLICATION_PORT}"
 
-    def _warn_deprecated_config(self):
-        """Log warnings if deprecated configuration options are set."""
-        raw = self.model.config
-        if raw.get("external-hostname"):
-            logger.warning(
-                "Config option 'external-hostname' is deprecated and has no effect. "
-                "Remove it from your configuration."
-            )
-        if raw.get("tls-secret-name"):
-            logger.warning(
-                "Config option 'tls-secret-name' is deprecated and has no effect. "
-                "Remove it from your configuration."
-            )
-
     @staticmethod
     def _configure_logging():
         """Suppress noisy third-party HTTP debug logs when enabled."""
@@ -187,6 +288,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         self.unit.status = MaintenanceStatus("installing Ranger")
 
     @log_event_handler(logger)
+    @validation_error_handler
     def _on_ranger_pebble_ready(self, event: ops.PebbleReadyEvent):
         """Define and start ranger using the Pebble API.
 
@@ -196,16 +298,27 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         self.update(event)
 
     @log_event_handler(logger)
+    @validation_error_handler
     def _on_config_changed(self, event: ops.ConfigChangedEvent):
         """Handle configuration changes.
 
         Args:
             event: The event triggered when the relation changed.
         """
-        self._warn_deprecated_config()
         self.update(event)
 
     @log_event_handler(logger)
+    @validation_error_handler
+    def _on_secret_changed(self, event: ops.SecretChangedEvent):
+        """Reconcile after secret content changes.
+
+        Args:
+            event: The secret changed event.
+        """
+        self.update(event)
+
+    @log_event_handler(logger)
+    @validation_error_handler
     def _on_ingress_ready(self, event):
         """Handle ingress URL becoming available.
 
@@ -215,6 +328,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         self.provider.reconcile_policy_manager_url()
 
     @log_event_handler(logger)
+    @validation_error_handler
     def _on_ingress_revoked(self, event):
         """Handle ingress URL being revoked.
 
@@ -224,6 +338,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         self.provider.reconcile_policy_manager_url()
 
     @log_event_handler(logger)
+    @validation_error_handler
     def _on_peer_relation_changed(self, event):
         """Handle peer relation changes.
 
@@ -237,6 +352,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         self.update(event)
 
     @log_event_handler(logger)
+    @validation_error_handler
     def _on_update_status(self, event):
         """Handle `update-status` events.
 
@@ -246,8 +362,10 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         if not self._state.is_ready():
             return
 
-        charm_function = self.config["charm-function"].value
-        if charm_function == "usersync":
+        credentials_rejected = self._probe_configured_credentials()
+        if credentials_rejected:
+            return
+        if self.config["charm-function"].value == "usersync":
             self.unit.status = ActiveStatus("Status check: UP")
             return
 
@@ -343,16 +461,35 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             "OPENSEARCH_PWD": opensearch.get("password"),
             "OPENSEARCH_USER": opensearch.get("username"),
             "OPENSEARCH_ENABLED": opensearch.get("is_enabled"),
-            "RANGER_ADMIN_PWD": self.config["ranger-admin-password"],
+            "RANGER_ADMIN_PWD": self.system_user_passwords.admin,
             "JAVA_OPTS": (
                 f"-Duser.timezone=UTC0"
                 f" -Djavax.net.ssl.trustStorePassword={self._state.truststore_pwd}"
             ),
-            "RANGER_USERSYNC_PWD": self.config["ranger-usersync-password"],
+            "RANGER_USERSYNC_PWD": self.system_user_passwords.rangerusersync,
         }
         config = render("admin-config.jinja", context)
         container.push("/usr/lib/ranger/admin/install.properties", config, make_dirs=True)
         return ADMIN_ENTRYPOINT, context
+
+    @staticmethod
+    def _render_config_value(value):
+        """Render a configuration value for install.properties and the Pebble layer.
+
+        Pebble layers are serialised to YAML, which has no representer for enum
+        members, so enums are reduced to their underlying value.
+
+        Args:
+            value: Configuration value to render.
+
+        Returns:
+            The rendered value, or an empty string when unset.
+        """
+        if value is None:
+            return ""
+        if isinstance(value, Enum):
+            return value.value
+        return value
 
     def _configure_ranger_usersync(self, container):
         """Prepare Ranger Usersync install.properties file.
@@ -364,22 +501,25 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             USERSYNC_ENTRYPOINT: Entrypoint path for Ranger Usersync startup.
             context: Environment variables for pebble plan.
         """
+        ldap = self.ldap.relation_values()
+        ldap_credentials = self.ldap_credentials
         context = {}
-        ldap = self._state.ldap or {}
-        for key, value in vars(self.config).items():
-            if not key.startswith("sync"):
-                continue
-
-            if key in RELATION_VALUES:
-                value = ldap.get(key) or self.config[key]
-
-            updated_key = key.upper()
-            context[updated_key] = value
+        for config_key, ranger_property in USERSYNC_CONFIG_MAPPING.items():
+            value = ldap.get(config_key)
+            if config_key in LDAP_BIND_CREDENTIAL_CONFIG_KEYS:
+                if not value:
+                    value = getattr(ldap_credentials, config_key) if ldap_credentials else None
+            elif config_key in LDAP_TOPOLOGY_CONFIG_KEYS:
+                if not value:
+                    value = self.config[config_key]
+            elif value is None:
+                value = self.config[config_key]
+            context[ranger_property] = self._render_config_value(value)
 
         context.update(
             {
                 "POLICY_MGR_URL": self.resolve_policy_manager_url(),
-                "RANGER_USERSYNC_PWD": self.config["ranger-usersync-password"],
+                "RANGER_USERSYNC_PWD": self.system_user_passwords.rangerusersync,
             }
         )
         config = render("ranger-usersync-config.jinja", context)
@@ -390,65 +530,83 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         )
         return USERSYNC_ENTRYPOINT, context
 
-    def _validate_password(self, password, config_key, state_key):
-        """Validate that the admin and usersync passwords are not changed after deployment.
-
-        Args:
-            password: the deployment password.
-            config_key: the config key for the password.
-            state_key: the key the password is stored in state.
-
-        Raises:
-            ValueError: in case the password has been changed.
-        """
-        if password is None:
-            if self.unit.is_leader():
-                setattr(self._state, state_key, self.config[config_key])
-        elif password != self.config[config_key]:
-            message = (
-                f"value of '{config_key}' config cannot be changed after deployment. "
-                f"Value should be {password}"
-            )
-            logger.error(message)
-            raise ValueError(message)
-
     def validate(self):
         """Validate that configuration and relations are valid and ready.
 
         Raises:
             ValueError: in case of invalid configuration.
         """
+        config = self.config
+        _ = self.system_user_passwords
+        if config["ldap-credentials"]:
+            _ = self.ldap_credentials
+
         if not self._state.is_ready():
             raise ValueError("peer relation not ready")
 
-        charm_function = self.config["charm-function"].value
+        charm_function = config["charm-function"].value
         if charm_function == "admin":
             self.postgres_relation_handler.validate()
 
         if charm_function == "usersync":
             self.ldap.validate()
 
-        if charm_function == "usersync" and not self.resolve_policy_manager_url():
-            raise ValueError(
-                "Missing required configuration: set 'policy-mgr-url' for usersync function."
-            )
-
         if self._state.opensearch and charm_function != "admin":
             raise ValueError("Only Ranger admin can relate to OpenSearch.")
 
-        ranger_admin_password = self._state.ranger_admin_password
-        ranger_usersync_password = self._state.ranger_usersync_password
+    def _probe_configured_credentials(self) -> bool:
+        """Authenticate configured system-user credentials against the Ranger API.
 
-        self._validate_password(
-            ranger_admin_password,
-            "ranger-admin-password",
-            "ranger_admin_password",
-        )
-        self._validate_password(
-            ranger_usersync_password,
-            "ranger-usersync-password",
-            "ranger_usersync_password",
-        )
+        Returns:
+            Whether Ranger rejected the configured credentials.
+
+        Raises:
+            SecretValidationError: If the system-users secret is unavailable or invalid.
+        """
+        charm_function = self.config["charm-function"].value
+        if charm_function == "usersync":
+            url = self.config["policy-mgr-url"]
+            username = "rangerusersync"
+            password = self.system_user_passwords.rangerusersync
+        else:
+            url = f"{LOCALHOST_URL}:{APPLICATION_PORT}"
+            username = ADMIN_USER
+            password = self.system_user_passwords.admin
+
+        try:
+            RangerAPIClient(url, (username, password)).authenticate(self.API_PROBE_TIMEOUT)
+        except RangerAuthenticationError:
+            self.unit.status = BlockedStatus(
+                f"Ranger authentication failed for {username}. Revert the system-users secret "
+                "or change the password in the Ranger UI."
+            )
+            return True
+        except RangerAPIError:
+            logger.info(
+                "Ranger API is unavailable; authentication probe will retry on the next hook."
+            )
+        return False
+
+    @staticmethod
+    def _format_validation_error(error: ValidationError) -> str:
+        """Format a validation error for Juju status output.
+
+        Args:
+            error: The Pydantic validation error to format.
+
+        Returns:
+            A concise, actionable configuration error message.
+        """
+        messages = []
+        for validation_error in error.errors():
+            location = validation_error["loc"]
+            message = validation_error["msg"]
+            if location == ("__root__",):
+                messages.append(message)
+                continue
+            option = ".".join(str(part) for part in location).replace("_", "-")
+            messages.append(f"{option}: {message}")
+        return f"Invalid configuration: {'; '.join(messages)}"
 
     def update(self, event):
         """Update the Ranger server configuration and re-plan its execution.
@@ -456,10 +614,14 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         Args:
             event: The event triggered when the relation changed.
         """
+        self._clear_secret_cache()
         try:
             self.validate()
-        except ValueError as err:
-            self.unit.status = BlockedStatus(str(err))
+        except (SecretValidationError, ValidationError, ValueError) as err:
+            self._block_on_validation_error(err)
+            return
+
+        if self._probe_configured_credentials():
             return
 
         container = self.unit.get_container(self.name)
@@ -512,6 +674,19 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         container.replan()
 
         self.unit.status = MaintenanceStatus("replanning application")
+
+    def _block_on_validation_error(self, error):
+        """Set a blocked status for a configuration or secret validation error.
+
+        Args:
+            error: Validation error raised while resolving configuration or secrets.
+        """
+        message = (
+            self._format_validation_error(error)
+            if isinstance(error, ValidationError)
+            else str(error)
+        )
+        self.unit.status = BlockedStatus(message)
 
 
 if __name__ == "__main__":  # pragma: nocover

@@ -16,7 +16,8 @@ from literals import (
 )
 from ranger_client import RangerAPIClient, RangerAPIError
 from reconcile import TrinoCatalogReconciler
-from utils import log_event_handler
+from secret_models import SecretValidationError
+from utils import log_event_handler, validation_error_handler
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ class TrinoCatalogRelationHandler(framework.Object):
         )
 
     @log_event_handler(logger)
+    @validation_error_handler
     def _on_relation_changed(self, event):
         """Handle trino-catalog relation changed.
 
@@ -69,6 +71,7 @@ class TrinoCatalogRelationHandler(framework.Object):
         self.run_reconciliation()
 
     @log_event_handler(logger)
+    @validation_error_handler
     def _on_relation_broken(self, event):
         """Handle trino-catalog relation broken.
 
@@ -104,9 +107,12 @@ class TrinoCatalogRelationHandler(framework.Object):
         try:
             client = RangerAPIClient(
                 f"{LOCALHOST_URL}:{APPLICATION_PORT}",
-                (ADMIN_USER, self.charm.config["ranger-admin-password"]),
+                (ADMIN_USER, self.charm.system_user_passwords.admin),
             )
             services = client.list_services_by_type(TRINO_SERVICE_TYPE)
+        except SecretValidationError as err:
+            self.charm._block_on_validation_error(err)
+            return
         except RangerAPIError:
             logger.warning(
                 "failed to connect to Ranger API, reconciliation will retry on next update-status",

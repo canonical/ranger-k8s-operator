@@ -8,12 +8,13 @@ summary: Kubernetes operator for Apache Ranger
 description: |
   Apache Ranger is a framework to enable, monitor, and manage comprehensive data security.
 
-platforms:
-  ubuntu-22.04-amd64:
-    build-on:
-      - ubuntu@22.04:amd64
-    build-for:
-      - ubuntu@22.04:amd64
+bases:
+  - build-on:
+    - name: ubuntu
+      channel: "22.04"
+    run-on:
+    - name: ubuntu
+      channel: "22.04"
 
 charm-libs:
   - lib: data_platform_libs.data_interfaces
@@ -97,41 +98,37 @@ actions:
 
 config:
   options:
-    ranger-admin-password:
+    system-users:
       description: |
-        The password for Ranger Admin user.
-        Password can not be changed using this property after initial deployment. 
-        It can be changed in the UI.
-        Password should be minimum 8 characters with min one alphabet and one numeric.
-      default: "rangerR0cks!"
+        The Juju secret ID containing Ranger internal user passwords, in `secret:...` format.
+        This is a secret ID, not the secret name. The secret must contain `admin` and
+        `rangerusersync` keys and be granted to this application. Each password must be at
+        least 8 characters long, contain uppercase, lowercase, and numeric characters, and
+        not contain `"`, `'`, `\`, or `` ` ``.
       type: string
-    tls-secret-name:
+    ldap-credentials:
       description: |
-          DEPRECATED — no longer used. Remove this option from your config.
-          Name of the k8s secret which contains the TLS certificate to be used by ingress.
-      type: string
-    external-hostname:
-      description: |
-          DEPRECATED — no longer used. Remove this option from your config.
-          The DNS listing used for external connections.
+        Optional Juju secret ID containing LDAP bind credentials, in `secret:...` format.
+        This is a secret ID, not the secret name. If set, the secret must contain
+        `sync-ldap-bind-dn` and `sync-ldap-bind-password` and be granted to this application.
       type: string
     sync-ldap-url:
       description: |
-        The url of the ldap to synchronize users from.
-        In format `ldap://<host>:<port>`.
+        The URL of the LDAP server to synchronise users from, in `ldap://<host>:<port>` or
+        `ldaps://<host>:<port>` format.
       type: string
-    sync-ldap-bind-dn:
-      description: |
-        The bind domain name for ldap synchronization.
-      type: string
-    sync-ldap-bind-password:
-      description: |
-          The bind password for ldap synchronization.
-      type: string
-      default: admin
     sync-ldap-search-base:
       description: |
-        Search base for ldap users and groups.
+        Search base for LDAP users and groups.
+      type: string
+    sync-ldap-user-search-base:
+      description: |
+        Search base for LDAP users. Overrides `sync-ldap-search-base`.
+      type: string
+    sync-group-search-base:
+      description: |
+        Search base for LDAP groups. If unset, Ranger uses `sync-ldap-search-base`; if that is
+        also unset, Ranger uses `sync-ldap-user-search-base`.
       type: string
     sync-ldap-user-object-class:
       description: |
@@ -143,25 +140,16 @@ config:
         The object class corresponding to groups for ldapsearch.
       type: string
       default: posixGroup
-    sync-ldap-user-search-base:
-      description: |
-        Search base for ldap users.
-      type: string
     sync-group-user-map-sync-enabled:
       description: |
-        Set to true to sync groups without users.
+        Set to true to synchronize memberships of groups found through group search.
       type: boolean
       default: true
     sync-group-search-enabled:
       description: |
-        Set to true to sync groups without users.
+        Set to true to perform an ldapsearch to find groups rather than relying on user entry attributes.
       type: boolean
       default: true
-    sync-group-search-base:
-      description: |
-        Search base for ldap groups.
-        If not specified this takes the value of `sync-ldap-search-base`.
-      type: string
     sync-ldap-user-search-scope:
       description: |
         Search scope for the users.
@@ -224,16 +212,9 @@ config:
       description: |
         The default timeout for the resource auto-complete
         functionality for Ranger service in ms.
+        Applies only to Ranger services created after the value is changed.
       type: int
       default: 3000
-    ranger-usersync-password:
-      description: |
-        The password for the user that synchronizes users and groups from LDAP to Ranger admin.
-        Password can not be changed using this property after initial deployment. 
-        It can be changed in the UI.
-        Password should be minimum 8 characters with min one alphabet and one numeric.
-      type: string
-      default: rangerR0cks!
     enforce-strict-reconciliation:
       description: |
         Exclude populated roles from newly created default policies so reconciliation does not grant access.

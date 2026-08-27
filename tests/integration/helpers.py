@@ -6,6 +6,7 @@
 
 import json
 import logging
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator
@@ -24,12 +25,11 @@ TRAEFIK_NAME = "traefik-k8s"
 TRINO_SERVICE = "trino-service"
 TRINO_NAME = "trino-k8s"
 RANGER_URL = "http://localhost:6080"
-RANGER_AUTH = ("admin", "rangerR0cks!")
+RANGER_AUTH = ("admin", "RangerAdmin1")
 HEADERS = {
     "Accept": "application/json",
     "Content-Type": "application/json",
 }
-SECURE_PWD = "ubuntuR0cks!"  # nosec
 LDAP_NAME = "comsys-openldap-k8s"
 
 LXD_MODEL_CONFIG = {
@@ -234,6 +234,35 @@ def scale(juju: jubilant.Juju, app, units):
         timeout=600,
         wait_for_exact_units=units,
     )
+
+
+def wait_for_ranger_service(ranger, service_name, timeout=300, delay=5):
+    """Wait for a Ranger service to be created by the policy relation.
+
+    Reaching an active/idle status is not sufficient. Ranger creates the service
+    on the relation-changed hook that carries the requirer's databag, and the
+    first relation-changed fires with an empty databag and returns immediately.
+    The model is briefly idle between the two, so polling Ranger is required.
+
+    Args:
+        ranger: Ranger client.
+        service_name: Name of the Ranger service to wait for.
+        timeout: Maximum number of seconds to wait.
+        delay: Number of seconds between attempts.
+
+    Returns:
+        The Ranger service.
+
+    Raises:
+        TimeoutError: If the service does not appear within the timeout.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        service = ranger.get_service(service_name)
+        if service is not None:
+            return service
+        time.sleep(delay)
+    raise TimeoutError(f"Ranger service {service_name!r} was not created within {timeout}s.")
 
 
 def get_memberships(url):

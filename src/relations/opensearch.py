@@ -14,7 +14,7 @@ from ops.pebble import ExecError
 from requests.auth import HTTPBasicAuth
 
 from literals import CERTIFICATE_NAME, HEADERS, INDEX_NAME, OPENSEARCH_SCHEMA
-from utils import log_event_handler
+from utils import log_event_handler, validation_error_handler
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,7 @@ class OpensearchRelationHandler(framework.Object):
         )
 
     @log_event_handler(logger)
+    @validation_error_handler
     def _on_index_created(self, event: IndexCreatedEvent) -> None:
         """Handle opensearch relation changed events.
 
@@ -60,6 +61,7 @@ class OpensearchRelationHandler(framework.Object):
         self.update(event)
 
     @log_event_handler(logger)
+    @validation_error_handler
     def _on_relation_broken(self, event) -> None:
         """Handle broken relations with opensearch.
 

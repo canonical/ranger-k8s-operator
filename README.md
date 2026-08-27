@@ -21,9 +21,34 @@ Note: This operator requires the use of juju>=3.1.
 Ranger requires PostgreSQL to store its state. 
 Therefore, its deployment requires a relation with the Postgres charm:
 
+Before deploying Ranger, create a Juju secret containing passwords for the
+internal `admin` and `rangerusersync` accounts. Each password must be at least
+eight characters long, include uppercase, lowercase, and numeric characters,
+and must not contain `"`, `'`, `\`, or `` ` ``.
+
+Set a restrictive file-creation mask, then create `system-users.yaml` with these
+keys using a secure editor:
+
+```shell
+umask 077
+```
+
+```yaml
+admin: <admin-password>
+rangerusersync: <rangerusersync-password>
+```
+
+Create the secret from the file and remove the file:
+
+```shell
+SYSTEM_USERS=$(juju add-secret system-users --file=system-users.yaml)
+rm system-users.yaml
+```
+
 ```bash
-# this will be blocked until the relation with Postgres is created 
 juju deploy ranger-k8s
+juju grant-secret system-users ranger-k8s
+juju config ranger-k8s system-users="$SYSTEM_USERS"
 juju deploy postgresql-k8s --channel 14/stable --trust
 juju relate ranger-k8s:db postgresql-k8s:database
 ```
@@ -32,14 +57,22 @@ Refer to [CONTRIBUTING.md](./CONTRIBUTING.md) for details on bootstrapping a juj
 ### Group management with Apache Ranger
 The Charmed Ranger Operator makes use of [Ranger usersync](https://cwiki.apache.org/confluence/display/RANGER/Apache+Ranger+Usersync) to synchronize users, groups and memberships from a compatible LDAP server (eg. openldap, ActiveDirectory) to Ranger admin. The usersync functionality can be configured on deployment of the Ranger Charm. While you can scale the Ranger admin application, you should only have 1 Usersync deployed.
 
-```
-juju deploy ranger-k8s --config charm-function=usersync ranger-usersync-k8s
+```shell
+juju deploy ranger-k8s ranger-usersync-k8s \
+  --config charm-function=usersync \
+  --config policy-mgr-url=http://ranger-k8s.<model>.svc.cluster.local:6080
+juju grant-secret system-users ranger-usersync-k8s
+juju config ranger-usersync-k8s system-users="$SYSTEM_USERS"
 
-#optional ldap relation
 juju deploy comsys-openldap-k8s --channel=edge
 juju relate ranger-usersync-k8s comsys-openldap-k8s
 ```
-This charm connects to the Ranger Admin and OpenLDAP via a relation but can also be directly configured.
+Usersync requires `policy-mgr-url`. It also requires either an LDAP relation or
+an LDAP bind-identity secret and LDAP topology configuration. When using an
+external LDAP server, create an `ldap-credentials` secret containing
+`sync-ldap-bind-dn` and `sync-ldap-bind-password`, grant it to the usersync
+application, and set its ID through `ldap-credentials`. Set `sync-ldap-url` and
+`sync-ldap-search-base` as ordinary configuration options.
 
 #### Group management in related application
 Related applications must have the Ranger plugin configured. The Ranger plugin schedules regular download of Ranger policies (every 3 minutes) storing these policies within the related application in a cache. On access request, the requesting user's group is used when comparing to Ranger group policies to determine access. Therefore the related application should have the same source for groups.

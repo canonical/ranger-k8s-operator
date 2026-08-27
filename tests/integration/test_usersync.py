@@ -33,9 +33,28 @@ class TestUserSync:
 
         ranger_config = {
             "charm-function": "usersync",
-            "ranger-usersync-password": "P@ssw0rd1234",
+            "sync-ldap-url": "ldap://comsys-openldap-k8s:389",
+            "sync-ldap-search-base": "dc=canonical,dc=dev,dc=com",
+            "sync-ldap-user-search-base": "dc=canonical,dc=dev,dc=com",
+            "sync-group-search-base": "dc=canonical,dc=dev,dc=com",
         }
-
+        secret_name = "ranger-usersync-system-users"  # nosec B105
+        secret_uri = juju.add_secret(
+            secret_name,
+            {"admin": "RangerAdmin1", "rangerusersync": "RangerUsersync1"},
+        )
+        ldap_secret_name = "ranger-usersync-ldap-credentials"  # nosec B105
+        ldap_secret_uri = juju.add_secret(
+            ldap_secret_name,
+            {
+                "sync-ldap-bind-dn": "cn=admin,dc=canonical,dc=dev,dc=com",
+                "sync-ldap-bind-password": "admin",
+            },
+        )
+        secret_config = {
+            "system-users": secret_uri.unique_identifier,
+            "ldap-credentials": ldap_secret_uri.unique_identifier,
+        }
         resources = {
             "ranger-image": charm_image,
         }
@@ -52,6 +71,9 @@ class TestUserSync:
             config=ranger_config,
         )
 
+        juju.grant_secret(secret_name, USERSYNC_NAME)
+        juju.grant_secret(ldap_secret_name, USERSYNC_NAME)
+        juju.config(USERSYNC_NAME, secret_config)
         juju.integrate(USERSYNC_NAME, LDAP_NAME)
         wait_for_apps(juju, [USERSYNC_NAME, LDAP_NAME], status="active", timeout=1500)
 

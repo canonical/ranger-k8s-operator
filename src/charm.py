@@ -304,13 +304,8 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             event.add_status(BlockedStatus(str(err)))
             return
 
-        try:
-            container = self.unit.get_container(self.name)
-            can_connect = container.can_connect()
-        except RuntimeError:
-            event.add_status(WaitingStatus("waiting for container"))
-            return
-        if not can_connect:
+        container = self.unit.get_container(self.name)
+        if not container.can_connect():
             event.add_status(WaitingStatus("waiting for container"))
             return
 
@@ -628,12 +623,8 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         Guards return early without deferring; convergence resumes on the next
         hook and terminal status is reported by collect-unit-status.
         """
-        try:
-            container = self.unit.get_container(self.name)
-            can_connect = container.can_connect()
-        except RuntimeError:
-            return
-        if not can_connect:
+        container = self.unit.get_container(self.name)
+        if not container.can_connect():
             return
         try:
             cfg = self.config

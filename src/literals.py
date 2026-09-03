@@ -125,6 +125,7 @@ DEFAULT_POLICIES = [
     "all - systemproperty",
 ]
 SERVICE_STAMP_PREFIX = "relation_id_"
+TRUSTSTORE_SECRET_LABEL = "truststore-password"  # nosec B105
 
 # Trino catalog reconciliation literals
 TRINO_SERVICE_TYPE = "trino"

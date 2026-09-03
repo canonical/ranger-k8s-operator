@@ -11,29 +11,29 @@ from typing import Optional
 from urllib.parse import urlparse
 
 import ops
-from charms.data_platform_libs.v0.data_interfaces import (
-    DatabaseRequires,
-    OpenSearchRequires,
-)
+from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires, OpenSearchRequires
 from charms.data_platform_libs.v0.data_models import TypedCharmBase
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LogProxyConsumer
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from charms.traefik_k8s.v2.ingress import IngressPerAppRequirer
 from charms.trino_k8s.v0.trino_catalog import TrinoCatalogRequirer
+from ops.charm import CollectStatusEvent
 from ops.model import (
     ActiveStatus,
     BlockedStatus,
     MaintenanceStatus,
+    ModelError,
+    SecretNotFoundError,
     WaitingStatus,
 )
 from ops.pebble import CheckStatus, ExecError
 from pydantic import ValidationError
 
+from exceptions import RelationNotReady
 from literals import (
     ADMIN_ENTRYPOINT,
     ADMIN_USER,
-    APP_NAME,
     APPLICATION_PORT,
     LDAP_BIND_CREDENTIAL_CONFIG_KEYS,
     LDAP_TOPOLOGY_CONFIG_KEYS,
@@ -41,6 +41,7 @@ from literals import (
     LOG_FILES,
     METRICS_PORT,
     SUPPRESS_DEBUG_LOGS,
+    TRUSTSTORE_SECRET_LABEL,
     USERSYNC_CONFIG_MAPPING,
     USERSYNC_ENTRYPOINT,
 )
@@ -51,19 +52,25 @@ from relations.postgres import PostgresRelationHandler
 from relations.provider import RangerProvider
 from relations.trino import TrinoCatalogRelationHandler
 from secret_models import LdapCredentials, SecretValidationError, SystemUserPasswords
-from state import State
 from structured_config import CharmConfig
-from utils import generate_password, log_event_handler, render, validation_error_handler
+from utils import content_hash, generate_password, log_event_handler, render
 
-# Log messages can be retrieved using juju debug-log
 logger = logging.getLogger(__name__)
+
+
+class ApiProbe(Enum):
+    """Represent the configured credentials' Ranger API authentication result."""
+
+    OK = "ok"
+    REJECTED = "rejected"
+    UNREACHABLE = "unreachable"
 
 
 class RangerK8SCharm(TypedCharmBase[CharmConfig]):
     """Charm the service.
 
     Attributes:
-        config_type: the charm structured config
+        config_type: The charm structured config.
     """
 
     config_type = CharmConfig
@@ -79,16 +86,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         self._system_user_passwords: Optional[SystemUserPasswords] = None
         self._ldap_credentials: Optional[LdapCredentials] = None
         self._configure_logging()
-        self._state = State(self.app, lambda: self.model.get_relation("peer"))
         self.name = "ranger"
-
-        self.framework.observe(self.on.install, self._on_install)
-        self.framework.observe(self.on.ranger_pebble_ready, self._on_ranger_pebble_ready)
-        self.framework.observe(self.on.config_changed, self._on_config_changed)
-        self.framework.observe(self.on.secret_changed, self._on_secret_changed)
-        self.framework.observe(self.on.update_status, self._on_update_status)
-        self.framework.observe(self.on.restart_action, self._on_restart)
-        self.framework.observe(self.on.peer_relation_changed, self._on_peer_relation_changed)
 
         self.postgres_relation = DatabaseRequires(
             self,
@@ -106,12 +104,8 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             extra_user_roles="admin",
         )
         self.opensearch_relation_handler = OpensearchRelationHandler(self)
-
-        # Trino Catalog
         self.trino_catalog_requirer = TrinoCatalogRequirer(self)
         self.trino_catalog_handler = TrinoCatalogRelationHandler(self)
-
-        # Handle Ingress
         self.ingress = IngressPerAppRequirer(
             self,
             relation_name="ingress",
@@ -120,10 +114,29 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             redirect_https=True,
             scheme="http",
         )
-        self.framework.observe(self.ingress.on.ready, self._on_ingress_ready)
-        self.framework.observe(self.ingress.on.revoked, self._on_ingress_revoked)
 
-        # Prometheus
+        self.framework.observe(self.on.config_changed, self._reconcile_hook)
+        self.framework.observe(self.on.secret_changed, self._reconcile_hook)
+        self.framework.observe(self.on.update_status, self._reconcile_hook)
+        self.framework.observe(self.on.peer_relation_changed, self._reconcile_hook)
+        self.framework.observe(self.on.ranger_pebble_ready, self._reconcile_hook)
+        self.framework.observe(self.on.collect_unit_status, self._on_collect_unit_status)
+        self.framework.observe(self.on.restart_action, self._on_restart)
+
+        for endpoint in ("policy", "database", "ldap", "opensearch", "trino-catalog"):
+            self.framework.observe(self.on[endpoint].relation_created, self._reconcile_hook)
+            self.framework.observe(self.on[endpoint].relation_changed, self._reconcile_hook)
+            self.framework.observe(self.on[endpoint].relation_broken, self._reconcile_hook)
+        self.framework.observe(self.ingress.on.ready, self._reconcile_hook)
+        self.framework.observe(self.ingress.on.revoked, self._reconcile_hook)
+        self.framework.observe(self.postgres_relation.on.database_created, self._reconcile_hook)
+        self.framework.observe(self.postgres_relation.on.endpoints_changed, self._reconcile_hook)
+        self.framework.observe(self.opensearch_relation.on.index_created, self._reconcile_hook)
+        self.framework.observe(self.opensearch_relation.on.endpoints_changed, self._reconcile_hook)
+        self.framework.observe(
+            self.opensearch_relation.on.authentication_updated, self._reconcile_hook
+        )
+
         self._prometheus_scraping = MetricsEndpointProvider(
             self,
             relation_name="metrics-endpoint",
@@ -135,11 +148,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             ],
             refresh_event=self.on.config_changed,
         )
-
-        # Loki
         self.log_proxy = LogProxyConsumer(self, log_files=LOG_FILES, relation_name="log-proxy")
-
-        # Grafana
         self._grafana_dashboards = GrafanaDashboardProvider(
             self, relation_name="grafana-dashboard"
         )
@@ -242,16 +251,8 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         key = validation_error["loc"][-1]
         return f"Invalid configuration: {option}: {key}: {validation_error['msg']}"
 
-    def _clear_secret_cache(self) -> None:
-        """Discard resolved secret models before reconciliation."""
-        self._system_user_passwords = None
-        self._ldap_credentials = None
-
     def resolve_policy_manager_url(self) -> Optional[str]:
         """Resolve the policy manager URL for the current charm function.
-
-        For admin: explicit config override > live ingress URL > cluster DNS.
-        For usersync: config-only; returns None if unset.
 
         Returns:
             Full URL string, or None for usersync when policy-mgr-url is not configured.
@@ -259,16 +260,13 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         override = self.config["policy-mgr-url"]
         if override:
             return override
-
         if self.config["charm-function"].value == "usersync":
             return None
-
         ingress_url = self.ingress.url
         if ingress_url:
             parsed = urlparse(ingress_url)
             port = parsed.port or (443 if parsed.scheme == "https" else 80)
             return f"{parsed.scheme}://{parsed.hostname}:{port}"
-
         return f"http://{self.app.name}.{self.model.name}.svc.cluster.local:{APPLICATION_PORT}"
 
     @staticmethod
@@ -278,177 +276,172 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             logging.getLogger("apache_ranger").setLevel(logging.WARNING)
             logging.getLogger("urllib3").setLevel(logging.WARNING)
 
-    @log_event_handler(logger)
-    def _on_install(self, event):
-        """Install application.
+    def _reconcile_hook(self, event):
+        """Route any observed hook through the single reconciler.
 
         Args:
-            event: The event triggered when the relation changed.
+            event: The triggering Juju event (unused; state is read from the model).
         """
-        self.unit.status = MaintenanceStatus("installing Ranger")
+        self._reconcile()
 
-    @log_event_handler(logger)
-    @validation_error_handler
-    def _on_ranger_pebble_ready(self, event: ops.PebbleReadyEvent):
-        """Define and start ranger using the Pebble API.
+    def _on_collect_unit_status(self, event: CollectStatusEvent):  # noqa: C901
+        """Derive terminal unit status from the current model and workload health.
 
         Args:
-            event: The event triggered when the relation changed.
+            event: The collect-unit-status event to add derived statuses to.
         """
-        self.update(event)
-
-    @log_event_handler(logger)
-    @validation_error_handler
-    def _on_config_changed(self, event: ops.ConfigChangedEvent):
-        """Handle configuration changes.
-
-        Args:
-            event: The event triggered when the relation changed.
-        """
-        self.update(event)
-
-    @log_event_handler(logger)
-    @validation_error_handler
-    def _on_secret_changed(self, event: ops.SecretChangedEvent):
-        """Reconcile after secret content changes.
-
-        Args:
-            event: The secret changed event.
-        """
-        self.update(event)
-
-    @log_event_handler(logger)
-    @validation_error_handler
-    def _on_ingress_ready(self, event):
-        """Handle ingress URL becoming available.
-
-        Args:
-            event: The ingress ready event.
-        """
-        self.provider.reconcile_policy_manager_url()
-
-    @log_event_handler(logger)
-    @validation_error_handler
-    def _on_ingress_revoked(self, event):
-        """Handle ingress URL being revoked.
-
-        Args:
-            event: The ingress revoked event.
-        """
-        self.provider.reconcile_policy_manager_url()
-
-    @log_event_handler(logger)
-    @validation_error_handler
-    def _on_peer_relation_changed(self, event):
-        """Handle peer relation changes.
-
-        Args:
-            event: The event triggered when the peer relation changed.
-        """
-        if self.unit.is_leader():
+        try:
+            cfg = self.config
+        except ValidationError as err:
+            event.add_status(BlockedStatus(self._format_validation_error(err)))
             return
 
-        self.unit.status = WaitingStatus(f"configuring {APP_NAME}")
-        self.update(event)
-
-    @log_event_handler(logger)
-    @validation_error_handler
-    def _on_update_status(self, event):
-        """Handle `update-status` events.
-
-        Args:
-            event: The `update-status` event triggered at intervals
-        """
-        if not self._state.is_ready():
+        function = cfg["charm-function"].value
+        try:
+            _ = self.system_user_passwords
+            _ = self.ldap_credentials
+        except SecretValidationError as err:
+            event.add_status(BlockedStatus(str(err)))
             return
 
-        credentials_rejected = self._probe_configured_credentials()
-        if credentials_rejected:
+        try:
+            container = self.unit.get_container(self.name)
+            can_connect = container.can_connect()
+        except RuntimeError:
+            event.add_status(WaitingStatus("waiting for container"))
             return
-        if self.config["charm-function"].value == "usersync":
-            self.unit.status = ActiveStatus("Status check: UP")
-            return
-
-        if not self._state.database_connection:
-            return
-
-        container = self.unit.get_container(self.name)
-
-        if not container.can_connect():
+        if not can_connect:
+            event.add_status(WaitingStatus("waiting for container"))
             return
 
-        check = container.get_check("up")
+        try:
+            self._validate_relations(function)
+        except RelationNotReady as err:
+            event.add_status(WaitingStatus(str(err)))
+            return
+        except ValueError as err:
+            event.add_status(BlockedStatus(str(err)))
+            return
+
+        if function == "admin" and self._ensure_truststore_password() is None:
+            event.add_status(WaitingStatus("waiting for leader to create the truststore secret"))
+            return
+
+        probe = self._probe_credentials(function)
+        if probe is ApiProbe.REJECTED:
+            username = "rangerusersync" if function == "usersync" else ADMIN_USER
+            event.add_status(
+                BlockedStatus(
+                    f"Ranger authentication failed for {username}. Revert the system-users "
+                    "secret or change the password in the Ranger UI."
+                )
+            )
+            return
+
+        if probe is ApiProbe.OK and function == "admin" and self.unit.is_leader():
+            has_trino_service = self.trino_catalog_handler.has_trino_service(
+                self._ranger_api_client()
+            )
+            if probe is ApiProbe.OK and has_trino_service is False:
+                event.add_status(BlockedStatus("Trino service not found in Ranger"))
+                return
+
+        if function == "usersync":
+            event.add_status(ActiveStatus("Status check: UP"))
+            return
+
+        try:
+            check = container.get_check("up")
+        except ModelError:
+            event.add_status(MaintenanceStatus("waiting for workload"))
+            return
         if check.status != CheckStatus.UP:
-            self.unit.status = MaintenanceStatus("Status check: DOWN")
+            event.add_status(MaintenanceStatus("Status check: DOWN"))
             return
+        event.add_status(ActiveStatus("Status check: UP"))
 
-        self.unit.status = ActiveStatus("Status check: UP")
-
-        if self.unit.is_leader():
-            self.trino_catalog_handler.run_reconciliation()
-
+    @log_event_handler(logger)
     def _on_restart(self, event):
-        """Restart application, action handler.
+        """Restart Ranger through the Pebble API.
 
         Args:
-            event:The event triggered by the restart action
+            event: The restart action event.
         """
         container = self.unit.get_container(self.name)
         if not container.can_connect():
-            event.defer()
+            event.fail("cannot connect to the ranger container")
             return
-
         self.unit.status = MaintenanceStatus("restarting ranger")
         container.restart(self.name)
         event.set_results({"result": "ranger successfully restarted"})
-        self.unit.status = ActiveStatus()
 
-    def set_truststore_password(self, container):
-        """Update the truststore password to the randomly generated one.
+    def _ensure_truststore_password(self):
+        """Return the stable truststore password backed by an app Juju secret.
+
+        Returns:
+            The password, or None when a non-leader unit cannot yet read the
+            leader-created secret.
+        """
+        try:
+            return (
+                self.model.get_secret(label=TRUSTSTORE_SECRET_LABEL)
+                .get_content(refresh=True)
+                .get("password")
+            )
+        except SecretNotFoundError:
+            pass
+        if not self.unit.is_leader():
+            return None
+        password = generate_password()
+        self.app.add_secret({"password": password}, label=TRUSTSTORE_SECRET_LABEL)
+        return password
+
+    def set_truststore_password(self, container, truststore_pwd):
+        """Update the Java truststore password.
 
         Args:
-            container: The application container.
+            container: The workload container.
+            truststore_pwd: The desired truststore password.
         """
-        out, _ = container.exec(["/bin/sh", "-c", "echo $JAVA_HOME"]).wait_output()
-        java_home = out.strip()
-
+        output, _ = container.exec(["/bin/sh", "-c", "echo $JAVA_HOME"]).wait_output()
+        java_home = output.strip()
         command = [
             "keytool",
             "-storepass",
             "changeit",
             "-storepasswd",
             "-new",
-            self._state.truststore_pwd,
+            truststore_pwd,
             "-keystore",
             f"{java_home}/lib/security/cacerts",
         ]
         try:
             container.exec(command).wait_output()
-        except (subprocess.CalledProcessError, ExecError) as e:
-            if e.stderr and "password was incorrect" in e.stderr:
+        except (subprocess.CalledProcessError, ExecError) as error:
+            if error.stderr and (
+                "password was incorrect" in error.stderr or "Warning" in error.stderr
+            ):
                 return
-            if e.stderr and "Warning" in e.stderr:
-                return
-            logger.debug("Unable to update truststore password %s", e.stderr)
+            logger.debug("Unable to update truststore password %s", error.stderr)
 
-    def _configure_ranger_admin(self, container):
-        """Prepare Ranger Admin install.properties file.
+    def _reconcile_admin(self, container, truststore_pwd):
+        """Prepare Ranger Admin configuration and truststore state.
 
         Args:
-            container: The application container.
+            container: The workload container.
+            truststore_pwd: The Java truststore password.
 
         Returns:
-            ADMIN_ENTRYPOINT: Entrypoint path for Ranger Admin startup.
-            context: Environment variables for pebble plan.
+            The Ranger Admin entrypoint and Pebble environment.
         """
-        db_conn = self._state.database_connection
-        if self.unit.is_leader():
-            self._state.truststore_pwd = self._state.truststore_pwd or generate_password()
-        self.set_truststore_password(container)
-        opensearch = self._state.opensearch or {}
-        if opensearch.get("is_enabled") and not container.exists("/opensearch.crt"):
-            self.opensearch_relation_handler.update_certificates()
-
+        db_conn = self.postgres_relation_handler.get_connection()
+        opensearch = self.opensearch_relation_handler.gather_connection()
+        certificate = self.opensearch_relation_handler.gather_certificate()
+        self.set_truststore_password(container, truststore_pwd)
+        self.opensearch_relation_handler.reconcile_index_mapping(opensearch)
+        self.opensearch_relation_handler.reconcile_truststore_certificate(
+            container, certificate, truststore_pwd
+        )
         context = {
             "DB_NAME": db_conn["dbname"],
             "DB_HOST": db_conn["host"],
@@ -461,10 +454,10 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             "OPENSEARCH_PWD": opensearch.get("password"),
             "OPENSEARCH_USER": opensearch.get("username"),
             "OPENSEARCH_ENABLED": opensearch.get("is_enabled"),
+            "OPENSEARCH_CERT_HASH": content_hash(certificate or ""),
             "RANGER_ADMIN_PWD": self.system_user_passwords.admin,
             "JAVA_OPTS": (
-                f"-Duser.timezone=UTC0"
-                f" -Djavax.net.ssl.trustStorePassword={self._state.truststore_pwd}"
+                f"-Duser.timezone=UTC0 -Djavax.net.ssl.trustStorePassword={truststore_pwd}"
             ),
             "RANGER_USERSYNC_PWD": self.system_user_passwords.rangerusersync,
         }
@@ -475,9 +468,6 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
     @staticmethod
     def _render_config_value(value):
         """Render a configuration value for install.properties and the Pebble layer.
-
-        Pebble layers are serialised to YAML, which has no representer for enum
-        members, so enums are reduced to their underlying value.
 
         Args:
             value: Configuration value to render.
@@ -491,15 +481,14 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             return value.value
         return value
 
-    def _configure_ranger_usersync(self, container):
+    def _reconcile_usersync(self, container):
         """Prepare Ranger Usersync install.properties file.
 
         Args:
-            container: The application container.
+            container: The workload container.
 
         Returns:
-            USERSYNC_ENTRYPOINT: Entrypoint path for Ranger Usersync startup.
-            context: Environment variables for pebble plan.
+            The Ranger Usersync entrypoint and Pebble environment.
         """
         ldap = self.ldap.relation_values()
         ldap_credentials = self.ldap_credentials
@@ -515,7 +504,6 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             elif value is None:
                 value = self.config[config_key]
             context[ranger_property] = self._render_config_value(value)
-
         context.update(
             {
                 "POLICY_MGR_URL": self.resolve_policy_manager_url(),
@@ -523,48 +511,49 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             }
         )
         config = render("ranger-usersync-config.jinja", context)
-        container.push(
-            "/usr/lib/ranger/usersync/install.properties",
-            config,
-            make_dirs=True,
-        )
+        container.push("/usr/lib/ranger/usersync/install.properties", config, make_dirs=True)
         return USERSYNC_ENTRYPOINT, context
 
-    def validate(self):
-        """Validate that configuration and relations are valid and ready.
+    def _validate_relations(self, function):
+        """Validate relations required by the selected charm function.
+
+        Args:
+            function: The selected charm function.
 
         Raises:
-            ValueError: in case of invalid configuration.
+            ValueError: If a required relation or configuration is invalid.
         """
-        config = self.config
-        _ = self.system_user_passwords
-        if config["ldap-credentials"]:
-            _ = self.ldap_credentials
-
-        if not self._state.is_ready():
-            raise ValueError("peer relation not ready")
-
-        charm_function = config["charm-function"].value
-        if charm_function == "admin":
+        if function == "admin":
             self.postgres_relation_handler.validate()
-
-        if charm_function == "usersync":
+        if function == "usersync":
             self.ldap.validate()
-
-        if self._state.opensearch and charm_function != "admin":
+        if self.model.relations["opensearch"] and function != "admin":
             raise ValueError("Only Ranger admin can relate to OpenSearch.")
 
-    def _probe_configured_credentials(self) -> bool:
-        """Authenticate configured system-user credentials against the Ranger API.
+    def _ranger_api_client(self) -> RangerAPIClient:
+        """Create an API client for the local Ranger Admin service.
 
         Returns:
-            Whether Ranger rejected the configured credentials.
+            A Ranger API client using the configured administrator credentials.
+        """
+        return RangerAPIClient(
+            f"{LOCALHOST_URL}:{APPLICATION_PORT}",
+            (ADMIN_USER, self.system_user_passwords.admin),
+        )
+
+    def _probe_credentials(self, function) -> ApiProbe:
+        """Authenticate the configured system-user credentials against Ranger.
+
+        Args:
+            function: The selected charm function.
+
+        Returns:
+            The configured credential probe outcome.
 
         Raises:
             SecretValidationError: If the system-users secret is unavailable or invalid.
         """
-        charm_function = self.config["charm-function"].value
-        if charm_function == "usersync":
+        if function == "usersync":
             url = self.config["policy-mgr-url"]
             username = "rangerusersync"
             password = self.system_user_passwords.rangerusersync
@@ -572,20 +561,111 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             url = f"{LOCALHOST_URL}:{APPLICATION_PORT}"
             username = ADMIN_USER
             password = self.system_user_passwords.admin
-
         try:
             RangerAPIClient(url, (username, password)).authenticate(self.API_PROBE_TIMEOUT)
         except RangerAuthenticationError:
-            self.unit.status = BlockedStatus(
-                f"Ranger authentication failed for {username}. Revert the system-users secret "
-                "or change the password in the Ranger UI."
-            )
-            return True
+            return ApiProbe.REJECTED
         except RangerAPIError:
-            logger.info(
-                "Ranger API is unavailable; authentication probe will retry on the next hook."
+            logger.info("Ranger API is unavailable; authentication probe will retry next hook.")
+            return ApiProbe.UNREACHABLE
+        return ApiProbe.OK
+
+    def _reconcile_api(self, function):
+        """Reconcile resources inside the running Ranger server.
+
+        Args:
+            function: The selected charm function.
+        """
+        if self._probe_credentials(function) is not ApiProbe.OK:
+            return
+        if function != "admin" or not self.unit.is_leader():
+            return
+        client = self._ranger_api_client()
+        try:
+            self.provider.reconcile_services(client)
+            self.trino_catalog_handler.reconcile_catalogs(client)
+        except RangerAPIError:
+            logger.warning(
+                "Ranger API reconciliation failed; retrying on the next hook", exc_info=True
             )
-        return False
+
+    def _pebble_layer(self, function, command, context):
+        """Build the Pebble layer for the selected Ranger function.
+
+        Args:
+            function: The selected charm function.
+            command: The workload command.
+            context: Environment variables for the workload.
+
+        Returns:
+            The Pebble layer definition.
+        """
+        layer = {
+            "summary": f"ranger {function} layer",
+            "services": {
+                self.name: {
+                    "summary": f"ranger {function}",
+                    "command": command,
+                    "startup": "enabled",
+                    "override": "replace",
+                    "environment": context,
+                }
+            },
+        }
+        if function == "admin":
+            layer["checks"] = {
+                "up": {
+                    "override": "replace",
+                    "period": "10s",
+                    "http": {"url": "http://localhost:6080/"},
+                }
+            }
+        return layer
+
+    def _reconcile(self):
+        """Converge Ranger to the desired state read from the model.
+
+        Guards return early without deferring; convergence resumes on the next
+        hook and terminal status is reported by collect-unit-status.
+        """
+        try:
+            container = self.unit.get_container(self.name)
+            can_connect = container.can_connect()
+        except RuntimeError:
+            return
+        if not can_connect:
+            return
+        try:
+            cfg = self.config
+            _ = self.system_user_passwords
+            _ = self.ldap_credentials
+        except (ValidationError, SecretValidationError):
+            return
+        function = cfg["charm-function"].value
+        logger.info("reconciling ranger %s", function)
+        try:
+            self._validate_relations(function)
+        except ValueError:
+            return
+
+        if function == "admin":
+            truststore_pwd = self._ensure_truststore_password()
+            if truststore_pwd is None:
+                return
+            command, context = self._reconcile_admin(container, truststore_pwd)
+            self.model.unit.open_port(port=APPLICATION_PORT, protocol="tcp")
+        else:
+            self.model.unit.close_port(port=APPLICATION_PORT, protocol="tcp")
+            command, context = self._reconcile_usersync(container)
+        container.add_layer(
+            self.name, self._pebble_layer(function, command, context), combine=True
+        )
+        container.replan()
+
+        self.provider.publish_policy_manager_url()
+        if function == "usersync":
+            self.ldap.publish_bind_user()
+        self._reconcile_api(function)
 
     @staticmethod
     def _format_validation_error(error: ValidationError) -> str:
@@ -607,86 +687,6 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             option = ".".join(str(part) for part in location).replace("_", "-")
             messages.append(f"{option}: {message}")
         return f"Invalid configuration: {'; '.join(messages)}"
-
-    def update(self, event):
-        """Update the Ranger server configuration and re-plan its execution.
-
-        Args:
-            event: The event triggered when the relation changed.
-        """
-        self._clear_secret_cache()
-        try:
-            self.validate()
-        except (SecretValidationError, ValidationError, ValueError) as err:
-            self._block_on_validation_error(err)
-            return
-
-        if self._probe_configured_credentials():
-            return
-
-        container = self.unit.get_container(self.name)
-        if not container.can_connect():
-            event.defer()
-            return
-
-        charm_function = self.config["charm-function"].value
-        logger.info("configuring ranger %s", charm_function)
-
-        self.model.unit.close_port(port=APPLICATION_PORT, protocol="tcp")
-
-        if charm_function == "usersync":
-            command, context = self._configure_ranger_usersync(container)
-        elif charm_function == "admin":
-            self.model.unit.open_port(port=APPLICATION_PORT, protocol="tcp")
-            command, context = self._configure_ranger_admin(container)
-        else:
-            raise ValueError(
-                f"Unhandled charm-function {charm_function!r}; "
-                "update this method to support the new function type."
-            )
-
-        logger.info("planning ranger %s execution", charm_function)
-        pebble_layer = {
-            "summary": f"ranger {charm_function} layer",
-            "services": {
-                self.name: {
-                    "summary": f"ranger {charm_function}",
-                    "command": command,
-                    "startup": "enabled",
-                    "override": "replace",
-                    "environment": context,
-                }
-            },
-        }
-        if charm_function == "admin":
-            pebble_layer.update(
-                {
-                    "checks": {
-                        "up": {
-                            "override": "replace",
-                            "period": "10s",
-                            "http": {"url": "http://localhost:6080/"},
-                        }
-                    }
-                },
-            )
-        container.add_layer(self.name, pebble_layer, combine=True)
-        container.replan()
-
-        self.unit.status = MaintenanceStatus("replanning application")
-
-    def _block_on_validation_error(self, error):
-        """Set a blocked status for a configuration or secret validation error.
-
-        Args:
-            error: Validation error raised while resolving configuration or secrets.
-        """
-        message = (
-            self._format_validation_error(error)
-            if isinstance(error, ValidationError)
-            else str(error)
-        )
-        self.unit.status = BlockedStatus(message)
 
 
 if __name__ == "__main__":  # pragma: nocover

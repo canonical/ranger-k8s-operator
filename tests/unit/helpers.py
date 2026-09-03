@@ -50,6 +50,144 @@ USER_SECRET_CONTENT = {
 }
 
 
+class FakeRangerClient:
+    """In-memory stand-in for RangerAPIClient that records calls."""
+
+    def __init__(
+        self,
+        *,
+        services=None,
+        zones=None,
+        roles=None,
+        policies=None,
+        failure=None,
+        probe=ApiProbe.OK,
+    ):
+        """Construct a client with optional pre-existing Ranger resources.
+
+        Args:
+            services: Existing Ranger services.
+            zones: Existing Ranger security zones.
+            roles: Existing Ranger roles.
+            policies: Existing Ranger policies.
+            failure: Name of a method that raises RangerAPIError, or a mapping
+                from method names to the number of failures to simulate.
+            probe: Authentication result to emulate.
+        """
+        self.services = {service.name: service for service in services or ()}
+        self.zones = {zone.name: zone for zone in zones or ()}
+        self.roles = {role.name: role for role in roles or ()}
+        self.policies = {policy.name: policy for policy in policies or ()}
+        self.failure = failure
+        self._remaining_failures = dict(failure) if isinstance(failure, dict) else {}
+        self.probe = probe
+        self.calls = []
+
+    def _record(self, method, *args):
+        """Record a call and raise the configured simulated failure."""
+        self.calls.append((method, *args))
+        if self.failure == method:
+            raise RangerAPIError(f"{method} failed")
+        if self._remaining_failures.get(method, 0):
+            self._remaining_failures[method] -= 1
+            raise RangerAPIError(f"{method} failed")
+
+    def authenticate(self, timeout):
+        """Emulate the read-only credentials probe."""
+        self._record("authenticate", timeout)
+        if self.probe is ApiProbe.REJECTED:
+            raise RangerAuthenticationError(401)
+        if self.probe is ApiProbe.UNREACHABLE:
+            raise RangerAPIError("unreachable")
+
+    def list_services(self):
+        """List all in-memory services."""
+        self._record("list_services")
+        return list(self.services.values())
+
+    def list_services_by_type(self, service_type):
+        """List services matching a Ranger service type."""
+        self._record("list_services_by_type", service_type)
+        return [
+            service
+            for service in self.services.values()
+            if getattr(service, "type", None) == service_type
+        ]
+
+    def get_service_by_name(self, name):
+        """Get a service by its name."""
+        self._record("get_service_by_name", name)
+        return self.services.get(name)
+
+    def create_service(self, service):
+        """Store a newly created service."""
+        self._record("create_service", service)
+        self.services[service.name] = service
+        return service
+
+    def delete_service_by_id(self, service_id):
+        """Delete a service by its numeric identifier."""
+        self._record("delete_service_by_id", service_id)
+        for name, service in self.services.items():
+            if service.id == service_id:
+                del self.services[name]
+                return
+
+    def list_zones(self):
+        """List all in-memory security zones."""
+        self._record("list_zones")
+        return list(self.zones.values())
+
+    def create_zone(self, zone):
+        """Store a newly created security zone."""
+        self._record("create_zone", zone)
+        self.zones[zone.name] = zone
+        return zone
+
+    def list_roles(self):
+        """List all in-memory roles."""
+        self._record("list_roles")
+        return list(self.roles.values())
+
+    def create_role(self, role):
+        """Store a newly created role."""
+        self._record("create_role", role)
+        self.roles[role.name] = role
+        return role
+
+    def list_service_policies(self, service_name):
+        """List policies for a service."""
+        self._record("list_service_policies", service_name)
+        return [
+            policy
+            for policy in self.policies.values()
+            if getattr(policy, "service", None) == service_name
+        ]
+
+    def list_policies(self, zone_name, service_name):
+        """List policies for a security zone and service."""
+        self._record("list_policies", zone_name, service_name)
+        return [
+            policy
+            for policy in self.list_service_policies(service_name)
+            if getattr(policy, "zoneName", None) == zone_name
+        ]
+
+    def create_policy(self, policy):
+        """Store a newly created policy."""
+        self._record("create_policy", policy)
+        self.policies[policy.name] = policy
+        return policy
+
+    def delete_policy_by_id(self, policy_id):
+        """Delete a policy by its numeric identifier."""
+        self._record("delete_policy_by_id", policy_id)
+        for name, policy in self.policies.items():
+            if policy.id == policy_id:
+                del self.policies[name]
+                return
+
+
 def ranger_container(**overrides):
     """Build a connectable Ranger workload container.
 
@@ -200,19 +338,11 @@ def mock_ranger_api(probe=ApiProbe.OK, **behaviour):
 
     Args:
         probe: Authentication result to emulate.
-        **behaviour: Mock client methods and values to configure.
+        **behaviour: Fake client resources and failure configuration.
 
     Yields:
         The mocked Ranger API client.
     """
-    client = mock.MagicMock()
-    client.list_services.return_value = []
-    client.list_services_by_type.return_value = []
-    if probe is ApiProbe.REJECTED:
-        client.authenticate.side_effect = RangerAuthenticationError(401)
-    elif probe is ApiProbe.UNREACHABLE:
-        client.authenticate.side_effect = RangerAPIError("unreachable")
-    for name, value in behaviour.items():
-        setattr(client, name, value)
+    client = FakeRangerClient(probe=probe, **behaviour)
     with mock.patch("charm.RangerAPIClient", return_value=client):
         yield client

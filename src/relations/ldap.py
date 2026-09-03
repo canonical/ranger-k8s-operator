@@ -1,103 +1,42 @@
 # Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Defines ldap relation event handling methods."""
-
-import logging
+"""Defines LDAP relation handling methods."""
 
 from ops import framework
 
-from utils import log_event_handler, validation_error_handler
-
-logger = logging.getLogger(__name__)
-
 
 class LDAPRelationHandler(framework.Object):
-    """Client for ldap relations."""
+    """Client for LDAP relations.
+
+    Event observation is centralized in the charm; this object exposes logic methods
+    invoked by the charm reconciler.
+    """
 
     def __init__(self, charm, relation_name="ldap"):
         """Construct.
 
         Args:
-            charm: The charm to attach the hooks to.
-            relation_name: The name of the relation defaults to ldap.
+            charm: The charm to attach the handler to.
+            relation_name: The name of the relation.
         """
-        super().__init__(charm, "ldap")
+        super().__init__(charm, relation_name)
         self.charm = charm
         self.relation_name = relation_name
 
-        # Handle database relation.
-        self.framework.observe(
-            charm.on[self.relation_name].relation_created,
-            self._on_relation_created,
-        )
-        self.framework.observe(
-            charm.on[self.relation_name].relation_changed,
-            self._on_relation_changed,
-        )
-        self.framework.observe(
-            charm.on[self.relation_name].relation_broken,
-            self._on_relation_broken,
-        )
+    def publish_bind_user(self):
+        """Publish the LDAP bind user for usersync deployments.
 
-    @log_event_handler(logger)
-    @validation_error_handler
-    def _on_relation_created(self, event):
-        """Handle ldap relation created.
-
-        Args:
-            event: The relation created event.
+        Returns:
+            None.
         """
         if not self.charm.unit.is_leader():
             return
-
         if self.charm.config["charm-function"].value != "usersync":
             return
-
-        if event.relation:
-            event.relation.data[self.charm.app].update({"user": "admin"})
-
-    @log_event_handler(logger)
-    @validation_error_handler
-    def _on_relation_changed(self, event):
-        """Handle ldap relation changed.
-
-        Args:
-            event: Relation changed event.
-        """
-        if not self.charm.unit.is_leader():
-            return
-
-        if self.charm.config["charm-function"].value != "usersync":
-            return
-
-        container = self.charm.model.unit.get_container(self.charm.name)
-        if not container.can_connect():
-            event.defer()
-            return
-
-        self.charm.update(event)
-
-    @log_event_handler(logger)
-    @validation_error_handler
-    def _on_relation_broken(self, event):
-        """Handle ldap relation broken.
-
-        Args:
-            event: Relation broken event.
-        """
-        if not self.charm.unit.is_leader():
-            return
-
-        if self.charm.config["charm-function"].value != "usersync":
-            return
-
-        container = self.charm.model.unit.get_container(self.charm.name)
-        if not container.can_connect():
-            event.defer()
-            return
-
-        self.charm.update(event)
+        for relation in self.charm.model.relations[self.relation_name]:
+            if relation.active:
+                relation.data[self.charm.app].update({"user": "admin"})
 
     def relation_values(self):
         """Return usersync values derived from the active LDAP relation.

@@ -1,26 +1,19 @@
 # Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Ranger client relation hooks & helpers."""
+"""Ranger client relation helpers."""
 
 import logging
 
-from apache_ranger.client import ranger_client
-from apache_ranger.exceptions import RangerServiceException
-from apache_ranger.model import ranger_service
+from apache_ranger.model.ranger_service import RangerService
 from ops.charm import CharmBase
 from ops.framework import Object
-from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
-from pydantic import ValidationError
 
 from literals import (
-    ADMIN_USER,
-    APPLICATION_PORT,
     DEFAULT_POLICIES,
-    LOCALHOST_URL,
+    SERVICE_STAMP_PREFIX,
 )
-from secret_models import SecretValidationError
-from utils import log_event_handler, validation_error_handler
+from ranger_client import RangerAPIClient, RangerAPIError
 
 logger = logging.getLogger(__name__)
 
@@ -28,239 +21,168 @@ logger = logging.getLogger(__name__)
 class RangerProvider(Object):
     """Defines functionality for the 'provides' side of the 'ranger-client' relation.
 
-    Hook events observed:
-        - relation-updated
-        - relation-broken
+    Event observation is centralized in the charm; this object exposes logic methods
+    invoked by the charm reconciler.
     """
 
     def __init__(self, charm: CharmBase, relation_name: str = "policy") -> None:
         """Construct RangerProvider object.
 
         Args:
-            charm: the charm for which this relation is provided
-            relation_name: the name of the relation
+            charm: The charm for which this relation is provided.
+            relation_name: The name of the relation.
         """
         self.relation_name = relation_name
 
         super().__init__(charm, self.relation_name)
-        self.framework.observe(
-            charm.on[self.relation_name].relation_changed,
-            self._on_relation_changed,
-        )
-        self.framework.observe(
-            charm.on[self.relation_name].relation_broken,
-            self._on_relation_broken,
-        )
-
         self.charm = charm
 
-    @log_event_handler(logger)
-    @validation_error_handler
-    def _on_relation_changed(self, event):
-        """Handle policy relation changed event.
-
-        Create Ranger service for related application.
-
-        Args:
-            event: relation changed event.
-        """
-        if not self.charm.unit.is_leader():
-            return
-
-        data = event.relation.data[event.app]
-
-        if not data:
-            return
-
-        self.charm.unit.status = MaintenanceStatus("Adding policy relation")
-
-        logger.info("creating service")
-        try:
-            ranger = self._create_ranger_client()
-            service, is_created = self._create_ranger_service(ranger, data, event)
-        except (SecretValidationError, ValidationError) as err:
-            self.charm._block_on_validation_error(err)
-            event.defer()
-            return
-        except RangerServiceException:
-            event.defer()
-            logger.exception(
-                "A Ranger Service Exception has occurred while attempting to create a service:"
-            )
-            return
-        except Exception:
-            self.charm.unit.status = BlockedStatus("Unable to create service")
-            logger.exception("An error occurred while creating the ranger service:")
-            return
-
-        if not service:
-            logger.debug("Unable to create service, deferring event.")
-            event.defer()
-            self._set_policy_manager(event)
-            return
-
-        if not is_created:
-            self._set_policy_manager(event)
-            return
-
-        services = self.charm._state.services or {}
-        services[f"relation_{event.relation.id}"] = service.id
-        self.charm._state.services = services
-        self._set_policy_manager(event)
-        self.charm.unit.status = ActiveStatus()
-
-    @log_event_handler(logger)
-    @validation_error_handler
-    def _on_relation_broken(self, event):
-        """Handle on relation broken event.
-
-        Args:
-            event: on relation broken event.
-        """
-        if not self.charm.unit.is_leader():
-            return
-
-        if f"relation_{event.relation.id}" not in self.charm._state.services:
-            return
-
-        try:
-            service_id = self.charm._state.services[f"relation_{event.relation.id}"]
-            self._delete_ranger_service(service_id, event.relation.id)
-        except SecretValidationError as err:
-            self.charm._block_on_validation_error(err)
-            return
-        except RangerServiceException:
-            logger.exception(
-                "A Ranger Service Exception has occurred while attempting to delete a service:"
-            )
-            return
-        except Exception:
-            self.charm.unit.status = BlockedStatus("Unable to delete service")
-            logger.exception("An error occurred while deleting the ranger service:")
-            return
-
-        existing_services = self.charm._state.services
-        del existing_services[f"relation_{event.relation.id}"]
-        self.charm._state.services = existing_services
-
-    def _create_ranger_service(self, ranger, data, event):
-        """Create application service in Ranger.
-
-        Args:
-            ranger: ranger client
-            data: relation data
-            event: relation event
+    def publish_policy_manager_url(self) -> None:
+        """Publish the policy manager URL to active policy relations.
 
         Returns:
-            service: the object for the created service
-            is_created: a bool to signify if the service was created in this run.
+            None.
         """
-        service_name = data["name"]
+        if not self.charm.unit.is_leader():
+            return
+        url = self.charm.resolve_policy_manager_url()
+        if url is None:
+            return
+        for relation in self.charm.model.relations[self.relation_name]:
+            relation.data[self.charm.app]["policy_manager_url"] = url
 
-        existing_service = ranger.get_service(service_name)
-        if existing_service is not None:
-            logger.info(f"Service {service_name!r} not created as it already exists.")
-            is_created = False
-            return (existing_service, is_created)
+    def reconcile_services(self, client: RangerAPIClient) -> None:
+        """Reconcile Ranger services for live policy relations.
 
-        service = ranger_service.RangerService({"name": service_name, "type": data["type"]})
+        Args:
+            client: The configured Ranger API client.
+
+        Returns:
+            None.
+
+        Raises:
+            RangerAPIError: If service discovery or policy lookup fails.
+        """
+        live = {
+            relation.id: relation
+            for relation in self.charm.model.relations[self.relation_name]
+            if relation.active and relation.app is not None
+        }
+        managed = {}
+        for service in client.list_services():
+            username = (service.configs or {}).get("username", "")
+            if username.startswith(SERVICE_STAMP_PREFIX):
+                try:
+                    managed[int(username[len(SERVICE_STAMP_PREFIX) :])] = service
+                except ValueError:
+                    continue
+
+        self._create_live_services(client, live, managed)
+        self._garbage_collect_services(client, live, managed)
+
+    def _create_live_services(self, client: RangerAPIClient, live, managed) -> None:
+        """Create services for live policy relations that do not have one.
+
+        Args:
+            client: The configured Ranger API client.
+            live: Active policy relations keyed by relation ID.
+            managed: Charm-managed Ranger services keyed by relation ID.
+
+        Returns:
+            None.
+
+        Raises:
+            RangerAPIError: If service lookup fails.
+        """
+        for relation_id, relation in live.items():
+            data = relation.data[relation.app]
+            if not data.get("name") or not data.get("type"):
+                logger.debug("policy relation %s has not published its service", relation_id)
+                continue
+            if relation_id in managed:
+                continue
+            if client.get_service_by_name(data["name"]) is not None:
+                logger.warning(
+                    "service %s already exists and is not managed by relation %s",
+                    data["name"],
+                    relation_id,
+                )
+                continue
+            try:
+                client.create_service(self._build_service(data, relation_id))
+            except RangerAPIError as error:
+                logger.warning("failed to create service %s: %s", data["name"], error)
+
+    def _garbage_collect_services(self, client: RangerAPIClient, live, managed) -> None:
+        """Delete managed services whose policy relation has departed.
+
+        Args:
+            client: The configured Ranger API client.
+            live: Active policy relations keyed by relation ID.
+            managed: Charm-managed Ranger services keyed by relation ID.
+
+        Returns:
+            None.
+
+        Raises:
+            RangerAPIError: If policy lookup fails.
+        """
+        for relation_id, service in managed.items():
+            if relation_id in live:
+                continue
+            if self._has_custom_policies(client, service.name, relation_id):
+                logger.warning(
+                    "service %s has non-default policies; deletion aborted", service.name
+                )
+                continue
+            try:
+                client.delete_service_by_id(service.id)
+            except RangerAPIError as error:
+                logger.warning("failed to delete service %s: %s", service.name, error)
+
+    def _build_service(self, data, relation_id: int) -> RangerService:
+        """Build a Ranger service from policy relation data.
+
+        Args:
+            data: The policy relation application databag.
+            relation_id: The ID of the policy relation.
+
+        Returns:
+            The service definition to create in Ranger.
+        """
+        service = RangerService({"name": data["name"], "type": data["type"]})
         service.configs = {
-            "username": f"relation_id_{event.relation.id}",
+            "username": f"{SERVICE_STAMP_PREFIX}{relation_id}",
             "resource.lookup.timeout.value.in.ms": self.charm.config["lookup-timeout"],
         }
         for key, value in data.items():
             if key not in ["name", "type"]:
                 service.configs[key] = value
+        return service
 
-        created_service = ranger.create_service(service)
-
-        if not ranger.get_service(service_name):
-            is_created = False
-            return (None, is_created)
-
-        is_created = True
-        return (created_service, is_created)
-
-    def _set_policy_manager(self, event):
-        """Set the policy manager url in the relation databag.
-
-        Args:
-            event: relation event
-        """
-        relation = self.charm.model.get_relation(self.relation_name, event.relation.id)
-
-        if relation:
-            relation.data[self.charm.app].update(
-                {
-                    "policy_manager_url": self.charm.resolve_policy_manager_url(),
-                }
-            )
-
-    def reconcile_policy_manager_url(self):
-        """Re-write policy_manager_url in all active policy relation databags.
-
-        Safe to call at any time; skips silently for non-leaders.
-        """
-        if not self.charm.unit.is_leader():
-            return
-
-        url = self.charm.resolve_policy_manager_url()
-        if url is None:
-            return
-
-        for relation in self.charm.model.relations[self.relation_name]:
-            relation.data[self.charm.app]["policy_manager_url"] = url
-
-    def _create_ranger_client(self):
-        """Prepare Ranger client.
-
-        Returns:
-            ranger: ranger client
-        """
-        ranger_auth = (ADMIN_USER, self.charm.system_user_passwords.admin)
-        ranger_url = f"{LOCALHOST_URL}:{APPLICATION_PORT}"
-        ranger = ranger_client.RangerClient(ranger_url, ranger_auth)
-        return ranger
-
-    def _delete_ranger_service(self, service_id, relation_id):
-        """Delete service in Ranger.
-
-        Args:
-            service_id: the ID of the service to delete
-            relation_id: the id of the relation
-        """
-        ranger = self._create_ranger_client()
-        retrieved_service = ranger.get_service_by_id(service_id)
-
-        if retrieved_service is None:
-            return
-
-        if self._has_custom_policies(ranger, retrieved_service.name, relation_id):
-            logger.warning(
-                f"Service {retrieved_service.name} has non-default policies defined."
-                " Deletion aborted."
-            )
-            return
-        ranger.delete_service_by_id(service_id)
-
-    def _has_custom_policies(self, ranger, service_name, relation_id):
+    def _has_custom_policies(
+        self, client: RangerAPIClient, service_name: str, relation_id: int
+    ) -> bool:
         """Determine if the service has custom policies.
 
         Args:
-            ranger: ranger client
-            service_name: the name of the ranger service
-            relation_id: the id of the relation
+            client: The configured Ranger API client.
+            service_name: The name of the Ranger service.
+            relation_id: The ID of the policy relation.
 
         Returns:
-            bool: if the service contains custom policies
+            Whether the service contains custom policies.
+
+        Raises:
+            RangerAPIError: If policy lookup fails.
         """
-        policies = ranger.get_policies_in_service(service_name)
+        policies = client.list_service_policies(service_name)
 
         for policy in policies:
-            if policy["name"] not in DEFAULT_POLICIES:
+            if policy.name not in DEFAULT_POLICIES:
                 return True
 
             for item in policy["policyItems"]:
-                if f"relation_id_{relation_id}" not in item["users"]:
+                if f"{SERVICE_STAMP_PREFIX}{relation_id}" not in item["users"]:
                     return True
         return False

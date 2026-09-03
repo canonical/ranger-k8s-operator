@@ -79,12 +79,13 @@ Related applications must have the Ranger plugin configured. The Ranger plugin s
 
 #### Service name
 Before relation of an application to the Ranger charm, the application's `ranger-service-name` configuration parameter should be set. This will be the name of the Ranger service created for the application.
+A Ranger service is removed when its `policy` relation is removed unless it carries non-default policies.
 
 ### Integrating with Trino
 
 #### `policy` interface
 
-The `policy` interface enables Trino to download Ranger policies via the Ranger plugin. The configuration of groups is done automatically on relation with the Ranger charm in the [Trino K8s charm](https://charmhub.io/trino-k8s).
+The `policy` interface enables Trino to download Ranger policies via the Ranger plugin. The configuration of groups is done automatically during reconciliation with the Ranger charm in the [Trino K8s charm](https://charmhub.io/trino-k8s).
 
 ```bash
 juju relate trino-k8s:policy ranger-k8s:policy
@@ -105,9 +106,10 @@ juju config ranger-k8s --file=user-group-configuration.yaml
 #### `trino-catalog` interface
 
 The `trino-catalog` interface creates Ranger access-control resources for Trino
-catalogs. When related, Ranger creates missing security zones, roles, and
-default policies based on the catalogs exposed by Trino. Existing completed
-Ranger objects are not updated or deleted.
+catalogs. Ranger creates missing security zones, roles, and default policies
+based on the catalogs exposed by Trino as it converges; provisioning may
+complete on a later hook, at the latest on the next `update-status`. Existing
+completed Ranger objects are not updated or deleted.
 
 ##### Usage
 
@@ -121,7 +123,7 @@ The Ranger charm assumes there is a single registered Trino service on Ranger th
 
 ##### How it works
 
-Trino typically exposes a read-only catalog (such as `my_db`) and sometimes a read-write developer catalog (such as `my_db_developer`). When Ranger receives this catalog information, it performs the following automated setup:
+Trino typically exposes a read-only catalog (such as `my_db`) and sometimes a read-write developer catalog (such as `my_db_developer`). Ranger performs the following automated setup for this catalog information:
 
 1. **Security zones**: Ranger creates a dedicated security zone for each base catalog (grouping `<catalog>` and `<catalog>_developer` into a single zone named `<catalog>`).
 2. **Roles**: Within the zone, Ranger automatically provisions four default roles for access management:

@@ -398,8 +398,6 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             container: The workload container.
             truststore_pwd: The desired truststore password.
         """
-        output, _ = container.exec(["/bin/sh", "-c", "echo $JAVA_HOME"]).wait_output()
-        java_home = output.strip()
         command = [
             "keytool",
             "-storepass",
@@ -407,8 +405,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             "-storepasswd",
             "-new",
             truststore_pwd,
-            "-keystore",
-            f"{java_home}/lib/security/cacerts",
+            "-cacerts",
         ]
         try:
             container.exec(command).wait_output()

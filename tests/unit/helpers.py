@@ -200,7 +200,6 @@ def ranger_container(**overrides):
     defaults = {
         "can_connect": True,
         "execs": {
-            Exec(("/bin/sh", "-c", "echo $JAVA_HOME"), stdout="/usr/lib/jvm/java-21-openjdk/"),
             Exec(("keytool",), return_code=0),
         },
     }

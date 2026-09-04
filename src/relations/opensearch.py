@@ -157,8 +157,7 @@ class OpensearchRelationHandler(framework.Object):
             command = [
                 "keytool",
                 "-importcert",
-                "-keystore",
-                f"{self._java_home(container)}/lib/security/cacerts",
+                "-cacerts",
                 "-file",
                 certificate_path,
                 "-alias",
@@ -171,8 +170,7 @@ class OpensearchRelationHandler(framework.Object):
             command = [
                 "keytool",
                 "-delete",
-                "-keystore",
-                f"{self._java_home(container)}/lib/security/cacerts",
+                "-cacerts",
                 "-alias",
                 CERTIFICATE_NAME,
                 "-storepass",
@@ -191,15 +189,3 @@ class OpensearchRelationHandler(framework.Object):
 
         if certificate is None:
             container.remove_path(certificate_path)
-
-    def _java_home(self, container) -> str:
-        """Read the Java home path from the workload container.
-
-        Args:
-            container: The workload container.
-
-        Returns:
-            The Java home path.
-        """
-        output, _ = container.exec(["/bin/sh", "-c", "echo $JAVA_HOME"]).wait_output()
-        return output.strip()

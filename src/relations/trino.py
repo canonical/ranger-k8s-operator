@@ -6,113 +6,50 @@
 import logging
 
 from ops import framework
-from ops.model import BlockedStatus
 
-from literals import (
-    ADMIN_USER,
-    APPLICATION_PORT,
-    LOCALHOST_URL,
-    TRINO_SERVICE_TYPE,
-)
+from literals import TRINO_SERVICE_TYPE
 from ranger_client import RangerAPIClient, RangerAPIError
 from reconcile import TrinoCatalogReconciler
-from secret_models import SecretValidationError
-from utils import log_event_handler, validation_error_handler
 
 logger = logging.getLogger(__name__)
 
 
 class TrinoCatalogRelationHandler(framework.Object):
-    """Client for trino-catalog relations."""
+    """Client for trino-catalog relations.
+
+    Event observation is centralized in the charm; this object exposes logic methods
+    invoked by the charm reconciler.
+    """
 
     def __init__(self, charm, relation_name="trino-catalog"):
         """Construct.
 
         Args:
-            charm: The charm to attach the hooks to.
+            charm: The charm to attach the handler to.
             relation_name: The name of the relation defaults to trino-catalog.
         """
-        super().__init__(charm, "trino-catalog")
+        super().__init__(charm, relation_name)
         self.charm = charm
         self.relation_name = relation_name
 
-        self.framework.observe(
-            charm.on[self.relation_name].relation_changed,
-            self._on_relation_changed,
-        )
-        self.framework.observe(
-            charm.on[self.relation_name].relation_broken,
-            self._on_relation_broken,
-        )
-
-    @log_event_handler(logger)
-    @validation_error_handler
-    def _on_relation_changed(self, event):
-        """Handle trino-catalog relation changed.
-
-        Args:
-            event: Relation changed event.
-        """
-        if not self.charm.unit.is_leader():
-            return
-
-        container = self.charm.model.unit.get_container(self.charm.name)
-        if not container.can_connect():
-            return
-
-        trino_info = self.charm.trino_catalog_requirer.get_trino_info()
-        if trino_info:
-            self.charm._state.trino_url = trino_info["trino_url"]
-            self.charm._state.trino_catalogs = [c.to_dict() for c in trino_info["trino_catalogs"]]
-            self.charm._state.trino_credentials_secret_id = trino_info[
-                "trino_credentials_secret_id"
-            ]
-        self.charm.update(event)
-        self.run_reconciliation()
-
-    @log_event_handler(logger)
-    @validation_error_handler
-    def _on_relation_broken(self, event):
-        """Handle trino-catalog relation broken.
-
-        Args:
-            event: Relation broken event.
-        """
-        if not self.charm.unit.is_leader():
-            return
-
-        container = self.charm.model.unit.get_container(self.charm.name)
-        if not container.can_connect():
-            return
-
-        self.charm._state.trino_url = None
-        self.charm._state.trino_catalogs = None
-        self.charm._state.trino_credentials_secret_id = None
-        self.charm.update(event)
-
-    def run_reconciliation(self):
+    def reconcile_catalogs(self, client: RangerAPIClient) -> None:
         """Run Trino catalog reconciliation against the Ranger REST API.
 
-        Fetches the Trino service from Ranger, then reconciles security
-        zones, roles, and policies to match the current catalog state.
-        On any API error the failure is logged and the method returns;
-        the next ``update-status`` hook will retry.
+        Args:
+            client: The configured Ranger API client.
+
+        Returns:
+            None.
         """
-        catalogs = self.charm._state.trino_catalogs or []
+        info = self.charm.trino_catalog_requirer.get_trino_info()
+        catalogs = [catalog.to_dict() for catalog in info["trino_catalogs"]] if info else []
         has_relation = bool(self.charm.model.relations.get(self.relation_name))
 
         if not has_relation and not catalogs:
             return
 
         try:
-            client = RangerAPIClient(
-                f"{LOCALHOST_URL}:{APPLICATION_PORT}",
-                (ADMIN_USER, self.charm.system_user_passwords.admin),
-            )
             services = client.list_services_by_type(TRINO_SERVICE_TYPE)
-        except SecretValidationError as err:
-            self.charm._block_on_validation_error(err)
-            return
         except RangerAPIError:
             logger.warning(
                 "failed to connect to Ranger API, reconciliation will retry on next update-status",
@@ -121,8 +58,6 @@ class TrinoCatalogRelationHandler(framework.Object):
             return
 
         if not services:
-            if has_relation:
-                self.charm.unit.status = BlockedStatus("Trino service not found in Ranger")
             return
 
         service_name = services[0].name
@@ -138,3 +73,21 @@ class TrinoCatalogRelationHandler(framework.Object):
                 "reconciliation failed, will retry on next update-status",
                 exc_info=True,
             )
+
+    def has_trino_service(self, client: RangerAPIClient):
+        """Report whether Ranger has the Trino service backing this relation.
+
+        Args:
+            client: The configured Ranger API client.
+
+        Returns:
+            None when there is no trino-catalog relation or the API call failed,
+            otherwise whether a Trino service exists.
+        """
+        if not self.charm.model.relations.get(self.relation_name):
+            return None
+        try:
+            services = client.list_services_by_type(TRINO_SERVICE_TYPE)
+        except RangerAPIError:
+            return None
+        return bool(services)

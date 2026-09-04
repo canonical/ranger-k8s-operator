@@ -43,6 +43,7 @@ def _state(config=None, secret=SYSTEM_USERS_SECRET, secrets=None):
     return testing.State(
         config={"system-users": secret.id, **(config or {})},
         secrets={secret, *(secrets or set())},
+        containers={testing.Container("ranger", can_connect=True)},
     )
 
 

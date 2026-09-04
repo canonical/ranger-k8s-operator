@@ -337,7 +337,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             has_trino_service = self.trino_catalog_handler.has_trino_service(
                 self._ranger_api_client()
             )
-            if probe is ApiProbe.OK and has_trino_service is False:
+            if has_trino_service is False:
                 event.add_status(BlockedStatus("Trino service not found in Ranger"))
                 return
 

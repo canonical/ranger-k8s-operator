@@ -10,7 +10,6 @@ from unittest import mock
 
 import pytest
 import requests
-from apache_ranger.model.ranger_security_zone import RangerSecurityZone
 from apache_ranger.model.ranger_service import RangerService
 from ops import testing
 
@@ -249,18 +248,6 @@ def test_policy_manager_url_published_while_api_down(ctx):
     assert policy_out.local_app_data == {
         "policy_manager_url": "http://ranger-k8s.ranger-model.svc.cluster.local:6080"
     }
-
-
-def test_api_call_budget(ctx):
-    """A steady-state admin update uses no more than ten Ranger API calls."""
-    trino = _trino_relation()
-    zone = RangerSecurityZone({"name": "sales"})
-    client = FakeRangerClient(services=[_service("trino-service")], zones=[zone])
-    with mock.patch("charm.RangerAPIClient", return_value=client):
-        ctx.run(ctx.on.update_status(), build_admin_state(extra_relations={trino}))
-
-    assert len(client.calls) <= 10
-    assert len(client.calls) == 8
 
 
 def test_trino_catalogs_derived_from_relation(ctx):

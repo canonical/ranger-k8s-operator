@@ -182,7 +182,7 @@ class RangerProvider(Object):
             if policy.name not in DEFAULT_POLICIES:
                 return True
 
-            for item in policy["policyItems"]:
+            for item in policy.policyItems or []:
                 if f"{SERVICE_STAMP_PREFIX}{relation_id}" not in item["users"]:
                     return True
         return False

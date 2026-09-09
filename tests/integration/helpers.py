@@ -214,6 +214,11 @@ def get_application_url(juju: jubilant.Juju, application, port):
 def scale(juju: jubilant.Juju, app, units):
     """Scale the application to the provided number and wait for idle.
 
+    A unit added to an already-integrated application evaluates its status during
+    the install hook, before Juju has exposed any relation to it, so it briefly
+    reports "blocked". Blocked is therefore not treated as fatal here; a unit that
+    fails to converge is still caught by the active-and-idle wait timing out.
+
     Args:
         juju: Jubilant Juju object.
         app: Application to be scaled.
@@ -230,7 +235,7 @@ def scale(juju: jubilant.Juju, app, units):
         [app],
         status="active",
         idle_period=30,
-        raise_on_blocked=True,
+        raise_on_blocked=False,
         timeout=600,
         wait_for_exact_units=units,
     )

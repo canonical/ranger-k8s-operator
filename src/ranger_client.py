@@ -114,6 +114,86 @@ class RangerAPIClient:
             ) from exc
         return services or []
 
+    def list_services(self) -> List[RangerService]:
+        """List all services.
+
+        ``GET /service/public/v2/api/service``
+
+        Returns:
+            List of ``RangerService`` objects.
+
+        Raises:
+            RangerAPIError: if the API call fails.
+        """
+        logger.debug("listing services")
+        try:
+            services: Optional[List[RangerService]] = self._client.find_services({})
+        except RangerServiceException as exc:
+            raise RangerAPIError(f"Failed to list services: {exc}") from exc
+        return services or []
+
+    def get_service_by_name(self, name: str) -> Optional[RangerService]:
+        """Get a service by name.
+
+        ``GET /service/public/v2/api/service/name/<name>``
+
+        Args:
+            name: name of the service.
+
+        Returns:
+            The matching ``RangerService``, or ``None`` when it is absent.
+
+        Raises:
+            RangerAPIError: if the API call fails.
+        """
+        logger.debug("getting service %s", name)
+        try:
+            return self._client.get_service(name)
+        except RangerServiceException as exc:
+            raise RangerAPIError(f"Failed to get service {name!r}: {exc}") from exc
+
+    def create_service(self, service: RangerService) -> RangerService:
+        """Create a service.
+
+        ``POST /service/public/v2/api/service``
+
+        Args:
+            service: the service definition to create.
+
+        Returns:
+            The created ``RangerService``.
+
+        Raises:
+            RangerAPIError: if the API call fails or returns no service.
+        """
+        try:
+            created: Optional[RangerService] = self._client.create_service(service)
+        except RangerServiceException as exc:
+            raise RangerAPIError(f"Failed to create service {service.name!r}: {exc}") from exc
+        if created is None:
+            raise RangerAPIError(
+                f"Failed to create service {service.name!r}: no response from server"
+            )
+        logger.info("created service %s", service.name)
+        return created
+
+    def delete_service_by_id(self, service_id: int) -> None:
+        """Delete a service by its ID.
+
+        ``DELETE /service/public/v2/api/service/<id>``
+
+        Args:
+            service_id: numeric ID of the service to delete.
+
+        Raises:
+            RangerAPIError: if the API call fails.
+        """
+        try:
+            self._client.delete_service_by_id(service_id)
+        except RangerServiceException as exc:
+            raise RangerAPIError(f"Failed to delete service id={service_id}: {exc}") from exc
+        logger.info("deleted service id=%s", service_id)
+
     def list_zones(self) -> List[RangerSecurityZone]:
         """List all security zones.
 

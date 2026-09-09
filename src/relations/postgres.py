@@ -1,15 +1,14 @@
 # Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Defines postgres relation event handling methods."""
+"""Defines PostgreSQL relation handling methods."""
 
 import logging
 
-from charms.data_platform_libs.v0.data_interfaces import DatabaseCreatedEvent
 from ops import framework
-from ops.model import WaitingStatus
+from ops.model import ModelError, SecretNotFoundError
 
-from utils import log_event_handler, validation_error_handler
+from exceptions import RelationNotReady
 
 logger = logging.getLogger(__name__)
 
@@ -17,94 +16,59 @@ logger = logging.getLogger(__name__)
 class PostgresRelationHandler(framework.Object):
     """Client for ranger:postgresql relations.
 
+    Event observation is centralized in the charm; this object exposes logic methods
+    invoked by the charm reconciler.
+
     Attributes:
         DB_NAME: the name of the postgresql database
     """
 
     DB_NAME = "ranger-k8s_db"
 
-    def __init__(self, charm):
+    def __init__(self, charm, relation_name="database"):
         """Construct.
 
         Args:
-            charm: The charm to attach the hooks to.
+            charm: The charm to attach the handler to.
+            relation_name: The name of the relation.
         """
-        super().__init__(charm, "database")
+        super().__init__(charm, relation_name)
         self.charm = charm
+        self.relation_name = relation_name
 
-        # Handle database relation.
-        charm.framework.observe(
-            self.charm.postgres_relation.on.database_created,
-            self._on_database_changed,
-        )
-        charm.framework.observe(
-            self.charm.postgres_relation.on.endpoints_changed,
-            self._on_database_changed,
-        )
-        charm.framework.observe(
-            self.charm.on.database_relation_broken,
-            self._on_database_relation_broken,
-        )
+    def get_connection(self):
+        """Read PostgreSQL connection values live from the database relation.
 
-    @log_event_handler(logger)
-    @validation_error_handler
-    def _on_database_changed(self, event: DatabaseCreatedEvent) -> None:
-        """Handle database creation/change events.
-
-        Args:
-            event: The event triggered when the relation changed.
+        Returns:
+            A database connection mapping, or None when unavailable.
         """
-        if not self.charm._state.is_ready():
-            event.defer()
-            return
-
-        if not self.charm.unit.is_leader():
-            return
-
-        self.charm.unit.status = WaitingStatus(f"handling {event.relation.name} change")
-        self.update(event)
-
-    @log_event_handler(logger)
-    @validation_error_handler
-    def _on_database_relation_broken(self, event: DatabaseCreatedEvent) -> None:
-        """Handle broken relations with the database.
-
-        Args:
-            event: The event triggered when the relation changed.
-        """
-        if not self.charm._state.is_ready():
-            event.defer()
-            return
-
-        if self.charm.unit.is_leader():
-            self.update(event, True)
-
-    def update(self, event, relation_broken=False):
-        """Assign nested value in peer relation.
-
-        Args:
-            event: The event triggered when the relation changed.
-            relation_broken: true if database connection is broken.
-        """
-        db_conn = None
-        if not relation_broken:
-            host, port = event.endpoints.split(",", 1)[0].split(":")
-            db_conn = {
-                "dbname": PostgresRelationHandler.DB_NAME,
-                "host": host,
-                "port": port,
-                "password": event.password,
-                "user": event.username,
-            }
-
-        self.charm._state.database_connection = db_conn
-        self.charm.update(event)
+        for relation in self.charm.model.relations[self.relation_name]:
+            if not relation.active:
+                continue
+            try:
+                data = self.charm.postgres_relation.fetch_relation_data(
+                    [relation.id], ["endpoints", "username", "password"]
+                ).get(relation.id, {})
+                host, port = data["endpoints"].split(",", 1)[0].split(":")
+                return {
+                    "dbname": self.DB_NAME,
+                    "host": host,
+                    "port": port,
+                    "user": data["username"],
+                    "password": data["password"],
+                }
+            except (KeyError, ModelError, SecretNotFoundError, ValueError) as error:
+                logger.warning("Could not read database relation data: %s", error)
+        return None
 
     def validate(self):
-        """Check if the database connection is available.
+        """Raise when the database relation is absent or not yet usable.
 
         Raises:
-            ValueError: if the database is not ready.
+            ValueError: when no database relation exists.
+            RelationNotReady: when the relation exists but has published no data.
         """
-        if self.charm._state.database_connection is None:
-            raise ValueError("database relation not ready")
+        if not self.charm.model.relations[self.relation_name]:
+            raise ValueError("integrate ranger-k8s with a PostgreSQL database")
+        if self.get_connection() is None:
+            raise RelationNotReady("waiting for database")

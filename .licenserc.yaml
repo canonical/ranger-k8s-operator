@@ -37,4 +37,5 @@ header:
     - 'ranger_rock/local-files/**'
     - '**/*.patch'
     - 'uv.lock'
+    - 'apm.lock.yaml'
   comment: on-failure

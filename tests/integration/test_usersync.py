@@ -13,7 +13,9 @@ from integration.helpers import (
     APP_NAME,
     LDAP_NAME,
     USERSYNC_NAME,
+    get_auth,
     get_memberships,
+    get_passwords,
     get_unit_url,
     wait_for_apps,
 )
@@ -38,10 +40,10 @@ class TestUserSync:
             "sync-ldap-user-search-base": "dc=canonical,dc=dev,dc=com",
             "sync-group-search-base": "dc=canonical,dc=dev,dc=com",
         }
-        secret_name = "ranger-usersync-system-users"  # nosec B105
+        secret_name = "ranger-usersync-credentials"  # nosec B105
         secret_uri = juju.add_secret(
             secret_name,
-            {"admin": "RangerAdmin1", "rangerusersync": "RangerUsersync1"},
+            {"rangerusersync": get_passwords(juju)["rangerusersync"]},
         )
         ldap_secret_name = "ranger-usersync-ldap-credentials"  # nosec B105
         ldap_secret_uri = juju.add_secret(
@@ -52,7 +54,7 @@ class TestUserSync:
             },
         )
         secret_config = {
-            "system-users": secret_uri.unique_identifier,
+            "usersync-credentials": secret_uri.unique_identifier,
             "ldap-credentials": ldap_secret_uri.unique_identifier,
         }
         resources = {
@@ -78,12 +80,30 @@ class TestUserSync:
         wait_for_apps(juju, [USERSYNC_NAME, LDAP_NAME], status="active", timeout=1500)
 
         url = get_unit_url(juju, application=APP_NAME, unit=0, port=6080)
+        auth = get_auth(juju)
         membership = None
         deadline = time.monotonic() + 300
         while time.monotonic() < deadline:
-            membership = get_memberships(url)
+            membership = get_memberships(url, auth)
             if membership is not None:
                 break
             time.sleep(10)
 
         assert membership == ("finance", 7)
+
+    def test_usersync_password_rotation(self, juju: jubilant.Juju):
+        """Rotating rangerusersync blocks usersync until its secret is updated."""
+        task = juju.run(
+            f"{APP_NAME}/0", "set-password", {"username": "rangerusersync", "rotate": True}
+        )
+        assert task.results["result"] == "changed"
+
+        wait_for_apps(juju, [USERSYNC_NAME], status="blocked", timeout=900, idle_period=30)
+        status = juju.status()
+        assert status.apps[APP_NAME].app_status.current == "active"
+
+        juju.update_secret(
+            "ranger-usersync-credentials",
+            {"rangerusersync": get_passwords(juju)["rangerusersync"]},
+        )
+        wait_for_apps(juju, [USERSYNC_NAME], status="active", timeout=900, idle_period=30)

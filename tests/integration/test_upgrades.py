@@ -12,11 +12,15 @@ import requests
 from integration.helpers import (
     APP_NAME,
     POSTGRES_NAME,
+    get_passwords,
     get_unit_url,
     wait_for_apps,
 )
 
 logger = logging.getLogger(__name__)
+
+# The password the previously published revision seeds Ranger with.
+PREVIOUS_ADMIN_PASSWORD = "rangerR0cks!"  # nosec B105
 
 
 @pytest.fixture(name="deploy", scope="module")
@@ -50,15 +54,18 @@ class TestUpgrade:
             "ranger-image": charm_image,
         }
 
-        secret_name = "ranger-upgrade-system-users"  # nosec B105
-        secret_uri = juju.add_secret(
-            secret_name,
-            {"admin": "rangerR0cks!", "rangerusersync": "RangerUsersync1"},  # nosec B105
-        )
-        juju.grant_secret(secret_name, APP_NAME)
-
         juju.refresh(APP_NAME, path=str(charm), resources=resources)
-        juju.config(APP_NAME, {"system-users": secret_uri.unique_identifier})
+        # The refreshed charm generates its own passwords, which Ranger does not yet
+        # know, so the application blocks until its record is reconciled.
+        wait_for_apps(juju, [APP_NAME], status="blocked", timeout=600, idle_period=30)
+
+        task = juju.run(
+            f"{APP_NAME}/0",
+            "set-password",
+            {"username": "admin", "password": PREVIOUS_ADMIN_PASSWORD, "override": True},
+        )
+        assert task.results["result"] == "recorded"
+
         wait_for_apps(juju, [APP_NAME], status="active", timeout=600, idle_period=30)
 
         status = juju.status()
@@ -73,7 +80,6 @@ class TestUpgrade:
         response = requests.get(url, timeout=300)
         assert response.status_code == 200
 
-    def test_system_user_passwords_secret_applied(self, juju: jubilant.Juju):
-        """Validate the application remains active after the secret-backed upgrade."""
-        status = juju.status()
-        assert status.apps[APP_NAME].units[f"{APP_NAME}/0"].workload_status.current == "active"
+    def test_recorded_password_authenticates(self, juju: jubilant.Juju):
+        """Validate the reconciled password is the one the charm now reports."""
+        assert get_passwords(juju)["admin"] == PREVIOUS_ADMIN_PASSWORD

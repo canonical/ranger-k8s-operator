@@ -25,12 +25,39 @@ TRAEFIK_NAME = "traefik-k8s"
 TRINO_SERVICE = "trino-service"
 TRINO_NAME = "trino-k8s"
 RANGER_URL = "http://localhost:6080"
-RANGER_AUTH = ("admin", "RangerAdmin1")
 HEADERS = {
     "Accept": "application/json",
     "Content-Type": "application/json",
 }
 LDAP_NAME = "comsys-openldap-k8s"
+
+
+def get_passwords(juju: jubilant.Juju, app: str = APP_NAME) -> dict:
+    """Return the Ranger internal-user passwords the charm holds.
+
+    Args:
+        juju: Jubilant Juju object.
+        app: The Ranger admin application.
+
+    Returns:
+        The passwords keyed by Ranger user name.
+    """
+    return juju.run(f"{app}/0", "get-password").results
+
+
+def get_auth(juju: jubilant.Juju, user: str = "admin", app: str = APP_NAME) -> tuple:
+    """Return credentials for a Ranger internal user.
+
+    Args:
+        juju: Jubilant Juju object.
+        user: The Ranger internal user.
+        app: The Ranger admin application.
+
+    Returns:
+        A username and password tuple.
+    """
+    return (user, get_passwords(juju, app)[user])
+
 
 LXD_MODEL_CONFIG = {
     "logging-config": "<root>=INFO;unit=DEBUG",
@@ -270,11 +297,12 @@ def wait_for_ranger_service(ranger, service_name, timeout=300, delay=5):
     raise TimeoutError(f"Ranger service {service_name!r} was not created within {timeout}s.")
 
 
-def get_memberships(url):
+def get_memberships(url, auth):
     """Return membership from Ranger.
 
     Args:
         url: Ranger unit address.
+        auth: Ranger username and password.
 
     Returns:
         membership: Ranger membership.
@@ -284,7 +312,7 @@ def get_memberships(url):
     """
     url = f"{url}/service/xusers/groupusers"
     try:
-        response = requests.get(url, headers=HEADERS, auth=RANGER_AUTH, timeout=20)
+        response = requests.get(url, headers=HEADERS, auth=auth, timeout=20)
     except requests.exceptions.RequestException:
         logger.exception("An exception has occurred while getting Ranger memberships:")
         raise

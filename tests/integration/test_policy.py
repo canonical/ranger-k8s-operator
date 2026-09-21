@@ -11,9 +11,9 @@ from apache_ranger.client import ranger_client
 
 from integration.helpers import (
     APP_NAME,
-    RANGER_AUTH,
     TRINO_NAME,
     TRINO_SERVICE,
+    get_auth,
     get_unit_url,
     wait_for_apps,
     wait_for_ranger_service,
@@ -46,7 +46,7 @@ class TestPolicyRelation:
         wait_for_apps(juju, [APP_NAME, TRINO_NAME], status="active", timeout=1500)
 
         url = get_unit_url(juju, application=APP_NAME, unit=0, port=6080)
-        ranger = ranger_client.RangerClient(url, RANGER_AUTH)
+        ranger = ranger_client.RangerClient(url, get_auth(juju))
 
         new_service = wait_for_ranger_service(ranger, TRINO_SERVICE)
         logger.info(f"service: {new_service}")

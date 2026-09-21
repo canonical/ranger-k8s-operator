@@ -36,12 +36,14 @@ from literals import (
     ADMIN_ENTRYPOINT,
     ADMIN_USER,
     APPLICATION_PORT,
+    KEYADMIN_USER,
     LDAP_BIND_CREDENTIAL_CONFIG_KEYS,
     LDAP_TOPOLOGY_CONFIG_KEYS,
     LOCALHOST_URL,
     LOG_FILES,
     METRICS_PORT,
     SUPPRESS_DEBUG_LOGS,
+    TAGSYNC_USER,
     TRUSTSTORE_SECRET_LABEL,
     USERSYNC_CONFIG_MAPPING,
     USERSYNC_ENTRYPOINT,
@@ -457,6 +459,8 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
                 f"-Duser.timezone=UTC0 -Djavax.net.ssl.trustStorePassword={truststore_pwd}"
             ),
             "RANGER_USERSYNC_PWD": credentials.get(USERSYNC_USER),
+            "RANGER_KEYADMIN_PWD": credentials.get(KEYADMIN_USER),
+            "RANGER_TAGSYNC_PWD": credentials.get(TAGSYNC_USER),
         }
         config = render("admin-config.jinja", context)
         container.push("/usr/lib/ranger/admin/install.properties", config, make_dirs=True)

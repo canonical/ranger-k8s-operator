@@ -6,6 +6,7 @@
 
 import logging
 import subprocess  # nosec B404
+import time
 from enum import Enum
 from typing import Optional
 from urllib.parse import urlparse
@@ -86,6 +87,10 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
 
     config_type = CharmConfig
     API_PROBE_TIMEOUT = 5
+    # Ranger locks an account out after 5 failed logins within 5 minutes, so a rejected
+    # probe is remembered rather than repeated on every hook.
+    PROBE_BACKOFF = 300
+    PROBE_REJECTED_AT = "credential-rejected-at"
 
     def __init__(self, *args):
         """Construct.
@@ -94,6 +99,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             args: Ignore.
         """
         super().__init__(*args)
+        self._probe_result: Optional[ApiProbe] = None
         self._usersync_credentials: Optional[UsersyncCredentials] = None
         self._ldap_credentials: Optional[LdapCredentials] = None
         self._configure_logging()
@@ -468,6 +474,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             event.fail(str(err))
             return
         self.credentials.set(username, new_password)
+        self._clear_probe_backoff()
         results = {"result": "changed", "username": username}
         if username == USERSYNC_USER:
             results["note"] = "update the usersync application's usersync-credentials secret"
@@ -510,12 +517,17 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             new_password: The password the operator supplied.
         """
         current = self.credentials.get(username)
-        if current and self._authenticates(username, current):
+        if current and self._probe_password(username, current) is ApiProbe.OK:
             event.fail("the charm's record is already valid; omit override to change the password")
             return
-        if self._authenticates(username, new_password):
+        probe = self._probe_password(username, new_password)
+        if probe is ApiProbe.OK:
             self.credentials.set(username, new_password)
+            self._clear_probe_backoff()
             event.set_results({"result": "recorded", "username": username})
+            return
+        if probe is ApiProbe.UNREACHABLE:
+            event.fail("Ranger is unreachable; retry once the workload is running")
             return
 
         connection = self.postgres_relation_handler.get_connection()
@@ -528,23 +540,26 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             event.fail(str(err))
             return
         self.credentials.set(username, new_password)
+        self._clear_probe_backoff()
         event.set_results({"result": "force-reset", "username": username})
 
-    def _authenticates(self, username: str, password: str) -> bool:
-        """Check whether Ranger accepts a password for a managed user.
+    def _probe_password(self, username: str, password: str) -> ApiProbe:
+        """Ask Ranger for a verdict on a password for a managed user.
 
         Args:
             username: The Ranger internal user to authenticate as.
             password: The password to authenticate with.
 
         Returns:
-            Whether Ranger accepted the credentials.
+            Whether Ranger accepted, rejected, or could not be reached.
         """
         try:
             self._api_client_as(username, password).authenticate(self.API_PROBE_TIMEOUT)
+        except RangerAuthenticationError:
+            return ApiProbe.REJECTED
         except RangerAPIError:
-            return False
-        return True
+            return ApiProbe.UNREACHABLE
+        return ApiProbe.OK
 
     def _ensure_truststore_password(self):
         """Return the stable truststore password backed by an app Juju secret.
@@ -745,6 +760,54 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         return RangerAPIClient(f"{LOCALHOST_URL}:{APPLICATION_PORT}", (username, password))
 
     def _probe_credentials(self, function) -> ApiProbe:
+        """Authenticate the charm's credentials against Ranger, at most once per hook.
+
+        Args:
+            function: The selected charm function.
+
+        Returns:
+            The configured credential probe outcome.
+        """
+        if self._probe_result is None:
+            self._probe_result = self._run_credential_probe(function)
+        return self._probe_result
+
+    def _recent_rejection(self) -> bool:
+        """Report whether Ranger rejected the credentials within the backoff window.
+
+        Returns:
+            Whether a rejection is recent enough to reuse.
+        """
+        relation = self.model.get_relation("peer")
+        if relation is None:
+            return False
+        rejected_at = relation.data[self.unit].get(self.PROBE_REJECTED_AT)
+        if not rejected_at:
+            return False
+        return time.time() - float(rejected_at) < self.PROBE_BACKOFF
+
+    def _record_probe(self, probe: ApiProbe) -> None:
+        """Remember when Ranger last rejected the charm's credentials.
+
+        Args:
+            probe: The outcome of the latest probe.
+        """
+        relation = self.model.get_relation("peer")
+        if relation is None:
+            return
+        if probe is ApiProbe.REJECTED:
+            relation.data[self.unit][self.PROBE_REJECTED_AT] = str(time.time())
+        elif probe is ApiProbe.OK:
+            relation.data[self.unit].pop(self.PROBE_REJECTED_AT, None)
+
+    def _clear_probe_backoff(self) -> None:
+        """Let the next hook probe Ranger again after the charm changed a password."""
+        self._probe_result = None
+        relation = self.model.get_relation("peer")
+        if relation is not None:
+            relation.data[self.unit].pop(self.PROBE_REJECTED_AT, None)
+
+    def _run_credential_probe(self, function) -> ApiProbe:
         """Authenticate the charm's credentials against Ranger.
 
         Args:
@@ -756,6 +819,8 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         Raises:
             SecretValidationError: If the usersync-credentials secret is unavailable or invalid.
         """
+        if self._recent_rejection():
+            return ApiProbe.REJECTED
         if function == "usersync":
             usersync_credentials = self.usersync_credentials
             if usersync_credentials is None:
@@ -772,10 +837,12 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         try:
             RangerAPIClient(url, (username, password)).authenticate(self.API_PROBE_TIMEOUT)
         except RangerAuthenticationError:
+            self._record_probe(ApiProbe.REJECTED)
             return ApiProbe.REJECTED
         except RangerAPIError:
             logger.info("Ranger API is unavailable; authentication probe will retry next hook.")
             return ApiProbe.UNREACHABLE
+        self._record_probe(ApiProbe.OK)
         return ApiProbe.OK
 
     def _reconcile_api(self, function):

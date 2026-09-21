@@ -4,6 +4,7 @@
 
 """Credential ownership, action and recovery tests."""
 
+import time
 from unittest import mock
 
 import pytest
@@ -11,6 +12,7 @@ from ops import testing
 from ops._private.harness import ActionFailed
 
 import ranger_db
+from charm import ApiProbe
 from exceptions import RangerDatabaseError
 from literals import CREDENTIALS_SECRET_LABEL, MANAGED_USERS
 from ranger_db import encode_password
@@ -249,6 +251,44 @@ def test_override_force_resets_an_unknown_password(ctx):
     assert (login_id, password) == ("admin", NEW_PASSWORD)
     assert ctx.action_results["result"] == "force-reset"
     assert stored_credentials(state_out)["admin"] == NEW_PASSWORD
+
+
+def test_rejection_is_remembered_between_hooks(ctx):
+    """Ranger locks accounts out, so a rejection is recorded rather than re-probed."""
+    peer = testing.PeerRelation("peer")
+    with mock_ranger_api(probe=ApiProbe.REJECTED):
+        state_out = ctx.run(ctx.on.config_changed(), build_admin_state(extra_relations={peer}))
+
+    peer_out = next(relation for relation in state_out.relations if relation.id == peer.id)
+    assert peer_out.local_unit_data["credential-rejected-at"]
+
+
+def test_recent_rejection_skips_the_probe(ctx):
+    """A recent rejection keeps the unit blocked without hammering Ranger."""
+    peer = testing.PeerRelation(
+        "peer", local_unit_data={"credential-rejected-at": str(time.time())}
+    )
+    with mock_ranger_api() as client:
+        state_out = ctx.run(ctx.on.config_changed(), build_admin_state(extra_relations={peer}))
+
+    assert not [call for call in client.calls if call[0] == "authenticate"]
+    assert isinstance(state_out.unit_status, testing.BlockedStatus)
+
+
+def test_override_refuses_while_ranger_is_unreachable(ctx):
+    """An unreachable Ranger must never trigger a database force reset."""
+    with mock_ranger_api(probe=ApiProbe.UNREACHABLE):
+        with mock.patch("charm.ranger_db.force_reset") as force_reset:
+            with pytest.raises(ActionFailed, match="Ranger is unreachable"):
+                run_set_password(
+                    ctx,
+                    build_admin_state(),
+                    username="admin",
+                    password=NEW_PASSWORD,
+                    override=True,
+                )
+
+    force_reset.assert_not_called()
 
 
 def test_override_requires_the_database_relation(ctx):

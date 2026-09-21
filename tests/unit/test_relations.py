@@ -216,7 +216,7 @@ def test_api_credential_rejection_blocks(ctx):
         "Ranger authentication failed for admin. Run the set-password action with "
         "override=true on the leader unit to reconcile the charm's record."
     )
-    assert len(client.calls) == 2
+    assert len(client.calls) == 1
 
 
 def test_api_phase_skipped_on_non_leader(ctx):
@@ -228,7 +228,7 @@ def test_api_phase_skipped_on_non_leader(ctx):
             build_admin_state(leader=False, extra_secrets=(truststore,)),
         )
 
-    assert [call[0] for call in client.calls] == ["authenticate", "authenticate"]
+    assert [call[0] for call in client.calls] == ["authenticate"]
 
 
 def test_api_phase_skipped_for_usersync(ctx):
@@ -236,7 +236,7 @@ def test_api_phase_skipped_for_usersync(ctx):
     with mock_ranger_api() as client:
         ctx.run(ctx.on.config_changed(), build_usersync_state())
 
-    assert [call[0] for call in client.calls] == ["authenticate", "authenticate"]
+    assert [call[0] for call in client.calls] == ["authenticate"]
 
 
 def test_policy_manager_url_published_while_api_down(ctx):

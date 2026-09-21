@@ -21,38 +21,87 @@ Note: This operator requires the use of juju>=3.1.
 Ranger requires PostgreSQL to store its state. 
 Therefore, its deployment requires a relation with the Postgres charm:
 
-Before deploying Ranger, create a Juju secret containing passwords for the
-internal `admin` and `rangerusersync` accounts. Each password must be at least
-eight characters long, include uppercase, lowercase, and numeric characters,
-and must not contain `"`, `'`, `\`, or `` ` ``.
-
-Set a restrictive file-creation mask, then create `system-users.yaml` with these
-keys using a secure editor:
-
-```shell
-umask 077
-```
-
-```yaml
-admin: <admin-password>
-rangerusersync: <rangerusersync-password>
-```
-
-Create the secret from the file and remove the file:
-
-```shell
-SYSTEM_USERS=$(juju add-secret system-users --file=system-users.yaml)
-rm system-users.yaml
-```
-
 ```bash
 juju deploy ranger-k8s
-juju grant-secret system-users ranger-k8s
-juju config ranger-k8s system-users="$SYSTEM_USERS"
 juju deploy postgresql-k8s --channel 14/stable --trust
 juju relate ranger-k8s:db postgresql-k8s:database
 ```
+
+No credential setup is required. The charm generates the passwords for Ranger's
+internal accounts itself; see [Managing credentials](#managing-credentials).
+
 Refer to [CONTRIBUTING.md](./CONTRIBUTING.md) for details on bootstrapping a juju controller for microk8s.
+
+### Managing credentials
+
+On first install the charm generates a password for each Ranger internal user it
+manages — `admin`, `rangerusersync`, `keyadmin` and `rangertagsync` — and stores
+them in a Juju secret it owns. There is nothing to configure.
+
+#### Reading the passwords
+
+```shell
+juju run ranger-k8s/leader get-password
+```
+
+Juju stores action results in plaintext in the controller database, where they
+remain until they age out under the controller's `max-action-results-age` and
+`max-action-results-size` settings. Treat any machine with controller access as
+able to read these passwords.
+
+#### Rotating a password
+
+```shell
+juju run ranger-k8s/leader set-password username=admin rotate=true
+```
+
+To set a specific password instead, pass it explicitly. Avoid leaving it in your
+shell history: with `HISTCONTROL=ignorespace` set, prefix the command with a
+space, or read the value from a file created under `umask 077`:
+
+```shell
+umask 077
+juju run ranger-k8s/leader set-password username=admin password="$(cat /tmp/pw)"
+rm /tmp/pw
+```
+
+Passwords must be at least eight characters long, include uppercase, lowercase
+and numeric characters, and must not contain `"`, `'`, `\`, or `` ` ``.
+
+#### Recovering when the charm cannot authenticate
+
+If Ranger's password no longer matches the charm's record — after a redeploy
+against a retained database, a change made in the Ranger UI, or a crash during a
+rotation — the application blocks. Tell the charm which password Ranger holds, or
+choose a new one:
+
+```shell
+juju run ranger-k8s/leader set-password username=admin password=<password> override=true
+```
+
+If Ranger already accepts the password, the charm simply records it. If it does
+not, the charm resets Ranger to match through its PostgreSQL relation. Recovery
+never requires editing the database by hand.
+
+#### Migrating from `system-users`
+
+Revision 50 introduces a breaking change: the `system-users` configuration option
+is removed and the charm owns the passwords instead.
+
+Before upgrading, read the passwords out of your `system-users` secret. After
+upgrading, reconcile the charm's record with what Ranger holds:
+
+```shell
+juju run ranger-k8s/leader set-password username=admin password=<old-admin> override=true
+juju run ranger-k8s/leader set-password username=rangerusersync password=<old-rangerusersync> override=true
+juju run ranger-k8s/leader set-password username=rangertagsync rotate=true
+juju run ranger-k8s/leader set-password username=keyadmin password=<old-admin> override=true
+```
+
+`keyadmin` holds the *old admin password*, because earlier revisions seeded it
+from the `admin` value. Once every user is reconciled, remove the now-unused
+secret with `juju remove-secret system-users`.
+
 
 ### Group management with Apache Ranger
 The Charmed Ranger Operator makes use of [Ranger usersync](https://cwiki.apache.org/confluence/display/RANGER/Apache+Ranger+Usersync) to synchronize users, groups and memberships from a compatible LDAP server (eg. openldap, ActiveDirectory) to Ranger admin. The usersync functionality can be configured on deployment of the Ranger Charm. While you can scale the Ranger admin application, you should only have 1 Usersync deployed.
@@ -61,12 +110,25 @@ The Charmed Ranger Operator makes use of [Ranger usersync](https://cwiki.apache.
 juju deploy ranger-k8s ranger-usersync-k8s \
   --config charm-function=usersync \
   --config policy-mgr-url=http://ranger-k8s.<model>.svc.cluster.local:6080
-juju grant-secret system-users ranger-usersync-k8s
-juju config ranger-usersync-k8s system-users="$SYSTEM_USERS"
 
 juju deploy comsys-openldap-k8s --channel=edge
 juju relate ranger-usersync-k8s comsys-openldap-k8s
 ```
+
+Usersync authenticates against Ranger admin as `rangerusersync`, so it needs that
+password. Read it from the admin application, put it in a Juju secret, and point
+usersync at it:
+
+```shell
+umask 077
+juju run ranger-k8s/leader get-password --format=yaml
+juju add-secret usersync-credentials rangerusersync=<rangerusersync-password>
+juju grant-secret usersync-credentials ranger-usersync-k8s
+juju config ranger-usersync-k8s usersync-credentials=<secret-id>
+```
+
+Repeat this after every `rangerusersync` rotation. Until the secret is updated,
+the usersync application sits `blocked`; the admin application is unaffected.
 Usersync requires `policy-mgr-url`. It also requires either an LDAP relation or
 an LDAP bind-identity secret and LDAP topology configuration. When using an
 external LDAP server, create an `ldap-credentials` secret containing

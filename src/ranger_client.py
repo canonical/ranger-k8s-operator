@@ -19,6 +19,8 @@ from literals import ADMIN_USER
 
 logger = logging.getLogger(__name__)
 
+REQUEST_TIMEOUT = 30
+
 
 class RangerAPIError(Exception):
     """Raised when a Ranger REST API call fails."""
@@ -449,3 +451,100 @@ class RangerAPIClient:
         except RangerServiceException as exc:
             raise RangerAPIError(f"Failed to delete policy id={policy_id}: {exc}") from exc
         logger.info("deleted policy id=%s", policy_id)
+
+    def _request(self, method: str, path: str, payload: Optional[dict] = None) -> dict:
+        """Send a request the apache-ranger library does not implement.
+
+        Args:
+            method: HTTP method to use.
+            path: API path relative to the Ranger base URL.
+            payload: JSON body to send.
+
+        Returns:
+            The decoded response body, or an empty mapping when there is none.
+
+        Raises:
+            RangerAuthenticationError: if Ranger returns HTTP 401 or 403.
+            RangerAPIError: if the API cannot be reached or returns another error.
+        """
+        url = urljoin(self._client.client_http.url, path)
+        try:
+            response = self._client.session.request(
+                method, url, json=payload, timeout=REQUEST_TIMEOUT
+            )
+        except RequestException as exc:
+            raise RangerAPIError("Failed to reach Ranger API.") from exc
+
+        if response.status_code in (401, 403):
+            raise RangerAuthenticationError(response.status_code)
+        if not response.ok:
+            raise RangerAPIError(
+                f"Ranger API returned HTTP {response.status_code}: {response.text}"
+            )
+        try:
+            return response.json()
+        except ValueError:
+            return {}
+
+    def get_user(self, username: str) -> dict:
+        """Get an internal user by its login name.
+
+        ``GET /service/xusers/users/userName/<username>``
+
+        Args:
+            username: login name of the user.
+
+        Returns:
+            The ``VXUser`` payload.
+
+        Raises:
+            RangerAPIError: if the API call fails.
+        """
+        user = self._request("GET", f"service/xusers/users/userName/{username}")
+        if not user.get("id"):
+            raise RangerAPIError(f"Ranger returned no user named {username!r}.")
+        return user
+
+    def change_own_password(
+        self, user_id: int, login_id: str, old_password: str, new_password: str
+    ) -> None:
+        """Change the password of the authenticated user.
+
+        ``POST /service/users/<user_id>/passwordchange``
+
+        Args:
+            user_id: numeric ID of the authenticated user.
+            login_id: login name of the authenticated user.
+            old_password: password currently held by Ranger.
+            new_password: password to apply.
+
+        Raises:
+            RangerAPIError: if the API call fails.
+        """
+        self._request(
+            "POST",
+            f"service/users/{user_id}/passwordchange",
+            {
+                "loginId": login_id,
+                "emailAddress": "",
+                "oldPassword": old_password,
+                "updPassword": new_password,
+            },
+        )
+        logger.info("changed password for %s", login_id)
+
+    def set_user_password(self, user: dict, new_password: str) -> None:
+        """Set another internal user's password as an administrator.
+
+        ``PUT /service/xusers/secure/users/<id>``
+
+        Args:
+            user: the ``VXUser`` payload to update.
+            new_password: password to apply.
+
+        Raises:
+            RangerAPIError: if the API call fails.
+        """
+        payload = {**user, "password": new_password}
+        self._request("PUT", f"service/xusers/secure/users/{user['id']}", payload)
+        logger.info("changed password for %s", user.get("name"))

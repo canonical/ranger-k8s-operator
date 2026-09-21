@@ -83,9 +83,27 @@ If Ranger already accepts the password, the charm simply records it. If it does
 not, the charm resets Ranger to match through its PostgreSQL relation. Recovery
 never requires editing the database by hand.
 
+If nobody knows the password Ranger holds, supply a new one with `override=true`
+anyway. The charm tries it, finds that Ranger rejects it, and resets Ranger to
+match. `rotate=true` cannot recover this state: rotating `admin` or `keyadmin`
+is a self-service change that needs the current password to authenticate.
+
+#### Action results
+
+`set-password` reports which path it took:
+
+| Result | Meaning |
+| --- | --- |
+| `changed` | Ranger accepted the change through its API and the charm recorded it. |
+| `recorded` | Ranger already held the supplied password, so only the charm's record changed. |
+| `force-reset` | Ranger rejected the password, so the charm wrote it to the database directly. |
+
+Changing `rangerusersync` also returns a `note`, because the usersync
+application reads its password from a secret you maintain separately.
+
 #### Migrating from `system-users`
 
-Revision 50 introduces a breaking change: the `system-users` configuration option
+Revision 51 introduces a breaking change: the `system-users` configuration option
 is removed and the charm owns the passwords instead.
 
 Before upgrading, read the passwords out of your `system-users` secret. After

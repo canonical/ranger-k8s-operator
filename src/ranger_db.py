@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 # Clearing old_passwords stops Ranger's password-history check from later rejecting a
 # password the charm has already recorded as applied.
-RESET_SQL = """
+RESET_SQL = """\
 UPDATE x_portal_user
    SET password = %(password)s,
        old_passwords = NULL,

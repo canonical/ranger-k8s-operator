@@ -26,20 +26,34 @@ class CredentialStore:
         self._charm = charm
 
     def ensure(self) -> Optional[Dict[str, str]]:
-        """Return the stored credentials, creating them on the leader when absent.
+        """Return the stored credentials, generating any the leader has not recorded yet.
 
         Returns:
-            The stored credentials, or None when a non-leader unit cannot yet read the
-            leader-created secret.
+            The stored credentials, or None when a non-leader unit cannot yet read a
+            complete leader-created secret.
         """
-        content = self.read()
-        if content:
-            return content
+        stored = self.read()
+        if all(username in stored for username in MANAGED_USERS):
+            return stored
         if not self._charm.unit.is_leader():
             return None
         content = {username: generate_password() for username in MANAGED_USERS}
-        self._charm.app.add_secret(content, label=CREDENTIALS_SECRET_LABEL)
+        content.update(stored)
+        self._write(content)
         return content
+
+    def _write(self, content: Dict[str, str]) -> None:
+        """Create the credentials secret, or replace its content when it exists.
+
+        Args:
+            content: The credentials to store.
+        """
+        try:
+            secret = self._charm.model.get_secret(label=CREDENTIALS_SECRET_LABEL)
+        except SecretNotFoundError:
+            self._charm.app.add_secret(content, label=CREDENTIALS_SECRET_LABEL)
+            return
+        secret.set_content(content)
 
     def read(self) -> Dict[str, str]:
         """Read the stored credentials.

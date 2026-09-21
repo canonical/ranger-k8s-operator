@@ -77,6 +77,36 @@ def test_existing_credentials_are_reused(ctx):
     assert stored_credentials(state_out) == CREDENTIALS_SECRET_CONTENT
 
 
+def test_missing_users_are_backfilled(ctx):
+    """A user added to MANAGED_USERS later is generated without disturbing the rest."""
+    partial = {
+        user: password
+        for user, password in CREDENTIALS_SECRET_CONTENT.items()
+        if user != "rangertagsync"
+    }
+
+    with mock_ranger_api():
+        state_out = ctx.run(ctx.on.config_changed(), build_admin_state(credentials=partial))
+
+    credentials = stored_credentials(state_out)
+    assert sorted(credentials) == sorted(MANAGED_USERS)
+    assert {user: credentials[user] for user in partial} == partial
+    assert validate_password(credentials["rangertagsync"])
+
+
+def test_non_leader_waits_for_a_complete_secret(ctx):
+    """A non-leader reports no credentials rather than an incomplete mapping."""
+    partial = {"admin": CREDENTIALS_SECRET_CONTENT["admin"]}
+
+    with mock_ranger_api():
+        state_out = ctx.run(
+            ctx.on.config_changed(),
+            build_admin_state(leader=False, credentials=partial),
+        )
+
+    assert state_out.unit_status.name == "waiting"
+
+
 def test_key_and_tag_users_get_their_own_passwords(ctx):
     """Rendered install.properties seeds each internal user independently."""
     with mock_ranger_api():
@@ -355,6 +385,28 @@ def test_generated_passwords_are_always_valid():
     for _ in range(50):
         password = generate_password()
         assert validate_password(password) == password
+
+
+@pytest.mark.parametrize(
+    "password",
+    [
+        "Valid123\n",
+        "Valid\r123",
+        "Valid\t123",
+        'Valid"123',
+        "Valid'123",
+        "Valid\\123",
+        "Valid`123",
+        "valid1234",
+        "VALID1234",
+        "ValidPass",
+        "Valid12",
+    ],
+)
+def test_validate_password_rejects(password):
+    """Weak passwords and characters that would break install.properties are refused."""
+    with pytest.raises(ValueError, match="Password does not match requirements."):
+        validate_password(password)
 
 
 def fake_connection(rowcount):

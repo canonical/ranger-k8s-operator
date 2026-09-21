@@ -8,8 +8,8 @@ import re
 
 from pydantic import BaseModel, Field, validator
 
-PASSWORD_PATTERN = re.compile(r"^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?!.*[\"'\\`]).{8,}$")
-COMPLEXITY_ERROR = "Password does not match requirements."
+# \Z rather than $, which would also match before a trailing newline.
+PASSWORD_PATTERN = re.compile(r"^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?!.*[\"'\\`\x00-\x1f]).{8,}\Z")
 
 
 class SecretValidationError(ValueError):
@@ -30,7 +30,7 @@ def validate_password(value: str) -> str:
     """
     if PASSWORD_PATTERN.match(value):
         return value
-    raise ValueError(COMPLEXITY_ERROR)
+    raise ValueError("Password does not match requirements.")
 
 
 class UsersyncCredentials(BaseModel):

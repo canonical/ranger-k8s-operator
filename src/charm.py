@@ -30,8 +30,9 @@ from ops.model import (
 from ops.pebble import CheckStatus, ExecError
 from pydantic import ValidationError
 
+import ranger_db
 from credentials import CredentialStore
-from exceptions import RelationNotReady
+from exceptions import RangerDatabaseError, RelationNotReady
 from literals import (
     ADMIN_ENTRYPOINT,
     ADMIN_USER,
@@ -41,6 +42,7 @@ from literals import (
     LDAP_TOPOLOGY_CONFIG_KEYS,
     LOCALHOST_URL,
     LOG_FILES,
+    MANAGED_USERS,
     METRICS_PORT,
     SUPPRESS_DEBUG_LOGS,
     TAGSYNC_USER,
@@ -55,7 +57,12 @@ from relations.opensearch import OpensearchRelationHandler
 from relations.postgres import PostgresRelationHandler
 from relations.provider import RangerProvider
 from relations.trino import TrinoCatalogRelationHandler
-from secret_models import LdapCredentials, SecretValidationError, UsersyncCredentials
+from secret_models import (
+    LdapCredentials,
+    SecretValidationError,
+    UsersyncCredentials,
+    validate_password,
+)
 from structured_config import CharmConfig
 from utils import content_hash, generate_password, log_event_handler, render
 
@@ -127,6 +134,8 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         self.framework.observe(self.on.ranger_pebble_ready, self._reconcile_hook)
         self.framework.observe(self.on.collect_unit_status, self._on_collect_unit_status)
         self.framework.observe(self.on.restart_action, self._on_restart)
+        self.framework.observe(self.on.get_password_action, self._on_get_password)
+        self.framework.observe(self.on.set_password_action, self._on_set_password)
 
         for endpoint in ("policy", "database", "ldap", "opensearch", "trino-catalog"):
             self.framework.observe(self.on[endpoint].relation_created, self._reconcile_hook)
@@ -375,6 +384,167 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         self.unit.status = MaintenanceStatus("restarting ranger")
         container.restart(self.name)
         event.set_results({"result": "ranger successfully restarted"})
+
+    def _is_admin_leader(self, event) -> bool:
+        """Check that a credential action is running where it can be serviced.
+
+        Args:
+            event: The action event to fail when it cannot be serviced.
+
+        Returns:
+            Whether the action may proceed.
+        """
+        if not self.unit.is_leader():
+            event.fail("run this action on the leader unit")
+            return False
+        try:
+            function = self.config["charm-function"].value
+        except ValidationError:
+            event.fail("the charm configuration is invalid")
+            return False
+        if function != "admin":
+            event.fail("run this action on the Ranger admin application")
+            return False
+        return True
+
+    @log_event_handler(logger)
+    def _on_get_password(self, event):
+        """Return the Ranger internal-user passwords the charm holds.
+
+        Args:
+            event: The get-password action event.
+        """
+        if not self._is_admin_leader(event):
+            return
+        credentials = self.credentials.read()
+        if not credentials:
+            event.fail("the charm has not created its Ranger credentials yet")
+            return
+        event.set_results(
+            {user: credentials[user] for user in MANAGED_USERS if credentials.get(user)}
+        )
+
+    @log_event_handler(logger)
+    def _on_set_password(self, event):
+        """Change a Ranger internal-user password or reconcile the charm's record.
+
+        Args:
+            event: The set-password action event.
+        """
+        if not self._is_admin_leader(event):
+            return
+        username = event.params["username"]
+        password = event.params.get("password")
+        rotate = event.params.get("rotate", False)
+        override = event.params.get("override", False)
+
+        if username not in MANAGED_USERS:
+            event.fail(f"username must be one of {', '.join(MANAGED_USERS)}")
+            return
+        if rotate and password:
+            event.fail("rotate and password are mutually exclusive")
+            return
+        if override and not password:
+            event.fail("override requires password")
+            return
+        if not rotate and not password:
+            event.fail("provide password or rotate=true")
+            return
+
+        new_password = password or generate_password()
+        try:
+            validate_password(new_password)
+        except ValueError as err:
+            event.fail(str(err))
+            return
+
+        if override:
+            self._override_password(event, username, new_password)
+            return
+
+        try:
+            self._change_password(username, new_password)
+        except RangerAPIError as err:
+            event.fail(str(err))
+            return
+        self.credentials.set(username, new_password)
+        results = {"result": "changed", "username": username}
+        if username == USERSYNC_USER:
+            results["note"] = "update the usersync application's usersync-credentials secret"
+        event.set_results(results)
+
+    def _change_password(self, username: str, new_password: str) -> None:
+        """Change a Ranger internal user's password through the API.
+
+        Args:
+            username: The Ranger internal user to change.
+            new_password: The password to apply.
+
+        Raises:
+            RangerAPIError: If the charm holds no usable password for a self-service change,
+                or if Ranger rejects the change.
+        """
+        if username in (ADMIN_USER, KEYADMIN_USER):
+            # Ranger refuses to let an administrator modify a key administrator, and a
+            # self-service change is the only path that works for both users.
+            current = self.credentials.get(username)
+            if not current:
+                raise RangerAPIError(
+                    f"No {username} password is recorded; rerun with override=true and the "
+                    "password Ranger holds."
+                )
+            client = self._api_client_as(username, current)
+            client.change_own_password(
+                client.get_user(username)["id"], username, current, new_password
+            )
+            return
+        client = self._ranger_api_client()
+        client.set_user_password(client.get_user(username), new_password)
+
+    def _override_password(self, event, username: str, new_password: str) -> None:
+        """Record a password applied out of band, resetting Ranger when it does not match.
+
+        Args:
+            event: The set-password action event.
+            username: The Ranger internal user to reconcile.
+            new_password: The password the operator supplied.
+        """
+        current = self.credentials.get(username)
+        if current and self._authenticates(username, current):
+            event.fail("the charm's record is already valid; omit override to change the password")
+            return
+        if self._authenticates(username, new_password):
+            self.credentials.set(username, new_password)
+            event.set_results({"result": "recorded", "username": username})
+            return
+
+        connection = self.postgres_relation_handler.get_connection()
+        if connection is None:
+            event.fail("integrate ranger-k8s with a PostgreSQL database to force-reset")
+            return
+        try:
+            ranger_db.force_reset(connection, username, new_password)
+        except RangerDatabaseError as err:
+            event.fail(str(err))
+            return
+        self.credentials.set(username, new_password)
+        event.set_results({"result": "force-reset", "username": username})
+
+    def _authenticates(self, username: str, password: str) -> bool:
+        """Check whether Ranger accepts a password for a managed user.
+
+        Args:
+            username: The Ranger internal user to authenticate as.
+            password: The password to authenticate with.
+
+        Returns:
+            Whether Ranger accepted the credentials.
+        """
+        try:
+            self._api_client_as(username, password).authenticate(self.API_PROBE_TIMEOUT)
+        except RangerAPIError:
+            return False
+        return True
 
     def _ensure_truststore_password(self):
         """Return the stable truststore password backed by an app Juju secret.

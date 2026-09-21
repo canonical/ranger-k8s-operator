@@ -11,7 +11,7 @@ from unittest import mock
 from ops.testing import Container, Exec, Model, Relation, Secret, State
 
 from charm import ApiProbe
-from literals import CREDENTIALS_SECRET_LABEL
+from literals import CREDENTIALS_SECRET_LABEL, MANAGED_USERS
 from ranger_client import RangerAPIError, RangerAuthenticationError
 
 RANGER = "ranger"
@@ -68,6 +68,8 @@ class FakeRangerClient:
         policies=None,
         failure=None,
         probe=ApiProbe.OK,
+        passwords=None,
+        users=None,
     ):
         """Construct a client with optional pre-existing Ranger resources.
 
@@ -79,6 +81,9 @@ class FakeRangerClient:
             failure: Name of a method that raises RangerAPIError, or a mapping
                 from method names to the number of failures to simulate.
             probe: Authentication result to emulate.
+            passwords: Passwords Ranger accepts, keyed by user name. When given, it
+                overrides the probe outcome for authentication.
+            users: Existing Ranger internal users, keyed by user name.
         """
         self.services = {service.name: service for service in services or ()}
         self.zones = {zone.name: zone for zone in zones or ()}
@@ -87,6 +92,12 @@ class FakeRangerClient:
         self.failure = failure
         self._remaining_failures = dict(failure) if isinstance(failure, dict) else {}
         self.probe = probe
+        self.passwords = dict(passwords) if passwords is not None else None
+        self.users = users or {
+            name: {"id": index + 1, "name": name, "firstName": name}
+            for index, name in enumerate(MANAGED_USERS)
+        }
+        self.clients = []
         self.calls = []
 
     def _record(self, method, *args):
@@ -101,10 +112,34 @@ class FakeRangerClient:
     def authenticate(self, timeout):
         """Emulate the read-only credentials probe."""
         self._record("authenticate", timeout)
+        if self.passwords is not None:
+            username, password = self.clients[-1][1]
+            if self.passwords.get(username) != password:
+                raise RangerAuthenticationError(401)
+            return
         if self.probe is ApiProbe.REJECTED:
             raise RangerAuthenticationError(401)
         if self.probe is ApiProbe.UNREACHABLE:
             raise RangerAPIError("unreachable")
+
+    def get_user(self, username):
+        """Get an internal user by its login name."""
+        self._record("get_user", username)
+        if username not in self.users:
+            raise RangerAPIError(f"Ranger returned no user named {username!r}.")
+        return self.users[username]
+
+    def change_own_password(self, user_id, login_id, old_password, new_password):
+        """Change the password of the user the client authenticates as."""
+        self._record("change_own_password", user_id, login_id, old_password, new_password)
+        if self.passwords is not None:
+            self.passwords[login_id] = new_password
+
+    def set_user_password(self, user, new_password):
+        """Set another internal user's password."""
+        self._record("set_user_password", user["name"], new_password)
+        if self.passwords is not None:
+            self.passwords[user["name"]] = new_password
 
     def list_services(self):
         """List all in-memory services."""
@@ -356,5 +391,19 @@ def mock_ranger_api(probe=ApiProbe.OK, **behaviour):
         The mocked Ranger API client.
     """
     client = FakeRangerClient(probe=probe, **behaviour)
-    with mock.patch("charm.RangerAPIClient", return_value=client):
+
+    def build_client(url, auth):
+        """Record the credentials a caller built a client with.
+
+        Args:
+            url: The Ranger base URL.
+            auth: The username and password tuple.
+
+        Returns:
+            The shared fake client.
+        """
+        client.clients.append((url, auth))
+        return client
+
+    with mock.patch("charm.RangerAPIClient", side_effect=build_client):
         yield client

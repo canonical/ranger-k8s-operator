@@ -12,10 +12,10 @@ from ops._private.harness import ActionFailed
 from ops.pebble import CheckStatus
 
 from tests.unit.helpers import (
+    CREDENTIALS_SECRET_CONTENT,
     DATABASE_CONNECTION,
     LDAP_CREDENTIALS_CONTENT,
     RANGER,
-    SYSTEM_USERS_SECRET_CONTENT,
     build_admin_state,
     build_usersync_state,
     carry_forward,
@@ -111,7 +111,7 @@ def test_reconcile_is_idempotent(ctx):
         ),
         pytest.param(
             lambda ctx, state, relation: ctx.on.secret_changed(next(iter(state.secrets))),
-            lambda relation: build_admin_state(database=None),
+            lambda relation: build_usersync_state(),
             id="secret-changed",
         ),
         pytest.param(
@@ -349,11 +349,12 @@ def test_non_leader_waits_for_truststore_secret(ctx):
             testing.BlockedStatus("Invalid configuration: charm-function:"),
         ),
         (
-            build_admin_state(
-                config={"system-users": "secret:missing"},
-                extra_secrets=(),
+            build_usersync_state(
+                config={"usersync-credentials": "secret:missing"},
             ),
-            testing.BlockedStatus("Invalid configuration: system-users: cannot be resolved;"),
+            testing.BlockedStatus(
+                "Invalid configuration: usersync-credentials: cannot be resolved;"
+            ),
         ),
         (
             build_admin_state(container=ranger_container(can_connect=False)),
@@ -432,49 +433,46 @@ def test_ingress_url_reaches_policy_databag(ctx):
     ("config", "secret_content", "message"),
     [
         (
-            {"system-users": "secret:missing"},
+            {"usersync-credentials": "secret:missing"},
             None,
-            "Invalid configuration: system-users: cannot be resolved;",
+            "Invalid configuration: usersync-credentials: cannot be resolved;",
         ),
         (
             {},
-            {"admin": "RangerAdmin1"},
-            "Invalid configuration: system-users: secret 'system-users' is missing required key",
+            {"username": "rangerusersync"},
+            "Invalid configuration: usersync-credentials: secret 'usersync-credentials' is "
+            "missing required key",
         ),
         (
             {},
-            {"admin": "invalidpassword1", "rangerusersync": "RangerUsersync1"},
-            "Invalid configuration: system-users: admin: Password does not match requirements.",
+            {"rangerusersync": "invalidpassword1"},
+            "Invalid configuration: usersync-credentials: rangerusersync: Password does not "
+            "match requirements.",
         ),
     ],
 )
-def test_invalid_system_users_secret_blocks(ctx, config, secret_content, message):
-    """Invalid system-user credentials block reconciliation without raising."""
+def test_invalid_usersync_credentials_secret_blocks(ctx, config, secret_content, message):
+    """Invalid usersync credentials block reconciliation without raising."""
     extra_secrets = ()
     if secret_content is not None:
         secret = testing.Secret(secret_content)
-        config = {"system-users": secret.id}
+        config = {"usersync-credentials": secret.id}
         extra_secrets = (secret,)
     state_out = ctx.run(
         ctx.on.config_changed(),
-        build_admin_state(config=config, extra_secrets=extra_secrets),
+        build_usersync_state(config=config, extra_secrets=extra_secrets),
     )
 
     assert state_out.unit_status.message.startswith(message)
 
 
-def test_system_user_passwords_render_literal_characters(ctx):
+def test_stored_passwords_render_literal_characters(ctx):
     """Allowed password characters remain literal in rendered install.properties."""
-    secret = testing.Secret(
-        {
-            "admin": "Pa55word&x<y",
-            "rangerusersync": SYSTEM_USERS_SECRET_CONTENT["rangerusersync"],
-        }
-    )
+    credentials = {**CREDENTIALS_SECRET_CONTENT, "admin": "Pa55word&x<y"}
     with mock_ranger_api():
         state_out = ctx.run(
             ctx.on.config_changed(),
-            build_admin_state(config={"system-users": secret.id}, extra_secrets=(secret,)),
+            build_admin_state(credentials=credentials),
         )
 
     install_properties = workload_path(
@@ -484,22 +482,21 @@ def test_system_user_passwords_render_literal_characters(ctx):
     assert "Pa55word&amp;x&lt;y" not in install_properties
 
 
-def test_secret_changed_uses_latest_system_users_content(ctx):
-    """Secret changes render the latest system-user password revision."""
+def test_secret_changed_uses_latest_usersync_content(ctx):
+    """Secret changes render the latest usersync password revision."""
     secret = testing.Secret(
-        SYSTEM_USERS_SECRET_CONTENT,
-        latest_content={
-            "admin": "RangerAdmin2",
-            "rangerusersync": "RangerUsersync2",
-        },
+        {"rangerusersync": "RangerUsersync1"},
+        latest_content={"rangerusersync": "RangerUsersync2"},
     )
     with mock_ranger_api():
         state_out = ctx.run(
             ctx.on.secret_changed(secret),
-            build_admin_state(config={"system-users": secret.id}, extra_secrets=(secret,)),
+            build_usersync_state(
+                config={"usersync-credentials": secret.id}, extra_secrets=(secret,)
+            ),
         )
 
-    assert services(state_out)[RANGER]["environment"]["RANGER_ADMIN_PWD"] == "RangerAdmin2"
+    assert services(state_out)[RANGER]["environment"]["RANGER_USERSYNC_PWD"] == "RangerUsersync2"
 
 
 @pytest.mark.parametrize(

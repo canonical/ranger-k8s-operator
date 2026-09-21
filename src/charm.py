@@ -30,6 +30,7 @@ from ops.model import (
 from ops.pebble import CheckStatus, ExecError
 from pydantic import ValidationError
 
+from credentials import CredentialStore
 from exceptions import RelationNotReady
 from literals import (
     ADMIN_ENTRYPOINT,
@@ -44,6 +45,7 @@ from literals import (
     TRUSTSTORE_SECRET_LABEL,
     USERSYNC_CONFIG_MAPPING,
     USERSYNC_ENTRYPOINT,
+    USERSYNC_USER,
 )
 from ranger_client import RangerAPIClient, RangerAPIError, RangerAuthenticationError
 from relations.ldap import LDAPRelationHandler
@@ -51,7 +53,7 @@ from relations.opensearch import OpensearchRelationHandler
 from relations.postgres import PostgresRelationHandler
 from relations.provider import RangerProvider
 from relations.trino import TrinoCatalogRelationHandler
-from secret_models import LdapCredentials, SecretValidationError, SystemUserPasswords
+from secret_models import LdapCredentials, SecretValidationError, UsersyncCredentials
 from structured_config import CharmConfig
 from utils import content_hash, generate_password, log_event_handler, render
 
@@ -83,10 +85,11 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             args: Ignore.
         """
         super().__init__(*args)
-        self._system_user_passwords: Optional[SystemUserPasswords] = None
+        self._usersync_credentials: Optional[UsersyncCredentials] = None
         self._ldap_credentials: Optional[LdapCredentials] = None
         self._configure_logging()
         self.name = "ranger"
+        self.credentials = CredentialStore(self)
 
         self.postgres_relation = DatabaseRequires(
             self,
@@ -154,20 +157,23 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         )
 
     @property
-    def system_user_passwords(self) -> SystemUserPasswords:
-        """Resolve the system-users secret once for the current hook.
+    def usersync_credentials(self) -> Optional[UsersyncCredentials]:
+        """Resolve the usersync-credentials secret once for the current hook.
 
         Returns:
-            The validated system-user passwords.
+            The validated usersync credentials, or None when no secret is configured.
 
         Raises:
             SecretValidationError: If the configured secret is unavailable or invalid.
         """
-        if self._system_user_passwords is None:
-            self._system_user_passwords = self._resolve_secret(
-                "system-users", self.config["system-users"], SystemUserPasswords
+        secret_id = self.config["usersync-credentials"]
+        if not secret_id:
+            return None
+        if self._usersync_credentials is None:
+            self._usersync_credentials = self._resolve_secret(
+                "usersync-credentials", secret_id, UsersyncCredentials
             )
-        return self._system_user_passwords
+        return self._usersync_credentials
 
     @property
     def ldap_credentials(self) -> Optional[LdapCredentials]:
@@ -244,7 +250,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
                 )
             key = missing_keys[0]
             return (
-                "Invalid configuration: system-users: secret 'system-users' is missing "
+                f"Invalid configuration: {option}: secret '{option}' is missing "
                 f"required key '{key}'."
             )
         validation_error = errors[0]
@@ -298,7 +304,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
 
         function = cfg["charm-function"].value
         try:
-            _ = self.system_user_passwords
+            _ = self.usersync_credentials
             _ = self.ldap_credentials
         except SecretValidationError as err:
             event.add_status(BlockedStatus(str(err)))
@@ -322,15 +328,13 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             event.add_status(WaitingStatus("waiting for leader to create the truststore secret"))
             return
 
+        if function == "admin" and self.credentials.ensure() is None:
+            event.add_status(WaitingStatus("waiting for leader to create the credentials secret"))
+            return
+
         probe = self._probe_credentials(function)
         if probe is ApiProbe.REJECTED:
-            username = "rangerusersync" if function == "usersync" else ADMIN_USER
-            event.add_status(
-                BlockedStatus(
-                    f"Ranger authentication failed for {username}. Revert the system-users "
-                    "secret or change the password in the Ranger UI."
-                )
-            )
+            event.add_status(BlockedStatus(self._authentication_failure_message(function)))
             return
 
         if probe is ApiProbe.OK and function == "admin" and self.unit.is_leader():
@@ -416,12 +420,13 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
                 return
             logger.debug("Unable to update truststore password %s", error.stderr)
 
-    def _reconcile_admin(self, container, truststore_pwd):
+    def _reconcile_admin(self, container, truststore_pwd, credentials):
         """Prepare Ranger Admin configuration and truststore state.
 
         Args:
             container: The workload container.
             truststore_pwd: The Java truststore password.
+            credentials: The stored Ranger internal-user passwords.
 
         Returns:
             The Ranger Admin entrypoint and Pebble environment.
@@ -447,11 +452,11 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             "OPENSEARCH_USER": opensearch.get("username"),
             "OPENSEARCH_ENABLED": opensearch.get("is_enabled"),
             "OPENSEARCH_CERT_HASH": content_hash(certificate or ""),
-            "RANGER_ADMIN_PWD": self.system_user_passwords.admin,
+            "RANGER_ADMIN_PWD": credentials.get(ADMIN_USER),
             "JAVA_OPTS": (
                 f"-Duser.timezone=UTC0 -Djavax.net.ssl.trustStorePassword={truststore_pwd}"
             ),
-            "RANGER_USERSYNC_PWD": self.system_user_passwords.rangerusersync,
+            "RANGER_USERSYNC_PWD": credentials.get(USERSYNC_USER),
         }
         config = render("admin-config.jinja", context)
         container.push("/usr/lib/ranger/admin/install.properties", config, make_dirs=True)
@@ -484,6 +489,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         """
         ldap = self.ldap.relation_values()
         ldap_credentials = self.ldap_credentials
+        usersync_credentials = self.usersync_credentials
         context = {}
         for config_key, ranger_property in USERSYNC_CONFIG_MAPPING.items():
             value = ldap.get(config_key)
@@ -499,7 +505,9 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         context.update(
             {
                 "POLICY_MGR_URL": self.resolve_policy_manager_url(),
-                "RANGER_USERSYNC_PWD": self.system_user_passwords.rangerusersync,
+                "RANGER_USERSYNC_PWD": (
+                    usersync_credentials.rangerusersync if usersync_credentials else None
+                ),
             }
         )
         config = render("ranger-usersync-config.jinja", context)
@@ -526,15 +534,44 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         """Create an API client for the local Ranger Admin service.
 
         Returns:
-            A Ranger API client using the configured administrator credentials.
+            A Ranger API client using the stored administrator credentials.
         """
-        return RangerAPIClient(
-            f"{LOCALHOST_URL}:{APPLICATION_PORT}",
-            (ADMIN_USER, self.system_user_passwords.admin),
+        return self._api_client_as(ADMIN_USER, self.credentials.get(ADMIN_USER) or "")
+
+    @staticmethod
+    def _authentication_failure_message(function) -> str:
+        """Build the blocked message for credentials Ranger rejected.
+
+        Args:
+            function: The selected charm function.
+
+        Returns:
+            An actionable authentication failure message.
+        """
+        if function == "usersync":
+            return (
+                f"Ranger authentication failed for {USERSYNC_USER}. Run the get-password action "
+                "on the Ranger admin application and update the usersync-credentials secret."
+            )
+        return (
+            f"Ranger authentication failed for {ADMIN_USER}. Run the set-password action with "
+            "override=true on the leader unit to reconcile the charm's record."
         )
 
+    def _api_client_as(self, username: str, password: str) -> RangerAPIClient:
+        """Create an API client for the local Ranger Admin service as a managed user.
+
+        Args:
+            username: The Ranger internal user to authenticate as.
+            password: The password to authenticate with.
+
+        Returns:
+            A Ranger API client.
+        """
+        return RangerAPIClient(f"{LOCALHOST_URL}:{APPLICATION_PORT}", (username, password))
+
     def _probe_credentials(self, function) -> ApiProbe:
-        """Authenticate the configured system-user credentials against Ranger.
+        """Authenticate the charm's credentials against Ranger.
 
         Args:
             function: The selected charm function.
@@ -543,16 +580,21 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             The configured credential probe outcome.
 
         Raises:
-            SecretValidationError: If the system-users secret is unavailable or invalid.
+            SecretValidationError: If the usersync-credentials secret is unavailable or invalid.
         """
         if function == "usersync":
+            usersync_credentials = self.usersync_credentials
+            if usersync_credentials is None:
+                return ApiProbe.UNREACHABLE
             url = self.config["policy-mgr-url"]
-            username = "rangerusersync"
-            password = self.system_user_passwords.rangerusersync
+            username = USERSYNC_USER
+            password = usersync_credentials.rangerusersync
         else:
             url = f"{LOCALHOST_URL}:{APPLICATION_PORT}"
             username = ADMIN_USER
-            password = self.system_user_passwords.admin
+            password = self.credentials.get(ADMIN_USER)
+            if not password:
+                return ApiProbe.UNREACHABLE
         try:
             RangerAPIClient(url, (username, password)).authenticate(self.API_PROBE_TIMEOUT)
         except RangerAuthenticationError:
@@ -625,7 +667,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             return
         try:
             cfg = self.config
-            _ = self.system_user_passwords
+            _ = self.usersync_credentials
             _ = self.ldap_credentials
         except (ValidationError, SecretValidationError):
             return
@@ -640,7 +682,10 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             truststore_pwd = self._ensure_truststore_password()
             if truststore_pwd is None:
                 return
-            command, context = self._reconcile_admin(container, truststore_pwd)
+            credentials = self.credentials.ensure()
+            if credentials is None:
+                return
+            command, context = self._reconcile_admin(container, truststore_pwd, credentials)
             self.model.unit.open_port(port=APPLICATION_PORT, protocol="tcp")
         else:
             self.model.unit.close_port(port=APPLICATION_PORT, protocol="tcp")

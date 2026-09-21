@@ -11,6 +11,7 @@ from unittest import mock
 from ops.testing import Container, Exec, Model, Relation, Secret, State
 
 from charm import ApiProbe
+from literals import CREDENTIALS_SECRET_LABEL
 from ranger_client import RangerAPIError, RangerAuthenticationError
 
 RANGER = "ranger"
@@ -19,8 +20,13 @@ DATABASE_CONNECTION = {
     "username": "postgres_user",
     "password": "admin",  # nosec B105
 }
-SYSTEM_USERS_SECRET_CONTENT = {
+CREDENTIALS_SECRET_CONTENT = {
     "admin": "RangerAdmin1",  # nosec B105
+    "rangerusersync": "RangerUsersync1",  # nosec B105
+    "keyadmin": "RangerKeyadmin1",  # nosec B105
+    "rangertagsync": "RangerTagsync1",  # nosec B105
+}
+USERSYNC_CREDENTIALS_CONTENT = {
     "rangerusersync": "RangerUsersync1",  # nosec B105
 }
 LDAP_RELATION_CHANGED_DATA = {
@@ -215,6 +221,7 @@ def build_admin_state(
     extra_secrets=(),
     database=DATABASE_CONNECTION,
     container=None,
+    credentials=CREDENTIALS_SECRET_CONTENT,
 ) -> State:
     """Build an admin-function Scenario state.
 
@@ -225,11 +232,14 @@ def build_admin_state(
         extra_secrets: Secrets to append to the state.
         database: Database remote app data, or None to omit the relation.
         container: Explicit Ranger container to use.
+        credentials: Stored credentials content, or None to omit the secret.
 
     Returns:
-        A state with a valid system-users secret and optional ready database.
+        A state with charm-owned credentials and an optional ready database.
     """
-    system_users = Secret(SYSTEM_USERS_SECRET_CONTENT)
+    secrets = set(extra_secrets)
+    if credentials is not None:
+        secrets.add(Secret(credentials, label=CREDENTIALS_SECRET_LABEL, owner="app"))
     relations = set(extra_relations)
     if database is not None:
         relations.add(
@@ -242,10 +252,10 @@ def build_admin_state(
     return State(
         leader=leader,
         model=Model(name="ranger-model"),
-        config={"system-users": system_users.id, **(config or {})},
+        config=dict(config or {}),
         containers={container or ranger_container()},
         relations=relations,
-        secrets={system_users, *extra_secrets},
+        secrets=secrets,
     )
 
 
@@ -274,17 +284,20 @@ def build_usersync_state(
         remote_app_name="comsys-openldap-k8s",
         remote_app_data=LDAP_RELATION_CHANGED_DATA,
     )
+    usersync_secret = Secret(USERSYNC_CREDENTIALS_CONTENT)
     return build_admin_state(
         leader=leader,
         config={
             "charm-function": "usersync",
             "policy-mgr-url": "http://ranger-k8s:6080",
+            "usersync-credentials": usersync_secret.id,
             **(config or {}),
         },
         extra_relations={ldap_relation, *extra_relations},
-        extra_secrets=extra_secrets,
+        extra_secrets={usersync_secret, *extra_secrets},
         database=None,
         container=container,
+        credentials=None,
     )
 
 

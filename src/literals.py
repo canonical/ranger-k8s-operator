@@ -6,6 +6,11 @@
 APPLICATION_PORT = 6080
 LOCALHOST_URL = "http://localhost"
 ADMIN_USER = "admin"
+USERSYNC_USER = "rangerusersync"
+KEYADMIN_USER = "keyadmin"
+TAGSYNC_USER = "rangertagsync"
+MANAGED_USERS = (ADMIN_USER, USERSYNC_USER, KEYADMIN_USER, TAGSYNC_USER)
+CREDENTIALS_SECRET_LABEL = "ranger-credentials"  # nosec B105
 HEADERS = {
     "Accept": "application/json",
     "Content-Type": "application/json",

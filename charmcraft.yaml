@@ -98,13 +98,13 @@ actions:
 
 config:
   options:
-    system-users:
+    usersync-credentials:
       description: |
-        The Juju secret ID containing Ranger internal user passwords, in `secret:...` format.
-        This is a secret ID, not the secret name. The secret must contain `admin` and
-        `rangerusersync` keys and be granted to this application. Each password must be at
-        least 8 characters long, contain uppercase, lowercase, and numeric characters, and
-        not contain `"`, `'`, `\`, or `` ` ``.
+        The Juju secret ID containing the `rangerusersync` password, in `secret:...` format.
+        Required by, and only valid on, an application with `charm-function=usersync`. The
+        secret must contain a `rangerusersync` key and be granted to this application. Obtain
+        the current value by running the `get-password` action on the Ranger admin application;
+        it is the operator's responsibility to keep this secret up to date after a rotation.
       type: string
     ldap-credentials:
       description: |

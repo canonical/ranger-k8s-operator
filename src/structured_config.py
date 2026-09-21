@@ -46,7 +46,7 @@ class SearchScope(BaseEnumStr):
 class CharmConfig(BaseConfigModel):
     """Manager for the structured configuration."""
 
-    system_users: str
+    usersync_credentials: Optional[str]
     ldap_credentials: Optional[str]
     sync_ldap_user_object_class: Optional[str]
     sync_group_object_class: Optional[str]
@@ -171,8 +171,8 @@ class CharmConfig(BaseConfigModel):
 
     @root_validator
     @classmethod
-    def usersync_policy_mgr_url_validator(cls, values):
-        """Require a policy manager URL for usersync deployments.
+    def usersync_requirements_validator(cls, values):
+        """Validate the options a usersync deployment requires and rejects.
 
         Args:
             values: Parsed configuration values.
@@ -181,10 +181,17 @@ class CharmConfig(BaseConfigModel):
             The validated configuration values.
 
         Raises:
-            ValueError: If usersync is configured without a policy manager URL.
+            ValueError: If usersync is configured without a policy manager URL or usersync
+                credentials, or if usersync credentials are set on an admin deployment.
         """
-        if values.get("charm_function") == FunctionType.usersync and not values.get(
-            "policy_mgr_url"
-        ):
+        is_usersync = values.get("charm_function") == FunctionType.usersync
+        if is_usersync and not values.get("policy_mgr_url"):
             raise ValueError("policy-mgr-url is required when charm-function is usersync.")
+        if is_usersync and not values.get("usersync_credentials"):
+            raise ValueError("usersync-credentials is required when charm-function is usersync.")
+        if not is_usersync and values.get("usersync_credentials"):
+            raise ValueError(
+                "usersync-credentials is only valid when charm-function is usersync; the admin "
+                "application's passwords are available from the get-password action."
+            )
         return values

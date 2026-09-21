@@ -33,10 +33,9 @@ def validate_password(value: str) -> str:
     raise ValueError(COMPLEXITY_ERROR)
 
 
-class SystemUserPasswords(BaseModel):
-    """System-user passwords stored in the system-users secret."""
+class UsersyncCredentials(BaseModel):
+    """Usersync password stored in the usersync-credentials secret."""
 
-    admin: str
     rangerusersync: str
 
     @validator("*", pre=True)
@@ -57,7 +56,7 @@ class SystemUserPasswords(BaseModel):
             raise ValueError("field required")
         return value
 
-    @validator("admin", "rangerusersync")
+    @validator("rangerusersync")
     @classmethod
     def password_validator(cls, value: str) -> str:
         """Validate Ranger's system-user password requirements.

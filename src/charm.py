@@ -45,6 +45,7 @@ from literals import (
     LOG_FILES,
     MANAGED_USERS,
     METRICS_PORT,
+    PEER_CREDENTIAL_REJECTED_AT_KEY,
     SUPPRESS_DEBUG_LOGS,
     TAGSYNC_USER,
     TRUSTSTORE_SECRET_LABEL,
@@ -86,11 +87,10 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
     """
 
     config_type = CharmConfig
-    API_PROBE_TIMEOUT = 5
+    _API_PROBE_TIMEOUT = 5
     # Ranger locks an account out after 5 failed logins within 5 minutes, so a rejected
     # probe is remembered rather than repeated on every hook.
-    PROBE_BACKOFF = 300
-    PROBE_REJECTED_AT = "credential-rejected-at"
+    _PROBE_BACKOFF = 300
 
     def __init__(self, *args):
         """Construct.
@@ -547,7 +547,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             Whether Ranger accepted, rejected, or could not be reached.
         """
         try:
-            self._api_client_as(username, password).authenticate(self.API_PROBE_TIMEOUT)
+            self._api_client_as(username, password).authenticate(self._API_PROBE_TIMEOUT)
         except RangerAuthenticationError:
             return ApiProbe.REJECTED
         except RangerAPIError:
@@ -774,10 +774,10 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         relation = self.model.get_relation("peer")
         if relation is None:
             return False
-        rejected_at = relation.data[self.unit].get(self.PROBE_REJECTED_AT)
+        rejected_at = relation.data[self.unit].get(PEER_CREDENTIAL_REJECTED_AT_KEY)
         if not rejected_at:
             return False
-        return time.time() - float(rejected_at) < self.PROBE_BACKOFF
+        return time.time() - float(rejected_at) < self._PROBE_BACKOFF
 
     def _record_probe(self, probe: ApiProbe) -> None:
         """Remember when Ranger last rejected the charm's credentials.
@@ -789,16 +789,16 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         if relation is None:
             return
         if probe is ApiProbe.REJECTED:
-            relation.data[self.unit][self.PROBE_REJECTED_AT] = str(time.time())
+            relation.data[self.unit][PEER_CREDENTIAL_REJECTED_AT_KEY] = str(time.time())
         elif probe is ApiProbe.OK:
-            relation.data[self.unit].pop(self.PROBE_REJECTED_AT, None)
+            relation.data[self.unit].pop(PEER_CREDENTIAL_REJECTED_AT_KEY, None)
 
     def _clear_probe_backoff(self) -> None:
         """Let the next hook probe Ranger again after the charm changed a password."""
         self._probe_result = None
         relation = self.model.get_relation("peer")
         if relation is not None:
-            relation.data[self.unit].pop(self.PROBE_REJECTED_AT, None)
+            relation.data[self.unit].pop(PEER_CREDENTIAL_REJECTED_AT_KEY, None)
 
     def _run_credential_probe(self, function) -> ApiProbe:
         """Authenticate the charm's credentials against Ranger.
@@ -828,7 +828,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             if not password:
                 return ApiProbe.UNREACHABLE
         try:
-            RangerAPIClient(url, (username, password)).authenticate(self.API_PROBE_TIMEOUT)
+            RangerAPIClient(url, (username, password)).authenticate(self._API_PROBE_TIMEOUT)
         except RangerAuthenticationError:
             self._record_probe(ApiProbe.REJECTED)
             return ApiProbe.REJECTED

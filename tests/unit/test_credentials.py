@@ -14,7 +14,7 @@ from ops._private.harness import ActionFailed
 import ranger_db
 from charm import ApiProbe
 from exceptions import RangerDatabaseError
-from literals import CREDENTIALS_SECRET_LABEL, MANAGED_USERS
+from literals import CREDENTIALS_SECRET_LABEL, MANAGED_USERS, PEER_CREDENTIAL_REJECTED_AT_KEY
 from ranger_db import encode_password
 from secret_models import validate_password
 from tests.unit.helpers import (
@@ -285,13 +285,13 @@ def test_rejection_is_remembered_between_hooks(ctx):
         state_out = ctx.run(ctx.on.config_changed(), build_admin_state(extra_relations={peer}))
 
     peer_out = next(relation for relation in state_out.relations if relation.id == peer.id)
-    assert peer_out.local_unit_data["credential-rejected-at"]
+    assert peer_out.local_unit_data[PEER_CREDENTIAL_REJECTED_AT_KEY]
 
 
 def test_recent_rejection_skips_the_probe(ctx):
     """A recent rejection keeps the unit blocked without hammering Ranger."""
     peer = testing.PeerRelation(
-        "peer", local_unit_data={"credential-rejected-at": str(time.time())}
+        "peer", local_unit_data={PEER_CREDENTIAL_REJECTED_AT_KEY: str(time.time())}
     )
     with mock_ranger_api() as client:
         state_out = ctx.run(ctx.on.config_changed(), build_admin_state(extra_relations={peer}))

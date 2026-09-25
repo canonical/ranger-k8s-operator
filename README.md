@@ -89,6 +89,31 @@ anyway. The charm tries it, finds that Ranger rejects it, and resets Ranger to
 match. Omitting `password` cannot recover this state: rotating `admin` or `keyadmin`
 is a self-service change that needs the current password to authenticate.
 
+#### Temporary login lockout
+
+Ranger locks a user after five failed logins within five minutes. While locked,
+Ranger rejects every login for that user, including the correct password, and
+counts each rejected attempt as another failure. The lock lifts once fewer than
+five failures remain in the last five minutes.
+
+This happens only after wrong passwords, typically around a redeploy or a
+password change. The charm retries a rejected password at most once every five
+minutes, so on its own it does not keep a user locked. Repeated `set-password
+override=true` runs or manual logins with a wrong password can.
+
+A locked user looks the same as a wrong password: the application blocks with
+the authentication-failed message. To recover:
+
+1. Stop logging in as the affected user and wait at least five minutes.
+2. If the charm's record is correct, the application returns to active within
+   the next `update-status` interval.
+3. If it stays blocked, the record is wrong. Run `set-password override=true`
+   once, as described above.
+
+Running `override=true` while the user is locked reports `force-reset`, but the
+application stays blocked until the lock lifts. Each run adds two failed logins,
+so do not repeat it.
+
 #### Action results
 
 `set-password` reports which path it took:

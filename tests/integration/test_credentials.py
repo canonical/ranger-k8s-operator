@@ -146,7 +146,7 @@ class TestCredentials:
         url = get_unit_url(juju, application=APP_NAME, unit=0, port=6080)
         old_password = get_passwords(juju)["admin"]
 
-        task = juju.run(f"{APP_NAME}/0", "set-password", {"username": "admin", "rotate": True})
+        task = juju.run(f"{APP_NAME}/0", "set-password", {"username": "admin"})
         assert task.results["result"] == "changed"
 
         new_password = get_passwords(juju)["admin"]

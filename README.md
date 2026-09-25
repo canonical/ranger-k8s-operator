@@ -52,10 +52,11 @@ able to read these passwords.
 #### Rotating a password
 
 ```shell
-juju run ranger-k8s/leader set-password username=admin rotate=true
+juju run ranger-k8s/leader set-password username=admin
 ```
 
-To set a specific password instead, pass it explicitly. Avoid leaving it in your
+Without `password`, the charm generates a new one. To set a specific password
+instead, pass it explicitly. Avoid leaving it in your
 shell history: with `HISTCONTROL=ignorespace` set, prefix the command with a
 space, or read the value from a file created under `umask 077`:
 
@@ -85,7 +86,7 @@ never requires editing the database by hand.
 
 If nobody knows the password Ranger holds, supply a new one with `override=true`
 anyway. The charm tries it, finds that Ranger rejects it, and resets Ranger to
-match. `rotate=true` cannot recover this state: rotating `admin` or `keyadmin`
+match. Omitting `password` cannot recover this state: rotating `admin` or `keyadmin`
 is a self-service change that needs the current password to authenticate.
 
 #### Action results
@@ -112,7 +113,7 @@ upgrading, reconcile the charm's record with what Ranger holds:
 ```shell
 juju run ranger-k8s/leader set-password username=admin password=<old-admin> override=true
 juju run ranger-k8s/leader set-password username=rangerusersync password=<old-rangerusersync> override=true
-juju run ranger-k8s/leader set-password username=rangertagsync rotate=true
+juju run ranger-k8s/leader set-password username=rangertagsync
 juju run ranger-k8s/leader set-password username=keyadmin password=<old-admin> override=true
 ```
 

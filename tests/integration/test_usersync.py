@@ -93,9 +93,7 @@ class TestUserSync:
 
     def test_usersync_password_rotation(self, juju: jubilant.Juju):
         """Rotating rangerusersync blocks usersync until its secret is updated."""
-        task = juju.run(
-            f"{APP_NAME}/0", "set-password", {"username": "rangerusersync", "rotate": True}
-        )
+        task = juju.run(f"{APP_NAME}/0", "set-password", {"username": "rangerusersync"})
         assert task.results["result"] == "changed"
 
         wait_for_apps(juju, [USERSYNC_NAME], status="blocked", timeout=900, idle_period=30)

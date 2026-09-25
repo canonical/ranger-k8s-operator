@@ -441,20 +441,13 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             return
         username = event.params["username"]
         password = event.params.get("password")
-        rotate = event.params.get("rotate", False)
         override = event.params.get("override", False)
 
         if username not in MANAGED_USERS:
             event.fail(f"username must be one of {', '.join(MANAGED_USERS)}")
             return
-        if rotate and password:
-            event.fail("rotate and password are mutually exclusive")
-            return
         if override and not password:
             event.fail("override requires password")
-            return
-        if not rotate and not password:
-            event.fail("provide password or rotate=true")
             return
 
         new_password = password or generate_password()

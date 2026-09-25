@@ -160,7 +160,7 @@ def test_get_password_refuses_elsewhere(ctx, state, message):
 def test_rotating_admin_uses_a_self_service_change(ctx):
     """Rotating admin presents the stored password as the old one."""
     with mock_ranger_api(passwords=dict(CREDENTIALS_SECRET_CONTENT)) as client:
-        state_out = run_set_password(ctx, build_admin_state(), username="admin", rotate=True)
+        state_out = run_set_password(ctx, build_admin_state(), username="admin")
 
     change = next(call for call in client.calls if call[0] == "change_own_password")
     assert change[2] == "admin"
@@ -186,7 +186,7 @@ def test_setting_usersync_uses_the_administrator(ctx):
 def test_keyadmin_changes_its_own_password(ctx):
     """Ranger refuses administrator access to keyadmin, so it authenticates as itself."""
     with mock_ranger_api(passwords=dict(CREDENTIALS_SECRET_CONTENT)) as client:
-        run_set_password(ctx, build_admin_state(), username="keyadmin", rotate=True)
+        run_set_password(ctx, build_admin_state(), username="keyadmin")
 
     change = next(call for call in client.calls if call[0] == "change_own_password")
     assert change[2] == "keyadmin"
@@ -199,13 +199,8 @@ def test_keyadmin_changes_its_own_password(ctx):
 @pytest.mark.parametrize(
     ("params", "message"),
     [
-        (
-            {"username": "admin", "password": NEW_PASSWORD, "rotate": True},
-            "rotate and password are mutually exclusive",
-        ),
         ({"username": "admin", "override": True}, "override requires password"),
-        ({"username": "admin"}, "provide password or rotate=true"),
-        ({"username": "postgres", "rotate": True}, "username must be one of"),
+        ({"username": "postgres"}, "username must be one of"),
     ],
 )
 def test_set_password_rejects_invalid_modes(ctx, params, message):
@@ -338,7 +333,7 @@ def test_set_password_fails_when_ranger_is_unreachable(ctx):
     """An unreachable workload leaves the stored password untouched."""
     with mock_ranger_api(failure="get_user"):
         with pytest.raises(ActionFailed):
-            state_out = run_set_password(ctx, build_admin_state(), username="admin", rotate=True)
+            state_out = run_set_password(ctx, build_admin_state(), username="admin")
 
     state_out = ctx.run(ctx.on.action("get-password"), build_admin_state())
     assert ctx.action_results == CREDENTIALS_SECRET_CONTENT

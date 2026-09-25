@@ -11,6 +11,10 @@ import string
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from secret_models import validate_password
+
+PASSWORD_LENGTH = 32
+
 
 def render(template_name, context):
     """Render the template with the given name using the given context dict.
@@ -81,12 +85,22 @@ def log_event_handler(logger):
 
 
 def generate_password():
-    """Create randomized string for use as truststore password.
+    """Create a randomized password meeting Ranger's complexity requirements.
 
     Returns:
-        String of 32 randomized letter+digit characters
+        String of 32 randomized letter+digit characters.
     """
-    return "".join([secrets.choice(string.ascii_letters + string.digits) for _ in range(32)])
+    rng = secrets.SystemRandom()
+    characters = [
+        rng.choice(string.ascii_uppercase),
+        rng.choice(string.ascii_lowercase),
+        rng.choice(string.digits),
+    ]
+    alphabet = string.ascii_letters + string.digits
+    characters += [rng.choice(alphabet) for _ in range(PASSWORD_LENGTH - len(characters))]
+    rng.shuffle(characters)
+    # Revalidated so a later change to the password rules cannot silently outgrow this.
+    return validate_password("".join(characters))
 
 
 def content_hash(value: str) -> str:

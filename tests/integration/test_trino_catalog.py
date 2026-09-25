@@ -20,9 +20,9 @@ from apache_ranger.model.ranger_role import RangerRole
 
 from integration.helpers import (
     APP_NAME,
-    RANGER_AUTH,
     TRINO_NAME,
     TRINO_SERVICE,
+    get_auth,
     get_unit_url,
     wait_for_apps,
 )
@@ -56,7 +56,7 @@ rw:
 def _get_ranger_client(juju: jubilant.Juju) -> RangerClient:
     """Build a RangerClient pointed at the Ranger unit."""
     url = get_unit_url(juju, application=APP_NAME, unit=0, port=6080)
-    return RangerClient(url, RANGER_AUTH)
+    return RangerClient(url, get_auth(juju))
 
 
 def _poll_zone(juju, zone_name):

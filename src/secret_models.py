@@ -8,15 +8,34 @@ import re
 
 from pydantic import BaseModel, Field, validator
 
+# \Z rather than $, which would also match before a trailing newline.
+PASSWORD_PATTERN = re.compile(r"^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?!.*[\"'\\`\x00-\x1f]).{8,}\Z")
+
 
 class SecretValidationError(ValueError):
     """Represent an actionable secret resolution or validation failure."""
 
 
-class SystemUserPasswords(BaseModel):
-    """System-user passwords stored in the system-users secret."""
+def validate_password(value: str) -> str:
+    r"""Validate Ranger's system-user password requirements.
 
-    admin: str
+    Args:
+        value: Password to validate.
+
+    Returns:
+        The validated password.
+
+    Raises:
+        ValueError: If the password does not meet Ranger's requirements.
+    """
+    if PASSWORD_PATTERN.match(value):
+        return value
+    raise ValueError("Password does not match requirements.")
+
+
+class UsersyncCredentials(BaseModel):
+    """Usersync password stored in the usersync-credentials secret."""
+
     rangerusersync: str
 
     @validator("*", pre=True)
@@ -37,24 +56,18 @@ class SystemUserPasswords(BaseModel):
             raise ValueError("field required")
         return value
 
-    @validator("admin", "rangerusersync")
+    @validator("rangerusersync")
     @classmethod
     def password_validator(cls, value: str) -> str:
-        r"""Validate Ranger's system-user password requirements.
+        """Validate Ranger's system-user password requirements.
 
         Args:
             value: Password to validate.
 
         Returns:
             The validated password.
-
-        Raises:
-            ValueError: If the password does not meet Ranger's requirements.
         """
-        pattern = re.compile(r"^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?!.*[\"'\\`]).{8,}$")
-        if pattern.match(value):
-            return value
-        raise ValueError("Password does not match requirements.")
+        return validate_password(value)
 
 
 class LdapCredentials(BaseModel):

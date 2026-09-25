@@ -6,3 +6,7 @@
 
 class RelationNotReady(ValueError):  # noqa: N818
     """A required relation exists but has not yet published usable data."""
+
+
+class RangerDatabaseError(Exception):
+    """A direct write against the Ranger database could not be completed."""

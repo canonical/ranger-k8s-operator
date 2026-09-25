@@ -18,6 +18,7 @@ from tests.unit.helpers import (
     LDAP_CREDENTIALS_CONTENT,
     POLICY_RELATION_DATA,
     RANGER,
+    USERSYNC_CREDENTIALS_CONTENT,
     FakeRangerClient,
     build_admin_state,
     build_usersync_state,
@@ -212,10 +213,10 @@ def test_api_credential_rejection_blocks(ctx):
         state_out = ctx.run(ctx.on.config_changed(), build_admin_state())
 
     assert state_out.unit_status == testing.BlockedStatus(
-        "Ranger authentication failed for admin. Revert the system-users secret or change "
-        "the password in the Ranger UI."
+        "Ranger authentication failed for admin. Run the set-password action with "
+        "override=true on the leader unit to reconcile the charm's record."
     )
-    assert len(client.calls) == 2
+    assert len(client.calls) == 1
 
 
 def test_api_phase_skipped_on_non_leader(ctx):
@@ -227,7 +228,7 @@ def test_api_phase_skipped_on_non_leader(ctx):
             build_admin_state(leader=False, extra_secrets=(truststore,)),
         )
 
-    assert [call[0] for call in client.calls] == ["authenticate", "authenticate"]
+    assert [call[0] for call in client.calls] == ["authenticate"]
 
 
 def test_api_phase_skipped_for_usersync(ctx):
@@ -235,7 +236,7 @@ def test_api_phase_skipped_for_usersync(ctx):
     with mock_ranger_api() as client:
         ctx.run(ctx.on.config_changed(), build_usersync_state())
 
-    assert [call[0] for call in client.calls] == ["authenticate", "authenticate"]
+    assert [call[0] for call in client.calls] == ["authenticate"]
 
 
 def test_policy_manager_url_published_while_api_down(ctx):
@@ -324,15 +325,19 @@ def test_trino_relation_broken_does_not_error(ctx):
 def test_ldap_bind_user_published(ctx):
     """A usersync leader publishes its LDAP bind user during reconciliation."""
     ldap = testing.Relation("ldap", remote_app_name="openldap")
+    usersync_credentials = testing.Secret(USERSYNC_CREDENTIALS_CONTENT)
     with mock_ranger_api():
         state_out = ctx.run(
             ctx.on.config_changed(),
             build_admin_state(
                 database=None,
+                credentials=None,
                 config={
                     "charm-function": "usersync",
                     "policy-mgr-url": "http://ranger-k8s:6080",
+                    "usersync-credentials": usersync_credentials.id,
                 },
+                extra_secrets=(usersync_credentials,),
                 extra_relations={
                     dataclasses.replace(
                         ldap,
@@ -373,14 +378,18 @@ def test_ldap_relation_values_override_secret_and_config_per_key(ctx):
 
 def test_usersync_blocks_without_ldap_source(ctx):
     """Usersync requires either LDAP relation data or complete fallback settings."""
+    usersync_credentials = testing.Secret(USERSYNC_CREDENTIALS_CONTENT)
     state_out = ctx.run(
         ctx.on.config_changed(),
         build_admin_state(
             database=None,
+            credentials=None,
             config={
                 "charm-function": "usersync",
                 "policy-mgr-url": "http://ranger-k8s:6080",
+                "usersync-credentials": usersync_credentials.id,
             },
+            extra_secrets=(usersync_credentials,),
         ),
     )
 

@@ -13,6 +13,7 @@ dependencies = [
     "cosl>=1.9.1,<2",
     "requests>=2.34.2,<3",
     "pyyaml>=6.0.3,<7",
+    "psycopg2-binary>=2.9,<3",
 ]
 
 [dependency-groups]
@@ -40,6 +41,7 @@ unit = [
     "requests>=2.34.2,<3",
     "pyyaml>=6.0.3,<7",
     "pytest>=9.0.3,<10",
+    "psycopg2-binary>=2.9,<3",
 ]
 
 static = [

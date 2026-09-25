@@ -11,16 +11,11 @@ from ops import testing
 from pydantic import ValidationError
 
 from charm import RangerK8SCharm
-from secret_models import SystemUserPasswords
+from secret_models import UsersyncCredentials
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_USERS_SECRET = testing.Secret(
-    {
-        "admin": "RangerAdmin1",
-        "rangerusersync": "RangerUsersync1",
-    }
-)
+USERSYNC_CREDENTIALS_SECRET = testing.Secret({"rangerusersync": "RangerUsersync1"})
 
 
 @pytest.fixture
@@ -29,20 +24,19 @@ def ctx():
     return testing.Context(RangerK8SCharm)
 
 
-def _state(config=None, secret=SYSTEM_USERS_SECRET, secrets=None):
-    """Build a Scenario state with a system-users secret.
+def _state(config=None, secrets=None):
+    """Build a Scenario state for configuration validation.
 
     Args:
         config: Configuration overrides.
-        secret: The system-users secret available to the charm.
         secrets: Additional secrets available to the charm.
 
     Returns:
-        A state configured to resolve the supplied secret.
+        A state carrying the supplied configuration.
     """
     return testing.State(
-        config={"system-users": secret.id, **(config or {})},
-        secrets={secret, *(secrets or set())},
+        config=dict(config or {}),
+        secrets=set(secrets or set()),
         containers={testing.Container("ranger", can_connect=True)},
     )
 
@@ -71,7 +65,9 @@ def test_string_values(ctx) -> None:
         config={
             "charm-function": "usersync",
             "policy-mgr-url": "http://ranger-k8s:6080",
-        }
+            "usersync-credentials": USERSYNC_CREDENTIALS_SECRET.id,
+        },
+        secrets={USERSYNC_CREDENTIALS_SECRET},
     )
     with ctx(ctx.on.config_changed(), state) as manager:
         assert manager.charm.config["charm-function"] == "usersync"
@@ -118,7 +114,7 @@ def test_policy_mgr_url_values(ctx) -> None:
 
 
 def test_password_fields(ctx) -> None:
-    """Passwords in system-users match Ranger's validation rules."""
+    """Passwords in usersync-credentials match Ranger's validation rules."""
     erroneous_passwords = [
         "Short1a",  # Too short
         "nouppercase1",  # No uppercase character
@@ -139,18 +135,16 @@ def test_password_fields(ctx) -> None:
 
     for password in erroneous_passwords:
         with pytest.raises(ValidationError):
-            SystemUserPasswords(admin=password, rangerusersync="RangerUsersync1")
+            UsersyncCredentials(rangerusersync=password)
 
     for password in valid_passwords:
-        users = SystemUserPasswords(admin=password, rangerusersync=password)
-        assert users.admin == password
-        assert users.rangerusersync == password
+        assert UsersyncCredentials(rangerusersync=password).rangerusersync == password
 
 
-def test_empty_system_user_password_is_required(ctx) -> None:
+def test_empty_usersync_password_is_required(ctx) -> None:
     """An empty secret value produces Pydantic's required-field error."""
-    with pytest.raises(ValidationError, match=r"(?s)admin.*field required"):
-        SystemUserPasswords(admin="", rangerusersync="RangerUsersync1")
+    with pytest.raises(ValidationError, match=r"(?s)rangerusersync.*field required"):
+        UsersyncCredentials(rangerusersync="")
 
 
 def test_strict_reconciliation_configuration(ctx) -> None:

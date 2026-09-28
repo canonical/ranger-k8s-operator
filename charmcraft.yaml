@@ -190,6 +190,37 @@ config:
       description: |
         Optional additional filter constraining the users selected for syncing.
       type: string
+    sync-ldap-group-search-filter:
+      description: |
+        Optional additional filter constraining the groups selected for syncing.
+      type: string
+      default: ""
+    sync-ldap-referral:
+      description: |
+        LDAP referral handling. Allowed values: `ignore` and `follow`.
+      type: string
+      default: ignore
+    sync-ldap-username-case-conversion:
+      description: |
+        Case conversion for synced user names. Allowed values: `none`, `lower` and `upper`.
+      type: string
+      default: none
+    sync-ldap-group-name-case-conversion:
+      description: |
+        Case conversion for synced group names. Allowed values: `none`, `lower` and `upper`.
+      type: string
+      default: none
+    sync-paged-results-enabled:
+      description: |
+        Request LDAP search results in pages. Without paging, directories such as
+        Active Directory truncate large result sets.
+      type: boolean
+      default: true
+    sync-paged-results-size:
+      description: |
+        Number of LDAP entries requested per results page. Must be at least 1.
+      type: int
+      default: 500
     sync-ldap-user-name-attribute:
       description: |
         Attribute from user entry that would be treated as user name.

@@ -81,6 +81,65 @@ def test_usersync_layer_is_yaml_serialisable(ctx):
     assert services(state_out)[RANGER]["environment"]["SYNC_GROUP_SEARCH_SCOPE"] == "sub"
 
 
+USERSYNC_PROPERTIES = "/usr/lib/ranger/usersync/install.properties"
+
+
+def test_usersync_default_configuration_renders(ctx):
+    """Usersync defaults render Ranger's upstream LDAP defaults."""
+    with mock_ranger_api():
+        state_out = ctx.run(ctx.on.config_changed(), build_usersync_state())
+
+    lines = workload_path(state_out, ctx, USERSYNC_PROPERTIES).read_text().splitlines()
+    assert "SYNC_SOURCE = ldap" in lines
+    assert "SYNC_LDAP_GROUP_SEARCH_FILTER = " in lines
+    assert "SYNC_LDAP_REFERRAL = ignore" in lines
+    assert "SYNC_LDAP_USERNAME_CASE_CONVERSION = none" in lines
+    assert "SYNC_LDAP_GROUPNAME_CASE_CONVERSION = none" in lines
+    assert "SYNC_PAGED_RESULTS_ENABLED = True" in lines
+    assert "SYNC_PAGED_RESULTS_SIZE = 500" in lines
+
+
+def test_usersync_configuration_overrides_render(ctx):
+    """Usersync configuration overrides reach Ranger install.properties."""
+    config = {
+        "sync-ldap-group-search-filter": "(department=engineering)",
+        "sync-ldap-referral": "follow",
+        "sync-ldap-username-case-conversion": "upper",
+        "sync-ldap-group-name-case-conversion": "lower",
+        "sync-paged-results-enabled": False,
+        "sync-paged-results-size": 250,
+    }
+    with mock_ranger_api():
+        state_out = ctx.run(ctx.on.config_changed(), build_usersync_state(config=config))
+
+    lines = workload_path(state_out, ctx, USERSYNC_PROPERTIES).read_text().splitlines()
+    assert "SYNC_LDAP_GROUP_SEARCH_FILTER = (department=engineering)" in lines
+    assert "SYNC_LDAP_REFERRAL = follow" in lines
+    assert "SYNC_LDAP_USERNAME_CASE_CONVERSION = upper" in lines
+    assert "SYNC_LDAP_GROUPNAME_CASE_CONVERSION = lower" in lines
+    assert "SYNC_PAGED_RESULTS_ENABLED = False" in lines
+    assert "SYNC_PAGED_RESULTS_SIZE = 250" in lines
+
+
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [
+        ("sync-ldap-referral", "invalid"),
+        ("sync-ldap-username-case-conversion", "invalid"),
+        ("sync-ldap-group-name-case-conversion", "invalid"),
+        ("sync-paged-results-size", 0),
+    ],
+)
+def test_invalid_configuration_blocks_without_reconfiguring(ctx, option, value):
+    """Invalid configuration blocks before any workload file or plan is written."""
+    state_out = ctx.run(ctx.on.config_changed(), build_usersync_state(config={option: value}))
+
+    assert state_out.unit_status.name == "blocked"
+    assert state_out.unit_status.message.startswith(f"Invalid configuration: {option}:")
+    assert state_out.get_container(RANGER).plan.to_dict() == {}
+    assert not workload_path(state_out, ctx, USERSYNC_PROPERTIES).exists()
+
+
 def test_reconcile_is_idempotent(ctx):
     """A repeated reconcile preserves both plan and truststore secret revision."""
     with mock_ranger_api():

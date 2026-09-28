@@ -89,7 +89,7 @@ class TestUserSync:
                 break
             time.sleep(10)
 
-        assert membership == ("finance", 7)
+        assert membership == ("Finance", 7)
 
     def test_usersync_password_rotation(self, juju: jubilant.Juju):
         """Rotating rangerusersync blocks usersync until its secret is updated."""

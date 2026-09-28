@@ -96,6 +96,17 @@ def test_ldap_search_scopes(ctx) -> None:
     check_invalid_values(ctx, "sync-ldap-group-search-scope", invalid_scopes)
 
 
+def test_usersync_ldap_behaviour_values(ctx) -> None:
+    """Usersync LDAP behaviour options accept only Ranger's supported values."""
+    check_valid_values(ctx, "sync-ldap-referral", ["ignore", "follow"])
+    check_invalid_values(ctx, "sync-ldap-referral", ["IGNORE", "invalid"])
+    for field in ("sync-ldap-username-case-conversion", "sync-ldap-group-name-case-conversion"):
+        check_valid_values(ctx, field, ["none", "lower", "upper"])
+        check_invalid_values(ctx, field, ["None", "invalid"])
+    check_valid_values(ctx, "sync-paged-results-size", [1, 500])
+    check_invalid_values(ctx, "sync-paged-results-size", [0, -1])
+
+
 def test_policy_mgr_url_values(ctx) -> None:
     """Policy manager URLs require an HTTP(S) URL with a hostname."""
     check_invalid_values(

@@ -77,6 +77,12 @@ The patch makes the following changes:
    `ranger.audit.elasticsearch.protocol` from `http` to `https` in
    `ranger-admin-site.xml`.
 
+5. **Credential builder dependencies:** Adds `hadoop-common` as a direct
+   dependency so the admin assembly includes the Hadoop configuration classes
+   required to create the Ranger credential store, and adds
+   `commons-collections4` to the admin credential library allowlist in
+   `admin-web.xml`, which `hadoop-common` requires at runtime.
+
 ## Using Makefile
 
 `make dev` will create the multipass image, clone the repo, install and configure the prerequisites.

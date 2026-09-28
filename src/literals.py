@@ -138,6 +138,11 @@ DEFAULT_POLICIES = [
 ]
 SERVICE_STAMP_PREFIX = "relation_id_"
 TRUSTSTORE_SECRET_LABEL = "truststore-password"  # nosec B105
+JAVA_TRUSTSTORE_PATH = "/usr/lib/jvm/java-21-openjdk-amd64/lib/security/cacerts"
+POSTGRES_CA_PATH = "/etc/ranger/postgresql-ca.crt"
+POSTGRES_CA_OWNER = "_daemon_"
+POSTGRES_CA_OWNER_ID = 584792
+POSTGRES_DEFAULT_ROOT_CERT_PATH = "/root/.postgresql/root.crt"
 
 # Trino catalog reconciliation literals
 TRINO_SERVICE_TYPE = "trino"

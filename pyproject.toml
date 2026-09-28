@@ -14,6 +14,7 @@ dependencies = [
     "requests>=2.34.2,<3",
     "pyyaml>=6.0.3,<7",
     "psycopg2-binary>=2.9,<3",
+    "cryptography>=50.0.1,<51",
 ]
 
 [dependency-groups]
@@ -42,6 +43,7 @@ unit = [
     "pyyaml>=6.0.3,<7",
     "pytest>=9.0.3,<10",
     "psycopg2-binary>=2.9,<3",
+    "cryptography>=50.0.1,<51",
 ]
 
 static = [
@@ -51,6 +53,7 @@ static = [
 integration = [
     "ipdb>=0.13.9,<0.14",
     "jubilant>=1.8,<2",
+    "psycopg2-binary>=2.9,<3",
     "pytest>=9.0.3,<10",
     "pytest-jubilant>=2.1,<3",
 ]
@@ -58,6 +61,7 @@ integration = [
 integration-scenarios = [
     "ipdb>=0.13.9,<0.14",
     "jubilant>=1.8,<2",
+    "psycopg2-binary>=2.9,<3",
     "pytest>=9.0.3,<10",
     "pytest-jubilant>=2.1,<3",
 ]

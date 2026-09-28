@@ -38,6 +38,7 @@ from literals import (
     ADMIN_ENTRYPOINT,
     ADMIN_USER,
     APPLICATION_PORT,
+    JAVA_TRUSTSTORE_PATH,
     KEYADMIN_USER,
     LDAP_BIND_CREDENTIAL_CONFIG_KEYS,
     LDAP_TOPOLOGY_CONFIG_KEYS,
@@ -46,6 +47,10 @@ from literals import (
     MANAGED_USERS,
     METRICS_PORT,
     PEER_CREDENTIAL_REJECTED_AT_KEY,
+    POSTGRES_CA_OWNER,
+    POSTGRES_CA_OWNER_ID,
+    POSTGRES_CA_PATH,
+    POSTGRES_DEFAULT_ROOT_CERT_PATH,
     SUPPRESS_DEBUG_LOGS,
     TAGSYNC_USER,
     TRUSTSTORE_SECRET_LABEL,
@@ -523,7 +528,11 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             event.fail("Ranger is unreachable; retry once the workload is running")
             return
 
-        connection = self.postgres_relation_handler.get_connection()
+        try:
+            connection = self.postgres_relation_handler.get_connection()
+        except ValueError as err:
+            event.fail(str(err))
+            return
         if connection is None:
             event.fail("integrate ranger-k8s with a PostgreSQL database to force-reset")
             return
@@ -600,6 +609,40 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
                 return
             logger.debug("Unable to update truststore password %s", error.stderr)
 
+    @staticmethod
+    def _reconcile_postgres_ca(container, ca_certificates):
+        """Converge the managed PostgreSQL CA files.
+
+        Args:
+            container: The workload container.
+            ca_certificates: The PEM CA certificates to trust, or None for plaintext.
+        """
+        if ca_certificates is None:
+            container.remove_path(POSTGRES_DEFAULT_ROOT_CERT_PATH, recursive=True)
+            container.remove_path(POSTGRES_CA_PATH, recursive=True)
+            return
+        if (
+            container.exists(POSTGRES_CA_PATH)
+            and container.pull(POSTGRES_CA_PATH).read() == ca_certificates
+        ):
+            return
+        # Ranger's DBA step connects with only ssl=true, so pgJDBC verifies against its
+        # default root certificate path.
+        container.push(
+            POSTGRES_DEFAULT_ROOT_CERT_PATH, ca_certificates, make_dirs=True, permissions=0o400
+        )
+        # Written last: it marks the update as complete for the next hook.
+        container.push(
+            POSTGRES_CA_PATH,
+            ca_certificates,
+            make_dirs=True,
+            permissions=0o400,
+            user=POSTGRES_CA_OWNER,
+            user_id=POSTGRES_CA_OWNER_ID,
+            group=POSTGRES_CA_OWNER,
+            group_id=POSTGRES_CA_OWNER_ID,
+        )
+
     def _reconcile_admin(self, container, truststore_pwd, credentials):
         """Prepare Ranger Admin configuration and truststore state.
 
@@ -615,6 +658,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         opensearch = self.opensearch_relation_handler.gather_connection()
         certificate = self.opensearch_relation_handler.gather_certificate()
         self.set_truststore_password(container, truststore_pwd)
+        self._reconcile_postgres_ca(container, db_conn["tls_ca"])
         self.opensearch_relation_handler.reconcile_index_mapping(opensearch)
         self.opensearch_relation_handler.reconcile_truststore_certificate(
             container, certificate, truststore_pwd
@@ -625,6 +669,11 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             "DB_PORT": db_conn["port"],
             "DB_USER": db_conn["user"],
             "DB_PWD": db_conn["password"],
+            "DB_TLS_ENABLED": db_conn["tls_ca"] is not None,
+            "DB_CA_PATH": POSTGRES_CA_PATH,
+            "DB_CA_HASH": content_hash(db_conn["tls_ca"] or ""),
+            "JAVA_TRUSTSTORE_PATH": JAVA_TRUSTSTORE_PATH,
+            "JAVA_TRUSTSTORE_PWD": truststore_pwd,
             "OPENSEARCH_INDEX": opensearch.get("index"),
             "OPENSEARCH_HOST": opensearch.get("host"),
             "OPENSEARCH_PORT": opensearch.get("port"),

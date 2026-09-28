@@ -28,15 +28,34 @@ SQL_CONNECTOR_JAR=/usr/share/java/postgresql.jar
 db_root_user={{ DB_USER }}
 db_root_password={{ DB_PWD }}
 db_host={{ DB_HOST }}:{{ DB_PORT }}
-# Database TLS. db_ssl_auth_type is 1-way (server authentication) or 2-way (mutual).
+# Database TLS, enabled when the PostgreSQL relation advertises it. With a
+# certificate file, setup.sh renders a verify-full JDBC URL whose sslrootcert is
+# that file. db_ssl_auth_type is 1-way (server authentication) or 2-way (mutual).
+# setup.sh passes the truststore settings to the Admin JVM, so they must keep
+# pointing at the charm-managed cacerts and its password.
+{%- if DB_TLS_ENABLED %}
+db_ssl_enabled=true
+db_ssl_required=true
+db_ssl_verifyServerCertificate=true
+db_ssl_auth_type=1-way
+db_ssl_certificate_file={{ DB_CA_PATH }}
+javax_net_ssl_keyStore=
+javax_net_ssl_keyStorePassword=
+javax_net_ssl_trustStore={{ JAVA_TRUSTSTORE_PATH }}
+javax_net_ssl_trustStorePassword={{ JAVA_TRUSTSTORE_PWD }}
+{%- else %}
 db_ssl_enabled=false
 db_ssl_required=false
 db_ssl_verifyServerCertificate=false
 db_ssl_auth_type=2-way
+db_ssl_certificate_file=
 javax_net_ssl_keyStore=
 javax_net_ssl_keyStorePassword=
 javax_net_ssl_trustStore=
 javax_net_ssl_trustStorePassword=
+{%- endif %}
+javax_net_ssl_keyStore_type=jks
+javax_net_ssl_trustStore_type=jks
 db_name={{ DB_NAME }}
 db_user={{ DB_USER }}
 db_password={{ DB_PWD }}

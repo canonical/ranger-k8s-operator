@@ -20,6 +20,7 @@ from integration.helpers import (
     TRAEFIK_NAME,
     get_unit_url,
     wait_for_apps,
+    wait_for_ranger_jdbc_ssl,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,10 @@ class TestDeployment:
 
         response = requests.get(url, timeout=300, verify=False)  # nosec
         assert response.status_code == 200
+
+    def test_database_transport_is_plaintext(self, juju: jubilant.Juju):
+        """Ranger connects without TLS when PostgreSQL does not advertise it."""
+        wait_for_ranger_jdbc_ssl(juju, ssl=False)
 
     def test_ingress(self, juju: jubilant.Juju):
         """Integrate Ranger with Traefik ingress and verify the policy URL is updated."""

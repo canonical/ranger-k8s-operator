@@ -32,6 +32,21 @@ internal accounts itself; see [Managing credentials](#managing-credentials).
 
 Refer to [CONTRIBUTING.md](./CONTRIBUTING.md) for details on bootstrapping a juju controller for microk8s.
 
+#### PostgreSQL TLS
+
+Ranger follows the TLS state that PostgreSQL publishes on the relation; there is
+no charm option for it. When PostgreSQL has TLS enabled, for example through
+`self-signed-certificates`, Ranger trusts only the CA certificates from the
+relation and connects with `sslmode=verify-full`. When PostgreSQL disables TLS,
+Ranger reconnects in plaintext. A new CA from the provider restarts Ranger with
+it. If PostgreSQL advertises TLS without a valid CA certificate, the unit is
+blocked and Ranger keeps its current configuration until valid data arrives.
+
+```bash
+juju deploy self-signed-certificates
+juju integrate postgresql-k8s:certificates self-signed-certificates
+```
+
 ### Managing credentials
 
 On first install the charm generates a password for each Ranger internal user it

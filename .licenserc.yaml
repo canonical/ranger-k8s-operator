@@ -37,4 +37,6 @@ header:
     - 'ranger_rock/local-files/**'
     - '**/*.patch'
     - 'uv.lock'
+    - 'apm.lock.yaml'
+    - '**/keyring_broker.py'
   comment: on-failure

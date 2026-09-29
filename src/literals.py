@@ -31,6 +31,8 @@ ENDPOINT_MAPPING = {
 APP_NAME = "ranger-k8s"
 ADMIN_ENTRYPOINT = "/home/ranger/scripts/ranger-admin-entrypoint.sh"
 USERSYNC_ENTRYPOINT = "/home/ranger/scripts/ranger-usersync-entrypoint.sh"
+ADMIN_PROPERTIES_PATH = "/usr/lib/ranger/admin/install.properties"
+USERSYNC_PROPERTIES_PATH = "/usr/lib/ranger/usersync/install.properties"
 USERSYNC_CONFIG_MAPPING = {
     "sync_interval": "SYNC_INTERVAL",
     "sync_ldap_url": "SYNC_LDAP_URL",

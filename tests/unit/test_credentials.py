@@ -15,7 +15,12 @@ from ops._private.harness import ActionFailed
 import ranger_db
 from charm import ApiProbe
 from exceptions import RangerDatabaseError
-from literals import CREDENTIALS_SECRET_LABEL, MANAGED_USERS, PEER_CREDENTIAL_REJECTED_AT_KEY
+from literals import (
+    ADMIN_PROPERTIES_PATH,
+    CREDENTIALS_SECRET_LABEL,
+    MANAGED_USERS,
+    PEER_CREDENTIAL_REJECTED_AT_KEY,
+)
 from ranger_db import encode_password
 from secret_models import validate_password
 from tests.unit.helpers import (
@@ -113,9 +118,7 @@ def test_key_and_tag_users_get_their_own_passwords(ctx):
     with mock_ranger_api():
         state_out = ctx.run(ctx.on.config_changed(), build_admin_state())
 
-    install_properties = workload_path(
-        state_out, ctx, "/usr/lib/ranger/admin/install.properties"
-    ).read_text()
+    install_properties = workload_path(state_out, ctx, ADMIN_PROPERTIES_PATH).read_text()
     assert "rangerAdmin_password=RangerAdmin1" in install_properties
     assert "keyadmin_password=RangerKeyadmin1" in install_properties
     assert "rangerTagsync_password=RangerTagsync1" in install_properties

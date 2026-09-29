@@ -20,11 +20,13 @@ from ops.model import Container
 from ops.pebble import CheckStatus
 
 from literals import (
+    ADMIN_PROPERTIES_PATH,
     JAVA_TRUSTSTORE_PATH,
     POSTGRES_CA_OWNER,
     POSTGRES_CA_OWNER_ID,
     POSTGRES_CA_PATH,
     POSTGRES_DEFAULT_ROOT_CERT_PATH,
+    USERSYNC_PROPERTIES_PATH,
 )
 from tests.unit.helpers import (
     CREDENTIALS_SECRET_CONTENT,
@@ -61,6 +63,17 @@ def test_admin_ready(ctx):
     assert next(iter(state_out.opened_ports)).port == 6080
 
 
+def test_admin_external_url_is_rendered_outside_pebble_environment(ctx):
+    """The resolved policy manager URL reaches install.properties but not the Pebble layer."""
+    with mock_ranger_api():
+        state_out = ctx.run(ctx.on.config_changed(), build_admin_state())
+
+    lines = workload_path(state_out, ctx, ADMIN_PROPERTIES_PATH).read_text().splitlines()
+    url = f"http://ranger-k8s.{state_out.model.name}.svc.cluster.local:6080"
+    assert f"policymgr_external_url={url}" in lines
+    assert "POLICY_MGR_URL" not in services(state_out)[RANGER]["environment"]
+
+
 def test_usersync_ready(ctx):
     """A ready usersync unit renders all sync environment variables without a port."""
     with mock_ranger_api():
@@ -90,13 +103,10 @@ def test_usersync_layer_is_yaml_serialisable(ctx):
     with mock_ranger_api():
         state_out = ctx.run(ctx.on.config_changed(), build_usersync_state())
 
-    properties = workload_path(state_out, ctx, "/usr/lib/ranger/usersync/install.properties")
+    properties = workload_path(state_out, ctx, USERSYNC_PROPERTIES_PATH)
     assert "SYNC_LDAP_USER_SEARCH_SCOPE" in properties.read_text()
     assert services(state_out)[RANGER]["environment"]["SYNC_LDAP_USER_SEARCH_SCOPE"] == "sub"
     assert services(state_out)[RANGER]["environment"]["SYNC_GROUP_SEARCH_SCOPE"] == "sub"
-
-
-USERSYNC_PROPERTIES = "/usr/lib/ranger/usersync/install.properties"
 
 
 def test_usersync_default_configuration_renders(ctx):
@@ -104,7 +114,7 @@ def test_usersync_default_configuration_renders(ctx):
     with mock_ranger_api():
         state_out = ctx.run(ctx.on.config_changed(), build_usersync_state())
 
-    lines = workload_path(state_out, ctx, USERSYNC_PROPERTIES).read_text().splitlines()
+    lines = workload_path(state_out, ctx, USERSYNC_PROPERTIES_PATH).read_text().splitlines()
     assert "SYNC_SOURCE = ldap" in lines
     assert "SYNC_LDAP_GROUP_SEARCH_FILTER = " in lines
     assert "SYNC_LDAP_REFERRAL = ignore" in lines
@@ -127,7 +137,7 @@ def test_usersync_configuration_overrides_render(ctx):
     with mock_ranger_api():
         state_out = ctx.run(ctx.on.config_changed(), build_usersync_state(config=config))
 
-    lines = workload_path(state_out, ctx, USERSYNC_PROPERTIES).read_text().splitlines()
+    lines = workload_path(state_out, ctx, USERSYNC_PROPERTIES_PATH).read_text().splitlines()
     assert "SYNC_LDAP_GROUP_SEARCH_FILTER = (department=engineering)" in lines
     assert "SYNC_LDAP_REFERRAL = follow" in lines
     assert "SYNC_LDAP_USERNAME_CASE_CONVERSION = upper" in lines
@@ -152,7 +162,7 @@ def test_invalid_configuration_blocks_without_reconfiguring(ctx, option, value):
     assert state_out.unit_status.name == "blocked"
     assert state_out.unit_status.message.startswith(f"Invalid configuration: {option}:")
     assert state_out.get_container(RANGER).plan.to_dict() == {}
-    assert not workload_path(state_out, ctx, USERSYNC_PROPERTIES).exists()
+    assert not workload_path(state_out, ctx, USERSYNC_PROPERTIES_PATH).exists()
 
 
 def test_reconcile_is_idempotent(ctx):
@@ -392,9 +402,6 @@ def test_database_relation_broken_converges_in_hook(ctx):
     )
 
 
-ADMIN_PROPERTIES = "/usr/lib/ranger/admin/install.properties"
-
-
 def _certificate(common_name, *, ca, issuer=None):
     """Build a certificate, self-signed unless an issuer is given.
 
@@ -497,7 +504,7 @@ def test_database_without_tls_stays_plaintext(ctx):
     with mock_ranger_api():
         state_out = ctx.run(ctx.on.config_changed(), build_admin_state())
 
-    lines = workload_path(state_out, ctx, ADMIN_PROPERTIES).read_text().splitlines()
+    lines = workload_path(state_out, ctx, ADMIN_PROPERTIES_PATH).read_text().splitlines()
     assert "db_ssl_enabled=false" in lines
     assert "db_ssl_certificate_file=" in lines
     assert not workload_path(state_out, ctx, POSTGRES_CA_PATH).exists()
@@ -525,7 +532,7 @@ def test_database_tls_configures_verified_connections(ctx):
     with mock_ranger_api():
         state_out = ctx.run(ctx.on.config_changed(), build_admin_state(database=TLS_DATABASE))
 
-    lines = workload_path(state_out, ctx, ADMIN_PROPERTIES).read_text().splitlines()
+    lines = workload_path(state_out, ctx, ADMIN_PROPERTIES_PATH).read_text().splitlines()
     assert "db_ssl_enabled=true" in lines
     assert "db_ssl_required=true" in lines
     assert "db_ssl_verifyServerCertificate=true" in lines
@@ -543,7 +550,7 @@ def test_database_tls_disabled_removes_managed_ca(ctx, tls_container):
         )
     state_out = _database_changed(ctx, first, {**DATABASE_CONNECTION, "tls": "False"})
 
-    lines = workload_path(state_out, ctx, ADMIN_PROPERTIES).read_text().splitlines()
+    lines = workload_path(state_out, ctx, ADMIN_PROPERTIES_PATH).read_text().splitlines()
     assert "db_ssl_enabled=false" in lines
     assert not workload_path(state_out, ctx, POSTGRES_CA_PATH).exists()
     assert not workload_path(state_out, ctx, POSTGRES_DEFAULT_ROOT_CERT_PATH).exists()
@@ -605,7 +612,7 @@ def test_invalid_database_tls_blocks_without_changes(ctx, tls_container, tls, tl
             ctx.on.config_changed(),
             build_admin_state(database=TLS_DATABASE, container=tls_container),
         )
-    properties = workload_path(first, ctx, ADMIN_PROPERTIES).read_text()
+    properties = workload_path(first, ctx, ADMIN_PROPERTIES_PATH).read_text()
     database = {**DATABASE_CONNECTION, "tls": tls}
     if tls_ca is not None:
         database["tls-ca"] = tls_ca
@@ -616,7 +623,7 @@ def test_invalid_database_tls_blocks_without_changes(ctx, tls_container, tls, tl
     assert message in state_out.unit_status.message
     assert state_out.get_container(RANGER).plan == first.get_container(RANGER).plan
     assert workload_path(state_out, ctx, POSTGRES_CA_PATH).read_text() == POSTGRES_CA
-    assert workload_path(state_out, ctx, ADMIN_PROPERTIES).read_text() == properties
+    assert workload_path(state_out, ctx, ADMIN_PROPERTIES_PATH).read_text() == properties
 
 
 def test_truststore_secret_created_once_by_leader(ctx):
@@ -776,9 +783,7 @@ def test_stored_passwords_render_literal_characters(ctx):
             build_admin_state(credentials=credentials),
         )
 
-    install_properties = workload_path(
-        state_out, ctx, "/usr/lib/ranger/admin/install.properties"
-    ).read_text()
+    install_properties = workload_path(state_out, ctx, ADMIN_PROPERTIES_PATH).read_text()
     assert "rangerAdmin_password=Pa55word&x<y" in install_properties
     assert "Pa55word&amp;x&lt;y" not in install_properties
 

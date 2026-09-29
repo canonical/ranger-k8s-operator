@@ -36,6 +36,7 @@ from credentials import CredentialStore
 from exceptions import RangerDatabaseError, RelationNotReady
 from literals import (
     ADMIN_ENTRYPOINT,
+    ADMIN_PROPERTIES_PATH,
     ADMIN_USER,
     APPLICATION_PORT,
     JAVA_TRUSTSTORE_PATH,
@@ -56,6 +57,7 @@ from literals import (
     TRUSTSTORE_SECRET_LABEL,
     USERSYNC_CONFIG_MAPPING,
     USERSYNC_ENTRYPOINT,
+    USERSYNC_PROPERTIES_PATH,
     USERSYNC_USER,
 )
 from ranger_client import RangerAPIClient, RangerAPIError, RangerAuthenticationError
@@ -689,8 +691,10 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             "RANGER_KEYADMIN_PWD": credentials.get(KEYADMIN_USER),
             "RANGER_TAGSYNC_PWD": credentials.get(TAGSYNC_USER),
         }
-        config = render("admin-config.jinja", context)
-        container.push("/usr/lib/ranger/admin/install.properties", config, make_dirs=True)
+        # Kept out of the Pebble environment so ingress changes do not restart Ranger Admin.
+        template_context = {**context, "POLICY_MGR_URL": self.resolve_policy_manager_url()}
+        config = render("admin-config.jinja", template_context)
+        container.push(ADMIN_PROPERTIES_PATH, config, make_dirs=True)
         return ADMIN_ENTRYPOINT, context
 
     @staticmethod
@@ -742,7 +746,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             }
         )
         config = render("ranger-usersync-config.jinja", context)
-        container.push("/usr/lib/ranger/usersync/install.properties", config, make_dirs=True)
+        container.push(USERSYNC_PROPERTIES_PATH, config, make_dirs=True)
         return USERSYNC_ENTRYPOINT, context
 
     def _validate_relations(self, function):

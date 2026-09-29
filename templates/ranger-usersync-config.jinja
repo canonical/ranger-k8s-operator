@@ -23,9 +23,9 @@ SYNC_SOURCE = ldap
 # Seconds between synchronisations.
 SYNC_INTERVAL = {{ SYNC_INTERVAL }}
 
-# OS user and group that run the usersync process.
-unix_user=ranger
-unix_group=ranger
+# OS user and group that own the usersync files: the rock's existing service user.
+unix_user=_daemon_
+unix_group=_daemon_
 
 # Password of the rangerusersync user in Ranger Admin.
 rangerUsersync_password= {{ RANGER_USERSYNC_PWD }}

@@ -91,9 +91,10 @@ audit_solr_max_shards_per_node=1
 audit_solr_acl_user_list_sasl=solr,infra-solr
 audit_solr_bootstrap_enabled=true
 
-# Policy manager endpoint. Ranger serves plain HTTP inside the cluster; external
+# Policy manager endpoint, resolved from policy-mgr-url, the ingress or the
+# in-cluster service. Ranger serves plain HTTP inside the cluster; external
 # TLS is terminated by the ingress, so the native HTTPS keystore stays unused.
-policymgr_external_url=http://ranger-admin:6080
+policymgr_external_url={{ POLICY_MGR_URL }}
 policymgr_http_enabled=true
 policymgr_https_keystore_file=
 policymgr_https_keystore_keyalias=rangeradmin
@@ -102,10 +103,11 @@ policymgr_https_keystore_password=
 # Comma-separated service types to support; empty supports all components.
 policymgr_supportedcomponents=
 
-# OS user and group that own the Ranger Admin installation.
-unix_user=ranger
-unix_user_pwd=ranger
-unix_group=ranger
+# OS user and group that own the Ranger Admin installation: the rock's existing
+# service user, so setup creates no account and needs no password.
+unix_user=_daemon_
+unix_user_pwd=
+unix_group=_daemon_
 
 # Admin UI authentication: LDAP, ACTIVE_DIRECTORY, UNIX or NONE. The charm uses
 # NONE (Ranger internal users), so the UNIX, LDAP, AD, Kerberos and SSO
@@ -115,9 +117,9 @@ remoteLoginEnabled=true
 authServiceHostName=localhost
 authServicePort=5151
 ranger_unixauth_keystore=keystore.jks
-ranger_unixauth_keystore_password=password
+ranger_unixauth_keystore_password=
 ranger_unixauth_truststore=cacerts
-ranger_unixauth_truststore_password=changeit
+ranger_unixauth_truststore_password=
 
 xa_ldap_url=
 xa_ldap_userDNpattern=

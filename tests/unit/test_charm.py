@@ -571,6 +571,22 @@ def test_database_ca_rotation_replans(ctx, tls_container):
     )
 
 
+def test_database_tls_restores_missing_root_certificate(ctx, tls_container):
+    """A missing default root certificate is rewritten even when the managed CA matches."""
+    with mock_ranger_api():
+        first = ctx.run(
+            ctx.on.config_changed(),
+            build_admin_state(database=TLS_DATABASE, container=tls_container),
+        )
+    workload_path(first, ctx, POSTGRES_DEFAULT_ROOT_CERT_PATH).unlink()
+
+    state_out = _database_changed(ctx, first, TLS_DATABASE)
+
+    assert (
+        workload_path(state_out, ctx, POSTGRES_DEFAULT_ROOT_CERT_PATH).read_text() == POSTGRES_CA
+    )
+
+
 @pytest.mark.parametrize(
     ("tls", "tls_ca", "message"),
     [

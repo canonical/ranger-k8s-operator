@@ -1206,7 +1206,7 @@ unit = [
 [package.metadata]
 requires-dist = [
     { name = "apache-ranger", specifier = ">=0.0.12,<0.1" },
-    { name = "cosl", specifier = ">=1.9.1,<2" },
+    { name = "cosl", specifier = ">=1.9.1,<1.11" },
     { name = "cryptography", specifier = ">=50.0.1,<51" },
     { name = "jinja2", specifier = ">=3.1.6,<4" },
     { name = "ops", specifier = ">=3.7.1,<4" },
@@ -1244,7 +1244,7 @@ lint = [
 static = [{ name = "bandit", extras = ["toml"], specifier = ">=1.9.4,<2" }]
 unit = [
     { name = "apache-ranger", specifier = ">=0.0.12,<0.1" },
-    { name = "cosl", specifier = ">=1.9.1,<2" },
+    { name = "cosl", specifier = ">=1.9.1,<1.11" },
     { name = "coverage", extras = ["toml"], specifier = ">=7.14.1,<8" },
     { name = "cryptography", specifier = ">=50.0.1,<51" },
     { name = "ipdb", specifier = ">=0.13.9,<0.14" },

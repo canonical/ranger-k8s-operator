@@ -621,9 +621,9 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             container.remove_path(POSTGRES_DEFAULT_ROOT_CERT_PATH, recursive=True)
             container.remove_path(POSTGRES_CA_PATH, recursive=True)
             return
-        if (
-            container.exists(POSTGRES_CA_PATH)
-            and container.pull(POSTGRES_CA_PATH).read() == ca_certificates
+        if all(
+            container.exists(path) and container.pull(path).read() == ca_certificates
+            for path in (POSTGRES_DEFAULT_ROOT_CERT_PATH, POSTGRES_CA_PATH)
         ):
             return
         # Ranger's DBA step connects with only ssl=true, so pgJDBC verifies against its

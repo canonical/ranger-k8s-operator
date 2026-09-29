@@ -6,6 +6,7 @@
 
 import json
 import logging
+import subprocess  # nosec B404
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -265,6 +266,73 @@ def wait_for_apps(
 
     with fast_forward_ctx(juju, fast_forward):
         return juju.wait(ready, error=error, delay=delay, timeout=timeout, successes=successes)
+
+
+def _get_pods(juju: jubilant.Juju) -> list[dict]:
+    """Read pods from the test model's namespace.
+
+    Args:
+        juju: Jubilant Juju object.
+
+    Returns:
+        The Kubernetes pod objects.
+    """
+    result = subprocess.run(  # nosec B603 B607
+        ["kubectl", "get", "pods", "-n", juju.model, "-o", "json"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    return json.loads(result.stdout)["items"]
+
+
+def get_pod_uids(juju: jubilant.Juju, pods: list[str]) -> dict[str, str]:
+    """Return the Kubernetes UID of each named pod.
+
+    Args:
+        juju: Jubilant Juju object.
+        pods: Pod names.
+
+    Returns:
+        A mapping of pod name to UID.
+    """
+    uids = {pod["metadata"]["name"]: pod["metadata"]["uid"] for pod in _get_pods(juju)}
+    return {name: uids[name] for name in pods}
+
+
+def wait_for_replacement_pods(
+    juju: jubilant.Juju, original_uids: dict[str, str], timeout: float = 600
+) -> None:
+    """Wait for every named pod to have a new UID and report Ready.
+
+    Args:
+        juju: Jubilant Juju object.
+        original_uids: A mapping of pod name to the UID before deletion.
+        timeout: Seconds to wait.
+
+    Raises:
+        TimeoutError: If a replacement pod is not Ready in time.
+    """
+    deadline = time.monotonic() + timeout
+    pending = set(original_uids)
+    while time.monotonic() < deadline:
+        ready = {
+            pod["metadata"]["name"]
+            for pod in _get_pods(juju)
+            if pod["metadata"]["name"] in original_uids
+            and pod["metadata"]["uid"] != original_uids[pod["metadata"]["name"]]
+            and not pod["metadata"].get("deletionTimestamp")
+            and any(
+                condition["type"] == "Ready" and condition["status"] == "True"
+                for condition in pod.get("status", {}).get("conditions", [])
+            )
+        }
+        pending = set(original_uids) - ready
+        if not pending:
+            return
+        time.sleep(5)
+    raise TimeoutError(f"Timed out waiting for replacement pods to be Ready: {sorted(pending)}")
 
 
 def get_unit_url(juju: jubilant.Juju, application, unit, port, protocol="http"):

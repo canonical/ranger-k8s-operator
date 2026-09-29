@@ -18,9 +18,11 @@ from integration.helpers import (
     APP_NAME,
     POSTGRES_NAME,
     TRAEFIK_NAME,
+    get_pod_uids,
     get_unit_url,
     wait_for_apps,
     wait_for_ranger_jdbc_ssl,
+    wait_for_replacement_pods,
 )
 
 logger = logging.getLogger(__name__)
@@ -84,6 +86,7 @@ class TestDeployment:
         Args:
             juju: Jubilant Juju object.
         """
+        original_uids = get_pod_uids(juju, [f"{APP_NAME}-0"])
         subprocess.run(  # nosec B603 B607
             [
                 "kubectl",
@@ -97,6 +100,8 @@ class TestDeployment:
             ],
             check=True,
         )
+        # Juju reports a transient container error while the pod is recreated.
+        wait_for_replacement_pods(juju, original_uids)
         wait_for_apps(
             juju,
             [APP_NAME, POSTGRES_NAME],

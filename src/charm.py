@@ -690,10 +690,9 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
             "RANGER_USERSYNC_PWD": credentials.get(USERSYNC_USER),
             "RANGER_KEYADMIN_PWD": credentials.get(KEYADMIN_USER),
             "RANGER_TAGSYNC_PWD": credentials.get(TAGSYNC_USER),
+            "POLICY_MGR_URL": self.resolve_policy_manager_url(),
         }
-        # Kept out of the Pebble environment so ingress changes do not restart Ranger Admin.
-        template_context = {**context, "POLICY_MGR_URL": self.resolve_policy_manager_url()}
-        config = render("admin-config.jinja", template_context)
+        config = render("admin-config.jinja", context)
         container.push(ADMIN_PROPERTIES_PATH, config, make_dirs=True)
         return ADMIN_ENTRYPOINT, context
 

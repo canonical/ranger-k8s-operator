@@ -63,15 +63,15 @@ def test_admin_ready(ctx):
     assert next(iter(state_out.opened_ports)).port == 6080
 
 
-def test_admin_external_url_is_rendered_outside_pebble_environment(ctx):
-    """The resolved policy manager URL reaches install.properties but not the Pebble layer."""
+def test_admin_external_url_follows_resolved_policy_manager_url(ctx):
+    """The resolved policy manager URL is rendered and in the Pebble layer, so changes replan."""
     with mock_ranger_api():
         state_out = ctx.run(ctx.on.config_changed(), build_admin_state())
 
     lines = workload_path(state_out, ctx, ADMIN_PROPERTIES_PATH).read_text().splitlines()
     url = f"http://ranger-k8s.{state_out.model.name}.svc.cluster.local:6080"
     assert f"policymgr_external_url={url}" in lines
-    assert "POLICY_MGR_URL" not in services(state_out)[RANGER]["environment"]
+    assert services(state_out)[RANGER]["environment"]["POLICY_MGR_URL"] == url
 
 
 def test_usersync_ready(ctx):

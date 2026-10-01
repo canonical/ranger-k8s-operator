@@ -13,176 +13,105 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# The base path for the usersync process
+# Ranger Usersync install.properties, read by setup.py. The charm syncs from LDAP.
+
 ranger_base_dir = /usr/lib/ranger/usersync
 
-# The following URL should be the base URL for connecting to the policy manager web application
+# Base URL of the Ranger Admin policy manager.
 POLICY_MGR_URL = {{ POLICY_MGR_URL }}
 SYNC_SOURCE = ldap
+# Seconds between synchronisations.
 SYNC_INTERVAL = {{ SYNC_INTERVAL }}
 
-# User and group for the usersync process
-unix_user=ranger
-unix_group=ranger
+# OS user and group that own the usersync files: the rock's existing service user.
+unix_user=_daemon_
+unix_group=_daemon_
 
-# This password should be changed from the default. 
-# Please note that this password should be as per rangerusersync user in ranger admin.
+# Password of the rangerusersync user in Ranger Admin.
 rangerUsersync_password= {{ RANGER_USERSYNC_PWD }}
 
 hadoop_conf=/etc/hadoop/conf
 
-# The file where all credential is kept in cryptic format
+# Credential store for the passwords above.
 CRED_KEYSTORE_FILENAME=/usr/lib/ranger/usersync/conf/rangerusersync.jceks
 
-# ---------------------------------------------------------------
-# The following properties are relevant only if SYNC_SOURCE = ldap
-# ---------------------------------------------------------------
-
-# The below properties ROLE_ASSIGNMENT_LIST_DELIMITER, USERS_GROUPS_ASSIGNMENT_LIST_DELIMITER, USERNAME_GROUPNAME_ASSIGNMENT_LIST_DELIMITER,
-#and GROUP_BASED_ROLE_ASSIGNMENT_RULES can be used to assign role to LDAP synced users and groups
-#NOTE all the delimiters should have different values and the delimiters should not contain characters that are allowed in userName or GroupName
-
-# default value ROLE_ASSIGNMENT_LIST_DELIMITER = &
+# Role assignment for synced users and groups. The delimiters must differ from
+# each other and from characters allowed in user and group names. Rules have the
+# form ROLE_SYS_ADMIN:u:user1,user2&ROLE_USER:g:group1; empty assigns no roles.
 ROLE_ASSIGNMENT_LIST_DELIMITER = &
-
-#default value USERS_GROUPS_ASSIGNMENT_LIST_DELIMITER = :
 USERS_GROUPS_ASSIGNMENT_LIST_DELIMITER = :
-
-#default value USERNAME_GROUPNAME_ASSIGNMENT_LIST_DELIMITER = ,
 USERNAME_GROUPNAME_ASSIGNMENT_LIST_DELIMITER = ,
-
-# with above mentioned delimiters a sample value would be:
-# ROLE_SYS_ADMIN:u:userName1,userName2&ROLE_SYS_ADMIN:g:groupName1,groupName2&ROLE_KEY_ADMIN:u:userName
-# &ROLE_KEY_ADMIN:g:groupName&ROLE_USER:u:userName3,userName4&ROLE_USER:g:groupName3
-# &ROLE_ADMIN_AUDITOR:u:userName&ROLE_KEY_ADMIN_AUDITOR:u:userName&ROLE_KEY_ADMIN_AUDITOR:g:groupName
-# &ROLE_ADMIN_AUDITOR:g:groupName
 GROUP_BASED_ROLE_ASSIGNMENT_RULES =
 
-# URL of source ldap 
-# a sample value would be:  ldap://ldap.example.com:389
-# Must specify a value if SYNC_SOURCE is ldap
+# LDAP server URL, for example ldap://ldap.example.com:389.
 SYNC_LDAP_URL = {{ SYNC_LDAP_URL }}
 
-# ldap bind dn used to connect to ldap and query for users and groups
-# a sample value would be cn=admin,ou=users,dc=hadoop,dc=apache,dc=org
-# Must specify a value if SYNC_SOURCE is ldap
+# DN and password used to bind to LDAP.
 SYNC_LDAP_BIND_DN = {{ SYNC_LDAP_BIND_DN }}
-
-# ldap bind password for the bind dn specified above
-# please ensure read access to this file  is limited to root, to protect the password
-# Must specify a value if SYNC_SOURCE is ldap
-# unless anonymous search is allowed by the directory on users and group
 SYNC_LDAP_BIND_PASSWORD = {{ SYNC_LDAP_BIND_PASSWORD }}
 
-# ldap delta sync flag used to periodically sync users and groups based on the updates in the server
-# please customize the value to suit your deployment
-# default value is set to true when is SYNC_SOURCE is ldap
+# Sync only entries changed since the previous run.
 SYNC_LDAP_DELTASYNC = {{ SYNC_LDAP_DELTASYNC }}
 
-# search base for users and groups
-# sample value would be dc=hadoop,dc=apache,dc=org
+# Search base for users and groups.
 SYNC_LDAP_SEARCH_BASE = {{ SYNC_LDAP_SEARCH_BASE }}
 
-# search base for users
-# sample value would be ou=users,dc=hadoop,dc=apache,dc=org
-# overrides value specified in SYNC_LDAP_SEARCH_BASE
+# Search base for users; overrides SYNC_LDAP_SEARCH_BASE.
 SYNC_LDAP_USER_SEARCH_BASE = {{ SYNC_LDAP_USER_SEARCH_BASE }}
 
-# search scope for the users, only base, one and sub are supported values
-# please customize the value to suit your deployment
-# default value: sub
+# User search scope: base, one or sub.
 SYNC_LDAP_USER_SEARCH_SCOPE = {{ SYNC_LDAP_USER_SEARCH_SCOPE }}
 
-# objectclass to identify user entries
-# please customize the value to suit your deployment
-# default value: person
+# Object class that identifies user entries.
 SYNC_LDAP_USER_OBJECT_CLASS = {{ SYNC_LDAP_USER_OBJECT_CLASS }}
 
-# optional additional filter constraining the users selected for syncing
-# a sample value would be (dept=eng)
-# please customize the value to suit your deployment
-# default value is empty
+# Optional additional filter for users, for example (dept=eng).
 SYNC_LDAP_USER_SEARCH_FILTER = {{ SYNC_LDAP_USER_SEARCH_FILTER }}
 
-# attribute from user entry that would be treated as user name
-# please customize the value to suit your deployment
-# default value: cn
+# User entry attribute used as the user name.
 SYNC_LDAP_USER_NAME_ATTRIBUTE = {{ SYNC_LDAP_USER_NAME_ATTRIBUTE }}
 
-# attribute from user entry whose values would be treated as
-# group values to be pushed into Policy Manager database
-# You could provide multiple attribute names separated by comma
-# default value: memberof, ismemberof
+# Comma-separated user entry attributes whose values are the user's groups.
 SYNC_LDAP_USER_GROUP_NAME_ATTRIBUTE = {{ SYNC_LDAP_USER_GROUP_NAME_ATTRIBUTE }}
 
-# UserSync - Case Conversion Flags
-# possible values:  none, lower, upper
-SYNC_LDAP_USERNAME_CASE_CONVERSION=lower
-SYNC_LDAP_GROUPNAME_CASE_CONVERSION=lower
+# Case conversion for synced user and group names: none, lower or upper.
+SYNC_LDAP_USERNAME_CASE_CONVERSION = {{ SYNC_LDAP_USERNAME_CASE_CONVERSION }}
+SYNC_LDAP_GROUPNAME_CASE_CONVERSION = {{ SYNC_LDAP_GROUPNAME_CASE_CONVERSION }}
 
-#user sync log path
 logdir=/var/log/ranger/usersync
-
-# PID DIR PATH
 USERSYNC_PID_DIR_PATH=/var/run/ranger
 
-# do we want to do ldapsearch to find groups instead of relying on user entry attributes
-# valid values: true, false
-# any value other than true would be treated as false
-# default value: false
+# Find groups with an LDAP group search instead of user entry attributes.
+# Any value other than true is treated as false.
 SYNC_GROUP_SEARCH_ENABLED= {{ SYNC_GROUP_SEARCH_ENABLED }}
 
-# do we want to do ldapsearch to find groups instead of relying on user entry attributes and
-# sync memberships of those groups
-# valid values: true, false
-# any value other than true would be treated as false
-# default value: false
+# Also sync the memberships of the groups found by the group search.
+# Any value other than true is treated as false.
 SYNC_GROUP_USER_MAP_SYNC_ENABLED={{ SYNC_GROUP_USER_MAP_SYNC_ENABLED }}
 
-# search base for groups
-# sample value would be ou=groups,dc=hadoop,dc=apache,dc=org
-# overrides value specified in SYNC_LDAP_SEARCH_BASE,  SYNC_LDAP_USER_SEARCH_BASE
-# if a value is not specified, takes the value of  SYNC_LDAP_SEARCH_BASE
-# if  SYNC_LDAP_SEARCH_BASE is also not specified, takes the value of SYNC_LDAP_USER_SEARCH_BASE
+# Search base for groups; falls back to SYNC_LDAP_SEARCH_BASE, then to
+# SYNC_LDAP_USER_SEARCH_BASE.
 SYNC_GROUP_SEARCH_BASE = {{ SYNC_GROUP_SEARCH_BASE }}
 
-# search scope for the groups, only base, one and sub s
-# please customize the value to suit your deployment
-# default value: sub
+# Group search scope: base, one or sub.
 SYNC_GROUP_SEARCH_SCOPE= {{ SYNC_GROUP_SEARCH_SCOPE }}
 
-# objectclass to identify group entries
-# please customize the value to suit your deployment
-# default value: groupofnames
+# Object class that identifies group entries.
 SYNC_GROUP_OBJECT_CLASS= {{ SYNC_GROUP_OBJECT_CLASS }}
 
-# optional additional filter constraining the groups selected for syncing
-# a sample value would be (dept=eng)
-# please customize the value to suit your deployment
-# default value is empty
-SYNC_LDAP_GROUP_SEARCH_FILTER=
+# Optional additional filter for groups, for example (dept=eng).
+SYNC_LDAP_GROUP_SEARCH_FILTER = {{ SYNC_LDAP_GROUP_SEARCH_FILTER }}
 
-# attribute from group entry that would be treated as group name
-# please customize the value to suit your deployment
-# default value: cn
+# Group entry attribute used as the group name.
 SYNC_GROUP_NAME_ATTRIBUTE= {{ SYNC_GROUP_NAME_ATTRIBUTE }}
 
-# attribute from group entry that is list of members
-# please customize the value to suit your deployment
-# default value: member
+# Group entry attribute that lists the members.
 SYNC_GROUP_MEMBER_ATTRIBUTE_NAME= {{ SYNC_GROUP_MEMBER_ATTRIBUTE_NAME }}
 
-# do we want to use paged results control during ldapsearch for user entries
-# valid values: true, false
-# any value other than true would be treated as false
-# default value: true
-# if the value is false, typical AD would not return more than 1000 entries
-SYNC_PAGED_RESULTS_ENABLED=false
+# Request LDAP results in pages of SYNC_PAGED_RESULTS_SIZE entries. Without
+# paging, directories such as Active Directory truncate large result sets.
+SYNC_PAGED_RESULTS_ENABLED = {{ SYNC_PAGED_RESULTS_ENABLED }}
+SYNC_PAGED_RESULTS_SIZE = {{ SYNC_PAGED_RESULTS_SIZE }}
 
-# page size for paged results control
-# search results would be returned page by page with the specified number of entries per page
-# default value: 500
-SYNC_PAGED_RESULTS_SIZE= 500
-
-#LDAP context referral could be ignore or follow
-SYNC_LDAP_REFERRAL =follow
+# LDAP referral handling: ignore or follow.
+SYNC_LDAP_REFERRAL = {{ SYNC_LDAP_REFERRAL }}

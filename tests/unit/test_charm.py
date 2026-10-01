@@ -5,12 +5,29 @@
 """Charm-level reconciliation tests."""
 
 import dataclasses
+import datetime
+import pathlib
+from unittest import mock
 
 import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.x509.oid import NameOID
 from ops import testing
 from ops._private.harness import ActionFailed
+from ops.model import Container
 from ops.pebble import CheckStatus
 
+from literals import (
+    ADMIN_PROPERTIES_PATH,
+    JAVA_TRUSTSTORE_PATH,
+    POSTGRES_CA_OWNER,
+    POSTGRES_CA_OWNER_ID,
+    POSTGRES_CA_PATH,
+    POSTGRES_DEFAULT_ROOT_CERT_PATH,
+    USERSYNC_PROPERTIES_PATH,
+)
 from tests.unit.helpers import (
     CREDENTIALS_SECRET_CONTENT,
     DATABASE_CONNECTION,
@@ -46,6 +63,17 @@ def test_admin_ready(ctx):
     assert next(iter(state_out.opened_ports)).port == 6080
 
 
+def test_admin_external_url_follows_resolved_policy_manager_url(ctx):
+    """The resolved policy manager URL is rendered and in the Pebble layer, so changes replan."""
+    with mock_ranger_api():
+        state_out = ctx.run(ctx.on.config_changed(), build_admin_state())
+
+    lines = workload_path(state_out, ctx, ADMIN_PROPERTIES_PATH).read_text().splitlines()
+    url = f"http://ranger-k8s.{state_out.model.name}.svc.cluster.local:6080"
+    assert f"policymgr_external_url={url}" in lines
+    assert services(state_out)[RANGER]["environment"]["POLICY_MGR_URL"] == url
+
+
 def test_usersync_ready(ctx):
     """A ready usersync unit renders all sync environment variables without a port."""
     with mock_ranger_api():
@@ -75,10 +103,66 @@ def test_usersync_layer_is_yaml_serialisable(ctx):
     with mock_ranger_api():
         state_out = ctx.run(ctx.on.config_changed(), build_usersync_state())
 
-    properties = workload_path(state_out, ctx, "/usr/lib/ranger/usersync/install.properties")
+    properties = workload_path(state_out, ctx, USERSYNC_PROPERTIES_PATH)
     assert "SYNC_LDAP_USER_SEARCH_SCOPE" in properties.read_text()
     assert services(state_out)[RANGER]["environment"]["SYNC_LDAP_USER_SEARCH_SCOPE"] == "sub"
     assert services(state_out)[RANGER]["environment"]["SYNC_GROUP_SEARCH_SCOPE"] == "sub"
+
+
+def test_usersync_default_configuration_renders(ctx):
+    """Usersync defaults render Ranger's upstream LDAP defaults."""
+    with mock_ranger_api():
+        state_out = ctx.run(ctx.on.config_changed(), build_usersync_state())
+
+    lines = workload_path(state_out, ctx, USERSYNC_PROPERTIES_PATH).read_text().splitlines()
+    assert "SYNC_SOURCE = ldap" in lines
+    assert "SYNC_LDAP_GROUP_SEARCH_FILTER = " in lines
+    assert "SYNC_LDAP_REFERRAL = ignore" in lines
+    assert "SYNC_LDAP_USERNAME_CASE_CONVERSION = none" in lines
+    assert "SYNC_LDAP_GROUPNAME_CASE_CONVERSION = none" in lines
+    assert "SYNC_PAGED_RESULTS_ENABLED = True" in lines
+    assert "SYNC_PAGED_RESULTS_SIZE = 500" in lines
+
+
+def test_usersync_configuration_overrides_render(ctx):
+    """Usersync configuration overrides reach Ranger install.properties."""
+    config = {
+        "sync-ldap-group-search-filter": "(department=engineering)",
+        "sync-ldap-referral": "follow",
+        "sync-ldap-username-case-conversion": "upper",
+        "sync-ldap-group-name-case-conversion": "lower",
+        "sync-paged-results-enabled": False,
+        "sync-paged-results-size": 250,
+    }
+    with mock_ranger_api():
+        state_out = ctx.run(ctx.on.config_changed(), build_usersync_state(config=config))
+
+    lines = workload_path(state_out, ctx, USERSYNC_PROPERTIES_PATH).read_text().splitlines()
+    assert "SYNC_LDAP_GROUP_SEARCH_FILTER = (department=engineering)" in lines
+    assert "SYNC_LDAP_REFERRAL = follow" in lines
+    assert "SYNC_LDAP_USERNAME_CASE_CONVERSION = upper" in lines
+    assert "SYNC_LDAP_GROUPNAME_CASE_CONVERSION = lower" in lines
+    assert "SYNC_PAGED_RESULTS_ENABLED = False" in lines
+    assert "SYNC_PAGED_RESULTS_SIZE = 250" in lines
+
+
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [
+        ("sync-ldap-referral", "invalid"),
+        ("sync-ldap-username-case-conversion", "invalid"),
+        ("sync-ldap-group-name-case-conversion", "invalid"),
+        ("sync-paged-results-size", 0),
+    ],
+)
+def test_invalid_configuration_blocks_without_reconfiguring(ctx, option, value):
+    """Invalid configuration blocks before any workload file or plan is written."""
+    state_out = ctx.run(ctx.on.config_changed(), build_usersync_state(config={option: value}))
+
+    assert state_out.unit_status.name == "blocked"
+    assert state_out.unit_status.message.startswith(f"Invalid configuration: {option}:")
+    assert state_out.get_container(RANGER).plan.to_dict() == {}
+    assert not workload_path(state_out, ctx, USERSYNC_PROPERTIES_PATH).exists()
 
 
 def test_reconcile_is_idempotent(ctx):
@@ -318,6 +402,230 @@ def test_database_relation_broken_converges_in_hook(ctx):
     )
 
 
+def _certificate(common_name, *, ca, issuer=None):
+    """Build a certificate, self-signed unless an issuer is given.
+
+    Args:
+        common_name: The certificate subject common name.
+        ca: Whether the certificate is a CA.
+        issuer: The issuing certificate and key, or None for self-signed.
+
+    Returns:
+        The certificate and its private key.
+    """
+    key = ec.generate_private_key(ec.SECP256R1())
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, common_name)])
+    issuer_certificate, issuer_key = issuer or (None, key)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(issuer_certificate.subject if issuer_certificate else subject)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now)
+        .not_valid_after(now + datetime.timedelta(days=1))
+        .add_extension(x509.BasicConstraints(ca=ca, path_length=None), critical=True)
+        .sign(issuer_key, hashes.SHA256())
+    )
+    return certificate, key
+
+
+def _pem(certificate):
+    """Encode a certificate as PEM text.
+
+    Args:
+        certificate: The certificate to encode.
+
+    Returns:
+        The PEM-encoded certificate.
+    """
+    return certificate.public_bytes(serialization.Encoding.PEM).decode()
+
+
+_POSTGRES_CA = _certificate("PostgreSQL CA", ca=True)
+POSTGRES_CA = _pem(_POSTGRES_CA[0])
+POSTGRES_LEAF = _pem(_certificate("postgresql", ca=False, issuer=_POSTGRES_CA)[0])
+ROTATED_CA = _pem(_certificate("Rotated CA", ca=True)[0])
+TLS_DATABASE = {**DATABASE_CONNECTION, "tls": "True", "tls-ca": POSTGRES_LEAF + POSTGRES_CA}
+
+
+@pytest.fixture(name="tls_container")
+def tls_container_fixture(tmp_path):
+    """Return a Ranger container whose CA and Admin files persist across runs.
+
+    Args:
+        tmp_path: Pytest temporary directory.
+
+    Returns:
+        A Ranger container with mounted CA and Admin directories.
+    """
+    mounts = {
+        name: testing.Mount(location=location, source=tmp_path / name)
+        for name, location in (
+            ("ca", "/etc/ranger"),
+            ("root-ca", "/root/.postgresql"),
+            ("admin", "/usr/lib/ranger/admin"),
+        )
+    }
+    for mount in mounts.values():
+        pathlib.Path(mount.source).mkdir()
+    return ranger_container(mounts=mounts)
+
+
+def _database_changed(ctx, state, database):
+    """Run a database relation-changed hook with new provider data.
+
+    Args:
+        ctx: The Scenario context.
+        state: The output state of a previous run.
+        database: The new remote application data.
+
+    Returns:
+        The output state.
+    """
+    relation = testing.Relation(
+        "database", remote_app_name="postgresql-k8s", remote_app_data=database
+    )
+    for path in (POSTGRES_CA_PATH, POSTGRES_DEFAULT_ROOT_CERT_PATH):
+        ca_file = workload_path(state, ctx, path)
+        if ca_file.exists():
+            # Scenario pushes as the test user, which cannot overwrite a 0400 file.
+            ca_file.chmod(0o600)
+    with mock_ranger_api():
+        return ctx.run(
+            ctx.on.relation_changed(relation),
+            dataclasses.replace(carry_forward(state), relations={relation}),
+        )
+
+
+def test_database_without_tls_stays_plaintext(ctx):
+    """A relation that does not advertise TLS keeps plaintext database settings."""
+    with mock_ranger_api():
+        state_out = ctx.run(ctx.on.config_changed(), build_admin_state())
+
+    lines = workload_path(state_out, ctx, ADMIN_PROPERTIES_PATH).read_text().splitlines()
+    assert "db_ssl_enabled=false" in lines
+    assert "db_ssl_certificate_file=" in lines
+    assert not workload_path(state_out, ctx, POSTGRES_CA_PATH).exists()
+
+
+def test_database_tls_writes_only_ca_certificates(ctx):
+    """Only the CA certificates of the bundle are written, readable only by their owner."""
+    with mock.patch.object(Container, "push", autospec=True, side_effect=Container.push) as push:
+        with mock_ranger_api():
+            state_out = ctx.run(ctx.on.config_changed(), build_admin_state(database=TLS_DATABASE))
+
+    ca_file = workload_path(state_out, ctx, POSTGRES_CA_PATH)
+    assert ca_file.read_text() == POSTGRES_CA
+    assert ca_file.stat().st_mode & 0o777 == 0o400
+    assert (
+        workload_path(state_out, ctx, POSTGRES_DEFAULT_ROOT_CERT_PATH).read_text() == POSTGRES_CA
+    )
+    ca_push = next(call for call in push.call_args_list if call.args[1] == POSTGRES_CA_PATH)
+    assert ca_push.kwargs["user"] == ca_push.kwargs["group"] == POSTGRES_CA_OWNER
+    assert ca_push.kwargs["user_id"] == ca_push.kwargs["group_id"] == POSTGRES_CA_OWNER_ID
+
+
+def test_database_tls_configures_verified_connections(ctx):
+    """Advertised TLS renders the settings for a verify-full JDBC URL."""
+    with mock_ranger_api():
+        state_out = ctx.run(ctx.on.config_changed(), build_admin_state(database=TLS_DATABASE))
+
+    lines = workload_path(state_out, ctx, ADMIN_PROPERTIES_PATH).read_text().splitlines()
+    assert "db_ssl_enabled=true" in lines
+    assert "db_ssl_required=true" in lines
+    assert "db_ssl_verifyServerCertificate=true" in lines
+    assert "db_ssl_auth_type=1-way" in lines
+    assert f"db_ssl_certificate_file={POSTGRES_CA_PATH}" in lines
+    assert f"javax_net_ssl_trustStore={JAVA_TRUSTSTORE_PATH}" in lines
+
+
+def test_database_tls_disabled_removes_managed_ca(ctx, tls_container):
+    """Turning TLS off removes the managed CA and replans with plaintext settings."""
+    with mock_ranger_api():
+        first = ctx.run(
+            ctx.on.config_changed(),
+            build_admin_state(database=TLS_DATABASE, container=tls_container),
+        )
+    state_out = _database_changed(ctx, first, {**DATABASE_CONNECTION, "tls": "False"})
+
+    lines = workload_path(state_out, ctx, ADMIN_PROPERTIES_PATH).read_text().splitlines()
+    assert "db_ssl_enabled=false" in lines
+    assert not workload_path(state_out, ctx, POSTGRES_CA_PATH).exists()
+    assert not workload_path(state_out, ctx, POSTGRES_DEFAULT_ROOT_CERT_PATH).exists()
+    assert (
+        services(state_out)[RANGER]["environment"]["DB_CA_HASH"]
+        != services(first)[RANGER]["environment"]["DB_CA_HASH"]
+    )
+
+
+def test_database_ca_rotation_replans(ctx, tls_container):
+    """A new CA from the provider replaces the managed file and changes the Pebble layer."""
+    with mock_ranger_api():
+        first = ctx.run(
+            ctx.on.config_changed(),
+            build_admin_state(database=TLS_DATABASE, container=tls_container),
+        )
+    state_out = _database_changed(
+        ctx, first, {**DATABASE_CONNECTION, "tls": "True", "tls-ca": ROTATED_CA}
+    )
+
+    assert workload_path(state_out, ctx, POSTGRES_CA_PATH).read_text() == ROTATED_CA
+    assert (
+        services(state_out)[RANGER]["environment"]["DB_CA_HASH"]
+        != services(first)[RANGER]["environment"]["DB_CA_HASH"]
+    )
+
+
+def test_database_tls_restores_missing_root_certificate(ctx, tls_container):
+    """A missing default root certificate is rewritten even when the managed CA matches."""
+    with mock_ranger_api():
+        first = ctx.run(
+            ctx.on.config_changed(),
+            build_admin_state(database=TLS_DATABASE, container=tls_container),
+        )
+    workload_path(first, ctx, POSTGRES_DEFAULT_ROOT_CERT_PATH).unlink()
+
+    state_out = _database_changed(ctx, first, TLS_DATABASE)
+
+    assert (
+        workload_path(state_out, ctx, POSTGRES_DEFAULT_ROOT_CERT_PATH).read_text() == POSTGRES_CA
+    )
+
+
+@pytest.mark.parametrize(
+    ("tls", "tls_ca", "message"),
+    [
+        ("True", None, "without a valid tls-ca PEM certificate bundle"),
+        ("True", "", "without a valid tls-ca PEM certificate bundle"),
+        ("True", "not a certificate", "without a valid tls-ca PEM certificate bundle"),
+        ("True", POSTGRES_LEAF, "without a CA certificate in tls-ca"),
+        ("yes", POSTGRES_CA, "has an invalid tls value"),
+    ],
+    ids=["missing-ca", "empty-ca", "malformed-ca", "no-ca-certificate", "unknown-tls-value"],
+)
+def test_invalid_database_tls_blocks_without_changes(ctx, tls_container, tls, tls_ca, message):
+    """Invalid TLS relation data blocks and leaves the last valid workload state intact."""
+    with mock_ranger_api():
+        first = ctx.run(
+            ctx.on.config_changed(),
+            build_admin_state(database=TLS_DATABASE, container=tls_container),
+        )
+    properties = workload_path(first, ctx, ADMIN_PROPERTIES_PATH).read_text()
+    database = {**DATABASE_CONNECTION, "tls": tls}
+    if tls_ca is not None:
+        database["tls-ca"] = tls_ca
+
+    state_out = _database_changed(ctx, first, database)
+
+    assert state_out.unit_status.name == "blocked"
+    assert message in state_out.unit_status.message
+    assert state_out.get_container(RANGER).plan == first.get_container(RANGER).plan
+    assert workload_path(state_out, ctx, POSTGRES_CA_PATH).read_text() == POSTGRES_CA
+    assert workload_path(state_out, ctx, ADMIN_PROPERTIES_PATH).read_text() == properties
+
+
 def test_truststore_secret_created_once_by_leader(ctx):
     """The leader creates one stable truststore secret used by the rendered layer."""
     with mock_ranger_api():
@@ -475,9 +783,7 @@ def test_stored_passwords_render_literal_characters(ctx):
             build_admin_state(credentials=credentials),
         )
 
-    install_properties = workload_path(
-        state_out, ctx, "/usr/lib/ranger/admin/install.properties"
-    ).read_text()
+    install_properties = workload_path(state_out, ctx, ADMIN_PROPERTIES_PATH).read_text()
     assert "rangerAdmin_password=Pa55word&x<y" in install_properties
     assert "Pa55word&amp;x&lt;y" not in install_properties
 

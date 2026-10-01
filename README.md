@@ -24,13 +24,24 @@ Therefore, its deployment requires a relation with the Postgres charm:
 ```bash
 juju deploy ranger-k8s
 juju deploy postgresql-k8s --channel 14/stable --trust
-juju relate ranger-k8s:db postgresql-k8s:database
+juju relate ranger-k8s:database postgresql-k8s:database
 ```
 
 No credential setup is required. The charm generates the passwords for Ranger's
 internal accounts itself; see [Managing credentials](#managing-credentials).
 
 Refer to [CONTRIBUTING.md](./CONTRIBUTING.md) for details on bootstrapping a juju controller for microk8s.
+
+#### PostgreSQL TLS
+
+By default, Ranger connects to PostgreSQL in plaintext. To encrypt the
+connection, integrate PostgreSQL with a TLS certificates provider. Ranger then
+verifies the server against the CA certificates from the relation:
+
+```bash
+juju deploy self-signed-certificates
+juju integrate postgresql-k8s:certificates self-signed-certificates
+```
 
 ### Managing credentials
 
@@ -186,6 +197,24 @@ Related applications must have the Ranger plugin configured. The Ranger plugin s
 #### Service name
 Before relation of an application to the Ranger charm, the application's `ranger-service-name` configuration parameter should be set. This will be the name of the Ranger service created for the application.
 A Ranger service is removed when its `policy` relation is removed unless it carries non-default policies.
+
+### Usersync search options
+
+These options tune how the usersync application reads the LDAP directory:
+
+| Option                                 | Default  | Accepted values                                             |
+| -------------------------------------- | -------- | ----------------------------------------------------------- |
+| `sync-ldap-group-search-filter`        | Empty    | Additional LDAP filter for groups, for example `(dept=eng)` |
+| `sync-ldap-referral`                   | `ignore` | `ignore`, `follow`                                          |
+| `sync-ldap-username-case-conversion`   | `none`   | `none`, `lower`, `upper`                                    |
+| `sync-ldap-group-name-case-conversion` | `none`   | `none`, `lower`, `upper`                                    |
+| `sync-paged-results-enabled`           | `true`   | Boolean                                                     |
+| `sync-paged-results-size`              | `500`    | Integer of at least `1`                                     |
+
+The defaults match Apache Ranger's. Deployments upgraded from earlier revisions
+previously followed referrals, converted names to lower case and disabled
+paging; set the options explicitly to keep that behaviour. An invalid value
+blocks the unit and leaves the running workload unchanged.
 
 ### Integrating with Trino
 

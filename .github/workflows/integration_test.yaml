@@ -24,6 +24,7 @@ jobs:
         ["test_charm.py",
         "test_policy.py",
         "test_scaling.py",
+        "test_tls.py",
         "test_trino_catalog.py",
         "test_upgrades.py",
         "test_usersync.py"]'

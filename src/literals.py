@@ -31,6 +31,8 @@ ENDPOINT_MAPPING = {
 APP_NAME = "ranger-k8s"
 ADMIN_ENTRYPOINT = "/home/ranger/scripts/ranger-admin-entrypoint.sh"
 USERSYNC_ENTRYPOINT = "/home/ranger/scripts/ranger-usersync-entrypoint.sh"
+ADMIN_PROPERTIES_PATH = "/usr/lib/ranger/admin/install.properties"
+USERSYNC_PROPERTIES_PATH = "/usr/lib/ranger/usersync/install.properties"
 USERSYNC_CONFIG_MAPPING = {
     "sync_interval": "SYNC_INTERVAL",
     "sync_ldap_url": "SYNC_LDAP_URL",
@@ -42,6 +44,12 @@ USERSYNC_CONFIG_MAPPING = {
     "sync_ldap_user_search_scope": "SYNC_LDAP_USER_SEARCH_SCOPE",
     "sync_ldap_user_object_class": "SYNC_LDAP_USER_OBJECT_CLASS",
     "sync_ldap_user_search_filter": "SYNC_LDAP_USER_SEARCH_FILTER",
+    "sync_ldap_group_search_filter": "SYNC_LDAP_GROUP_SEARCH_FILTER",
+    "sync_ldap_referral": "SYNC_LDAP_REFERRAL",
+    "sync_ldap_username_case_conversion": "SYNC_LDAP_USERNAME_CASE_CONVERSION",
+    "sync_ldap_group_name_case_conversion": "SYNC_LDAP_GROUPNAME_CASE_CONVERSION",
+    "sync_paged_results_enabled": "SYNC_PAGED_RESULTS_ENABLED",
+    "sync_paged_results_size": "SYNC_PAGED_RESULTS_SIZE",
     "sync_ldap_user_name_attribute": "SYNC_LDAP_USER_NAME_ATTRIBUTE",
     "sync_ldap_user_group_name_attribute": "SYNC_LDAP_USER_GROUP_NAME_ATTRIBUTE",
     "sync_group_search_enabled": "SYNC_GROUP_SEARCH_ENABLED",
@@ -132,6 +140,11 @@ DEFAULT_POLICIES = [
 ]
 SERVICE_STAMP_PREFIX = "relation_id_"
 TRUSTSTORE_SECRET_LABEL = "truststore-password"  # nosec B105
+JAVA_TRUSTSTORE_PATH = "/usr/lib/jvm/java-21-openjdk-amd64/lib/security/cacerts"
+POSTGRES_CA_PATH = "/etc/ranger/postgresql-ca.crt"
+POSTGRES_CA_OWNER = "_daemon_"
+POSTGRES_CA_OWNER_ID = 584792
+POSTGRES_DEFAULT_ROOT_CERT_PATH = "/root/.postgresql/root.crt"
 
 # Trino catalog reconciliation literals
 TRINO_SERVICE_TYPE = "trino"

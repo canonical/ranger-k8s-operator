@@ -43,6 +43,21 @@ class SearchScope(BaseEnumStr):
     sub = "sub"
 
 
+class LDAPReferral(BaseEnumStr):
+    """Enum for LDAP referral handling."""
+
+    ignore = "ignore"
+    follow = "follow"
+
+
+class CaseConversion(BaseEnumStr):
+    """Enum for LDAP user and group name case conversion."""
+
+    none = "none"
+    lower = "lower"
+    upper = "upper"
+
+
 class CharmConfig(BaseConfigModel):
     """Manager for the structured configuration."""
 
@@ -56,6 +71,12 @@ class CharmConfig(BaseConfigModel):
     sync_ldap_user_search_scope: Optional[SearchScope]
     sync_ldap_group_search_scope: Optional[SearchScope]
     sync_ldap_user_search_filter: Optional[str]
+    sync_ldap_group_search_filter: Optional[str]
+    sync_ldap_referral: LDAPReferral
+    sync_ldap_username_case_conversion: CaseConversion
+    sync_ldap_group_name_case_conversion: CaseConversion
+    sync_paged_results_enabled: bool
+    sync_paged_results_size: int
     sync_ldap_user_name_attribute: Optional[str]
     sync_ldap_user_group_name_attribute: Optional[str]
     sync_ldap_url: Optional[str]
@@ -102,6 +123,24 @@ class CharmConfig(BaseConfigModel):
         if 3600 <= int_value <= 86400:
             return int_value
         raise ValueError("Value out of range.")
+
+    @validator("sync_paged_results_size")
+    @classmethod
+    def sync_paged_results_size_validator(cls, value: int) -> int:
+        """Check validity of `sync_paged_results_size` field.
+
+        Args:
+            value: LDAP results page size.
+
+        Returns:
+            The validated page size.
+
+        Raises:
+            ValueError: If the page size is below 1.
+        """
+        if value < 1:
+            raise ValueError("Value must be at least 1.")
+        return value
 
     @validator("policy_mgr_url")
     @classmethod

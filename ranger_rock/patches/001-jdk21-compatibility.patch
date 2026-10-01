@@ -5,11 +5,13 @@ Subject: [PATCH] fix nashorn and jdk21 compatibility issues
 
 ---
  agents-common/pom.xml                             |  5 +++++
+ credentialbuilder/pom.xml                         |  5 +++++
+ distro/src/main/assembly/admin-web.xml             |  1 +
  .../plugin/util/NashornScriptEngineCreator.java   |  4 ++--
  .../authorizer/RecordFilterJavaScript.java        |  4 ++--
  pom.xml                                           | 15 +++++++++++++--
  .../resources/conf.dist/ranger-admin-site.xml     |  2 +-
- 5 files changed, 23 insertions(+), 7 deletions(-)
+ 7 files changed, 29 insertions(+), 7 deletions(-)
 
 diff --git a/agents-common/pom.xml b/agents-common/pom.xml
 index b75bc2e4d..0ddf5da41 100644
@@ -42,6 +44,33 @@ index 4af3d5c63..1f803decf 100644
  
  public class NashornScriptEngineCreator implements ScriptEngineCreator {
      private static final Logger LOG = LoggerFactory.getLogger(NashornScriptEngineCreator.class);
+diff --git a/credentialbuilder/pom.xml b/credentialbuilder/pom.xml
+index 4756601..de911ea 100644
+--- a/credentialbuilder/pom.xml
++++ b/credentialbuilder/pom.xml
+@@ -112,6 +112,11 @@
+             <artifactId>hadoop-client-runtime</artifactId>
+             <version>${hadoop.version}</version>
+         </dependency>
++        <dependency>
++            <groupId>org.apache.hadoop</groupId>
++            <artifactId>hadoop-common</artifactId>
++            <version>${hadoop.version}</version>
++        </dependency>
+         <dependency>
+             <groupId>org.codehaus.woodstox</groupId>
+             <artifactId>stax2-api</artifactId>
+diff --git a/distro/src/main/assembly/admin-web.xml b/distro/src/main/assembly/admin-web.xml
+--- a/distro/src/main/assembly/admin-web.xml
++++ b/distro/src/main/assembly/admin-web.xml
+@@ -304,6 +304,7 @@
+           <include>org.slf4j:slf4j-api:jar:${slf4j.version}</include>
+           <include>org.apache.commons:commons-lang3</include>
+           <include>org.apache.hadoop:hadoop-common</include>
++          <include>org.apache.commons:commons-collections4</include>
+           <include>org.apache.hadoop:hadoop-auth</include>
+           <include>com.fasterxml.woodstox:woodstox-core:jar:${fasterxml.woodstox.version}</include>
+           <include>org.codehaus.woodstox:stax2-api:jar:${codehaus.woodstox.stax2api.version}</include>
 diff --git a/plugin-nestedstructure/src/main/java/org/apache/ranger/authorization/nestedstructure/authorizer/RecordFilterJavaScript.java b/plugin-nestedstructure/src/main/java/org/apache/ranger/authorization/nestedstructure/authorizer/RecordFilterJavaScript.java
 index 77767767c..34a5cfac3 100644
 --- a/plugin-nestedstructure/src/main/java/org/apache/ranger/authorization/nestedstructure/authorizer/RecordFilterJavaScript.java

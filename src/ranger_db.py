@@ -5,6 +5,7 @@
 
 import hashlib
 import logging
+import tempfile
 
 import psycopg2
 
@@ -37,6 +38,24 @@ def encode_password(password: str, login_id: str) -> str:
     return hashlib.sha256(f"{password}{{{login_id}}}".encode()).hexdigest()
 
 
+def _connect(connection: dict):
+    """Connect to the Ranger database, verifying the server when TLS is advertised.
+
+    Args:
+        connection: PostgreSQL connection values from the database relation.
+
+    Returns:
+        An open psycopg2 connection.
+    """
+    params = {key: connection[key] for key in ("dbname", "host", "port", "user", "password")}
+    if not connection["tls_ca"]:
+        return psycopg2.connect(**params)
+    with tempfile.NamedTemporaryFile("w", suffix=".crt") as ca_file:
+        ca_file.write(connection["tls_ca"])
+        ca_file.flush()
+        return psycopg2.connect(**params, sslmode="verify-full", sslrootcert=ca_file.name)
+
+
 def force_reset(connection: dict, login_id: str, password: str) -> None:
     """Write a password digest straight into the Ranger user table.
 
@@ -49,7 +68,7 @@ def force_reset(connection: dict, login_id: str, password: str) -> None:
         RangerDatabaseError: If the database is unreachable or the user row is not unique.
     """
     try:
-        conn = psycopg2.connect(**connection)
+        conn = _connect(connection)
     except psycopg2.Error as err:
         raise RangerDatabaseError(f"Could not connect to the Ranger database: {err}") from err
     try:

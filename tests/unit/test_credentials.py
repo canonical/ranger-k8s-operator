@@ -4,6 +4,7 @@
 
 """Credential ownership, action and recovery tests."""
 
+import pathlib
 import time
 from unittest import mock
 
@@ -14,7 +15,12 @@ from ops._private.harness import ActionFailed
 import ranger_db
 from charm import ApiProbe
 from exceptions import RangerDatabaseError
-from literals import CREDENTIALS_SECRET_LABEL, MANAGED_USERS, PEER_CREDENTIAL_REJECTED_AT_KEY
+from literals import (
+    ADMIN_PROPERTIES_PATH,
+    CREDENTIALS_SECRET_LABEL,
+    MANAGED_USERS,
+    PEER_CREDENTIAL_REJECTED_AT_KEY,
+)
 from ranger_db import encode_password
 from secret_models import validate_password
 from tests.unit.helpers import (
@@ -112,9 +118,7 @@ def test_key_and_tag_users_get_their_own_passwords(ctx):
     with mock_ranger_api():
         state_out = ctx.run(ctx.on.config_changed(), build_admin_state())
 
-    install_properties = workload_path(
-        state_out, ctx, "/usr/lib/ranger/admin/install.properties"
-    ).read_text()
+    install_properties = workload_path(state_out, ctx, ADMIN_PROPERTIES_PATH).read_text()
     assert "rangerAdmin_password=RangerAdmin1" in install_properties
     assert "keyadmin_password=RangerKeyadmin1" in install_properties
     assert "rangerTagsync_password=RangerTagsync1" in install_properties
@@ -419,6 +423,16 @@ def fake_connection(rowcount):
     return conn, cursor
 
 
+DB_CONNECTION = {
+    "dbname": "ranger-k8s_db",
+    "host": "myhost",
+    "port": "5432",
+    "user": "postgres_user",
+    "password": "admin",  # nosec B105
+    "tls_ca": None,
+}
+
+
 def test_force_reset_writes_the_digest():
     """The recovery write stores the digest Ranger expects for the user.
 
@@ -427,7 +441,7 @@ def test_force_reset_writes_the_digest():
     """
     conn, cursor = fake_connection(1)
     with mock.patch("ranger_db.psycopg2.connect", return_value=conn):
-        ranger_db.force_reset({"dbname": "ranger"}, "admin", "RangerAdmin1")
+        ranger_db.force_reset(DB_CONNECTION, "admin", "RangerAdmin1")
 
     assert cursor.execute.call_args.args[1] == {
         "password": encode_password("RangerAdmin1", "admin"),
@@ -441,9 +455,39 @@ def test_force_reset_requires_a_single_row():
     conn, _ = fake_connection(0)
     with mock.patch("ranger_db.psycopg2.connect", return_value=conn):
         with pytest.raises(RangerDatabaseError, match="found 0"):
-            ranger_db.force_reset({"dbname": "ranger"}, "admin", "RangerAdmin1")
+            ranger_db.force_reset(DB_CONNECTION, "admin", "RangerAdmin1")
 
     conn.rollback.assert_called_once()
+
+
+@pytest.mark.parametrize("tls_ca", [None, "-----BEGIN CERTIFICATE-----\nCA\n"])
+def test_force_reset_connects_with_relation_tls(tls_ca):
+    """The recovery connection passes only libpq options and verifies advertised TLS."""
+    conn, _ = fake_connection(1)
+    received = {}
+
+    def connect(**kwargs):
+        """Record the connection options and the CA file content at connect time.
+
+        Args:
+            **kwargs: The psycopg2 connection options.
+
+        Returns:
+            The fake connection.
+        """
+        received.update(kwargs)
+        if "sslrootcert" in kwargs:
+            received["ca"] = pathlib.Path(kwargs["sslrootcert"]).read_text()
+        return conn
+
+    with mock.patch("ranger_db.psycopg2.connect", side_effect=connect):
+        ranger_db.force_reset({**DB_CONNECTION, "tls_ca": tls_ca}, "admin", "RangerAdmin1")
+
+    expected = {key: value for key, value in DB_CONNECTION.items() if key != "tls_ca"}
+    if tls_ca:
+        expected.update(sslmode="verify-full", ca=tls_ca)
+        expected["sslrootcert"] = received["sslrootcert"]
+    assert received == expected
 
 
 def test_reconciliation_waits_for_the_leader(ctx):

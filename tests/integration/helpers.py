@@ -6,12 +6,14 @@
 
 import json
 import logging
+import subprocess  # nosec B404
 import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator
 
 import jubilant
+import psycopg2
 import requests
 import yaml
 
@@ -30,6 +32,68 @@ HEADERS = {
     "Content-Type": "application/json",
 }
 LDAP_NAME = "comsys-openldap-k8s"
+RANGER_JDBC_APPLICATION_NAME = "PostgreSQL JDBC Driver"
+
+
+def ranger_jdbc_ssl_states(juju: jubilant.Juju) -> list[bool]:
+    """Return whether each of Ranger's PostgreSQL sessions uses TLS.
+
+    Connects with the relation credentials, which stay in memory, and reads only
+    connection metadata.
+
+    Args:
+        juju: Jubilant Juju object.
+
+    Returns:
+        The pg_stat_ssl `ssl` flag of each Ranger JDBC session.
+    """
+    relation = next(
+        relation
+        for relation in juju.show_unit(f"{APP_NAME}/0").relation_info
+        if relation.endpoint == "database"
+    )
+    credentials = juju.show_secret(relation.app_data["secret-user"], reveal=True).content
+    # The test host cannot resolve cluster DNS, so connect to the unit's pod address.
+    host = juju.status().apps[POSTGRES_NAME].units[f"{POSTGRES_NAME}/0"].address
+    with psycopg2.connect(
+        dbname="ranger-k8s_db",
+        host=host,
+        user=credentials["username"],
+        password=credentials["password"],
+        connect_timeout=10,
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT ssl.ssl FROM pg_stat_activity AS activity "
+                "JOIN pg_stat_ssl AS ssl ON ssl.pid = activity.pid "
+                "WHERE activity.application_name = %s",
+                (RANGER_JDBC_APPLICATION_NAME,),
+            )
+            return [row[0] for row in cursor.fetchall()]
+
+
+def wait_for_ranger_jdbc_ssl(juju: jubilant.Juju, *, ssl: bool, timeout: int = 300) -> None:
+    """Wait until all of Ranger's PostgreSQL sessions report the expected TLS state.
+
+    Args:
+        juju: Jubilant Juju object.
+        ssl: The expected pg_stat_ssl `ssl` flag.
+        timeout: Seconds to wait.
+
+    Raises:
+        TimeoutError: If the sessions do not reach the expected state in time.
+    """
+    deadline = time.monotonic() + timeout
+    states = []
+    while time.monotonic() < deadline:
+        try:
+            states = ranger_jdbc_ssl_states(juju)
+        except psycopg2.Error:
+            logger.info("PostgreSQL is not accepting the metadata query yet")
+        if states and all(state is ssl for state in states):
+            return
+        time.sleep(5)
+    raise TimeoutError(f"Ranger JDBC sessions reported ssl={states}, expected {ssl}")
 
 
 def get_passwords(juju: jubilant.Juju, app: str = APP_NAME) -> dict:
@@ -202,6 +266,73 @@ def wait_for_apps(
 
     with fast_forward_ctx(juju, fast_forward):
         return juju.wait(ready, error=error, delay=delay, timeout=timeout, successes=successes)
+
+
+def _get_pods(juju: jubilant.Juju) -> list[dict]:
+    """Read pods from the test model's namespace.
+
+    Args:
+        juju: Jubilant Juju object.
+
+    Returns:
+        The Kubernetes pod objects.
+    """
+    result = subprocess.run(  # nosec B603 B607
+        ["kubectl", "get", "pods", "-n", juju.model, "-o", "json"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    return json.loads(result.stdout)["items"]
+
+
+def get_pod_uids(juju: jubilant.Juju, pods: list[str]) -> dict[str, str]:
+    """Return the Kubernetes UID of each named pod.
+
+    Args:
+        juju: Jubilant Juju object.
+        pods: Pod names.
+
+    Returns:
+        A mapping of pod name to UID.
+    """
+    uids = {pod["metadata"]["name"]: pod["metadata"]["uid"] for pod in _get_pods(juju)}
+    return {name: uids[name] for name in pods}
+
+
+def wait_for_replacement_pods(
+    juju: jubilant.Juju, original_uids: dict[str, str], timeout: float = 600
+) -> None:
+    """Wait for every named pod to have a new UID and report Ready.
+
+    Args:
+        juju: Jubilant Juju object.
+        original_uids: A mapping of pod name to the UID before deletion.
+        timeout: Seconds to wait.
+
+    Raises:
+        TimeoutError: If a replacement pod is not Ready in time.
+    """
+    deadline = time.monotonic() + timeout
+    pending = set(original_uids)
+    while time.monotonic() < deadline:
+        ready = {
+            pod["metadata"]["name"]
+            for pod in _get_pods(juju)
+            if pod["metadata"]["name"] in original_uids
+            and pod["metadata"]["uid"] != original_uids[pod["metadata"]["name"]]
+            and not pod["metadata"].get("deletionTimestamp")
+            and any(
+                condition["type"] == "Ready" and condition["status"] == "True"
+                for condition in pod.get("status", {}).get("conditions", [])
+            )
+        }
+        pending = set(original_uids) - ready
+        if not pending:
+            return
+        time.sleep(5)
+    raise TimeoutError(f"Timed out waiting for replacement pods to be Ready: {sorted(pending)}")
 
 
 def get_unit_url(juju: jubilant.Juju, application, unit, port, protocol="http"):

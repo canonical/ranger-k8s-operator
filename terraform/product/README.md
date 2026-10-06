@@ -13,8 +13,10 @@ the `juju` provider.
 - An offer of Ranger's `policy` endpoint.
 
 Ranger redirects to HTTPS. Without a TLS integration on Traefik it serves Traefik's default
-certificate, so use `curl -k` to reach the UI. Setting `traefik.config.external_hostname` is
-needed for Traefik to reach active status without a LoadBalancer address.
+certificate, so use `curl -k` to reach the UI. Set `traefik.config.external_hostname` so that
+Traefik configures ingress; without it Traefik is blocked until its LoadBalancer has an address.
+On a cluster without a LoadBalancer, Traefik still configures ingress but stays in `waiting`
+status ("Load balancer service has not yet obtained an external address").
 
 Not deployed: `ranger-k8s` usersync, LDAP, TLS, COS and OpenSearch.
 
@@ -115,5 +117,6 @@ terraform init
 terraform test
 ```
 
-The suite runs plan checks and deploys the default stack, then waits for Ranger, PostgreSQL and
-Traefik to become active. The wait helper needs `juju` and `jq` on the path.
+The suite runs plan checks and deploys the default stack, then waits for Ranger and PostgreSQL
+to become active. Traefik is not awaited because it stays `waiting` on clusters without a
+LoadBalancer. The wait helper needs `juju` and `jq` on the path.

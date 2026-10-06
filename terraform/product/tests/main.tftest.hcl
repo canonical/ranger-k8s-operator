@@ -144,6 +144,7 @@ run "default_apply" {
     model_name     = "ranger-tf-test-apply"
     logging_config = "<root>=WARNING"
     proxy          = {}
+    # Without it Traefik goes blocked and does not configure ingress.
     traefik = {
       config = { external_hostname = "ranger.test" }
     }
@@ -194,19 +195,4 @@ run "wait_for_postgresql_active" {
   }
 }
 
-run "wait_for_traefik_active" {
-  module {
-    source = "./tests/wait_for_active"
-  }
-
-  variables {
-    model_uuid = run.default_apply.models.ranger.model_uuid
-    app_name   = "traefik-k8s"
-    timeout    = 1800
-  }
-
-  assert {
-    condition     = data.external.app_status.result.status == "active"
-    error_message = "traefik-k8s did not reach active status"
-  }
-}
+# Traefik is not awaited: it stays waiting while the cluster has no LoadBalancer address.

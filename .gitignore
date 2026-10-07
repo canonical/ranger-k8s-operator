@@ -9,6 +9,12 @@ __pycache__/
 .vscode/
 *.rock
 
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+
 # APM dependencies
 apm_modules/
 # ignored as apm takes care of populating the files

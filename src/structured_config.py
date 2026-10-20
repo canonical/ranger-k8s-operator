@@ -13,6 +13,8 @@ from urllib.parse import urlparse
 from charms.data_platform_libs.v0.data_models import BaseConfigModel
 from pydantic import root_validator, validator
 
+from literals import MAX_AUDIT_RETENTION_DAYS
+
 logger = logging.getLogger(__name__)
 
 
@@ -89,6 +91,7 @@ class CharmConfig(BaseConfigModel):
     charm_function: FunctionType
     lookup_timeout: int
     enforce_strict_reconciliation: bool
+    audit_retention_days: int
 
     @validator("*", pre=True)
     @classmethod
@@ -141,6 +144,24 @@ class CharmConfig(BaseConfigModel):
         if value < 1:
             raise ValueError("Value must be at least 1.")
         return value
+
+    @validator("audit_retention_days")
+    @classmethod
+    def audit_retention_days_validator(cls, value: int) -> int:
+        """Check validity of `audit_retention_days` field.
+
+        Args:
+            value: Days of audits to keep.
+
+        Returns:
+            The validated number of days.
+
+        Raises:
+            ValueError: If the number of days is outside 0 to 36500.
+        """
+        if 0 <= value <= MAX_AUDIT_RETENTION_DAYS:
+            return value
+        raise ValueError(f"Value must be between 0 and {MAX_AUDIT_RETENTION_DAYS}.")
 
     @validator("policy_mgr_url")
     @classmethod

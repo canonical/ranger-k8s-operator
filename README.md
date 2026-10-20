@@ -386,6 +386,24 @@ juju relate ranger-k8s opensearch
 
 More details on the setup process can be found [here](https://charmhub.io/opensearch/docs/t-overview).
 
+#### Audit retention
+By default every audit is kept. To keep only the most recent days, set `audit-retention-days`:
+
+```
+juju config ranger-k8s audit-retention-days=90
+```
+
+Audits are deleted a whole UTC day at a time. With 90, the index keeps today's audits plus those
+of the 90 full days before today, and each day after midnight UTC the oldest day is deleted.
+
+The delete runs in the background inside OpenSearch, at up to 5000 audits a second. If the index
+already holds more than the retention, the first run deletes all of the excess at once, which can
+take hours. Disk space comes back gradually afterwards, as OpenSearch merges its segments.
+
+Setting the option back to `0` stops future deletes. A delete that is already running carries on
+until it finishes; to stop it sooner, cancel it with `POST _tasks/<task id>/_cancel`, using the
+task id from the charm's log.
+
 ### Ingress
 The Ranger operator exposes its ports using the [Traefik](https://charmhub.io/traefik-k8s) ingress charm or any charm that implements the `ingress` interface (such as [gateway-api-integrator](https://charmhub.io/gateway-api-integrator)).
 

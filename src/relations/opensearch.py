@@ -5,6 +5,7 @@
 
 import logging
 import re
+from datetime import datetime, timedelta, timezone
 
 import requests
 from ops import framework
@@ -12,7 +13,13 @@ from ops.model import ModelError, SecretNotFoundError
 from ops.pebble import ExecError
 from requests.auth import HTTPBasicAuth
 
-from literals import CERTIFICATE_NAME, HEADERS, INDEX_NAME, OPENSEARCH_SCHEMA
+from literals import (
+    AUDIT_RETENTION_REQUESTS_PER_SECOND,
+    CERTIFICATE_NAME,
+    HEADERS,
+    INDEX_NAME,
+    OPENSEARCH_SCHEMA,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +142,75 @@ class OpensearchRelationHandler(framework.Object):
             )  # nosec
         except requests.exceptions.RequestException as error:
             logger.error("An exception has occurred while adding the audit schema: %s", error)
+
+    def reconcile_audit_retention(self, conn: dict, retention_days: int) -> None:
+        """Delete the audits from before the retention cutoff from the audit index.
+
+        The cutoff is midnight UTC `retention_days` days ago. The delete runs as an OpenSearch
+        task and is submitted only while audits before the cutoff remain and no delete by query on
+        the index is running, so a run is due once a day and a failed one is resubmitted.
+
+        Args:
+            conn: The OpenSearch connection values.
+            retention_days: The days of audits to keep, or 0 to keep every audit.
+        """
+        if not retention_days or not self.charm.unit.is_leader() or not conn.get("is_enabled"):
+            return
+        cutoff = (datetime.now(timezone.utc).date() - timedelta(days=retention_days)).isoformat()
+        base_url = f"https://{conn['host']}:{conn['port']}"
+        request = {
+            "auth": HTTPBasicAuth(conn["username"], conn["password"]),
+            "headers": HEADERS,
+            "verify": False,
+            "timeout": 60,
+        }
+        query = {"query": {"range": {"evtTime": {"lt": cutoff}}}}
+        try:
+            response = requests.get(
+                f"{base_url}/_tasks",
+                params={"actions": "*byquery", "detailed": "true"},
+                **request,
+            )  # nosec
+            response.raise_for_status()
+            description = f"delete-by-query [{conn['index']}]"
+            for node in response.json().get("nodes", {}).values():
+                for task_id, task in node.get("tasks", {}).items():
+                    if task.get("description", "").startswith(description):
+                        logger.debug("Audit retention task %s is still running", task_id)
+                        return
+
+            # The index does not exist until the first audit is written.
+            response = requests.post(
+                f"{base_url}/{conn['index']}/_count",
+                params={"ignore_unavailable": "true"},
+                json=query,
+                **request,
+            )  # nosec
+            response.raise_for_status()
+            expired = response.json()["count"]
+            if not expired:
+                return
+
+            response = requests.post(
+                f"{base_url}/{conn['index']}/_delete_by_query",
+                params={
+                    "wait_for_completion": "false",
+                    "conflicts": "proceed",
+                    "slices": "auto",
+                    "requests_per_second": AUDIT_RETENTION_REQUESTS_PER_SECOND,
+                },
+                json=query,
+                **request,
+            )  # nosec
+            response.raise_for_status()
+            logger.info(
+                "Deleting %d audits from before %s, task %s",
+                expired,
+                cutoff,
+                response.json().get("task"),
+            )
+        except (requests.exceptions.RequestException, KeyError, ValueError) as error:
+            logger.error("An exception has occurred while applying the audit retention: %s", error)
 
     def reconcile_truststore_certificate(self, container, certificate, truststore_pwd) -> None:
         """Reconcile the OpenSearch certificate in the Java truststore.

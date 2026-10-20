@@ -662,6 +662,9 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         self.set_truststore_password(container, truststore_pwd)
         self._reconcile_postgres_ca(container, db_conn["tls_ca"])
         self.opensearch_relation_handler.reconcile_index_mapping(opensearch)
+        self.opensearch_relation_handler.reconcile_audit_retention(
+            opensearch, self.config["audit-retention-days"]
+        )
         self.opensearch_relation_handler.reconcile_truststore_certificate(
             container, certificate, truststore_pwd
         )

@@ -6,6 +6,7 @@
 
 import dataclasses
 import pathlib
+from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 import pytest
@@ -593,3 +594,166 @@ def test_opensearch_blocked_for_usersync(ctx):
     assert state_out.unit_status == testing.BlockedStatus(
         "Only Ranger admin can relate to OpenSearch."
     )
+
+
+def _opensearch_response(body):
+    """Build a successful OpenSearch HTTP response."""
+    response = mock.Mock()
+    response.json.return_value = body
+    return response
+
+
+NOW = datetime(2026, 10, 20, 23, 59, 59, tzinfo=timezone.utc)
+
+
+def _cutoff(days):
+    """Return the retention cutoff date for a number of days at `NOW`."""
+    return (NOW.date() - timedelta(days=days)).isoformat()
+
+
+def _run_audit_retention(
+    ctx,
+    *,
+    retention_days,
+    tasks=None,
+    expired=0,
+    leader=True,
+    get_error=None,
+    count_error=None,
+    delete_error=None,
+):
+    """Reconcile an admin related to OpenSearch with OpenSearch requests mocked.
+
+    Args:
+        ctx: Scenario context.
+        retention_days: The `audit-retention-days` value.
+        tasks: The tasks returned by `_tasks`, keyed by task id.
+        expired: The count returned for audits before the cutoff.
+        leader: Whether the unit is the leader.
+        get_error: An exception raised by the `_tasks` request.
+        count_error: An exception raised by the `_count` request.
+        delete_error: An exception raised by the `_delete_by_query` request.
+
+    Returns:
+        The mocked `requests.get` and `requests.post`.
+    """
+    user = testing.Secret({"username": "ranger", "password": "password"})  # nosec B105
+    tls = testing.Secret(
+        {
+            "tls-ca": (
+                "-----BEGIN CERTIFICATE-----\nfirst\n-----END CERTIFICATE-----\n"
+                "-----BEGIN CERTIFICATE-----\nsecond\n-----END CERTIFICATE-----"
+            )
+        }
+    )
+    tasks_response = _opensearch_response({"nodes": {"node-1": {"tasks": tasks or {}}}})
+    with (
+        mock.patch("relations.opensearch.datetime", wraps=datetime) as clock,
+        mock.patch("relations.opensearch.requests.put"),
+        mock.patch(
+            "relations.opensearch.requests.get",
+            return_value=tasks_response,
+            side_effect=get_error,
+        ) as get,
+        mock.patch(
+            "relations.opensearch.requests.post",
+            side_effect=[
+                count_error or _opensearch_response({"count": expired}),
+                delete_error or _opensearch_response({"task": "node-1:42"}),
+            ],
+        ) as post,
+        mock_ranger_api(),
+    ):
+        clock.now.return_value = NOW
+        ctx.run(
+            ctx.on.update_status(),
+            build_admin_state(
+                leader=leader,
+                config={"audit-retention-days": retention_days},
+                extra_relations={_opensearch_relation(user, tls)},
+                extra_secrets=(user, tls),
+            ),
+        )
+    return get, post
+
+
+def test_audit_retention_deletes_expired_audits(ctx):
+    """The leader submits a throttled background delete of the audits before the cutoff."""
+    get, post = _run_audit_retention(ctx, retention_days=30, expired=1000)
+
+    assert get.call_args.args == ("https://opensearch:9200/_tasks",)
+    query = {"query": {"range": {"evtTime": {"lt": _cutoff(30)}}}}
+    count, delete = post.call_args_list
+    assert count.args == ("https://opensearch:9200/ranger_audits/_count",)
+    assert count.kwargs["json"] == query
+    assert count.kwargs["params"] == {"ignore_unavailable": "true"}
+    assert delete.args == ("https://opensearch:9200/ranger_audits/_delete_by_query",)
+    assert delete.kwargs["json"] == query
+    assert delete.kwargs["params"]["wait_for_completion"] == "false"
+    assert delete.kwargs["params"]["conflicts"] == "proceed"
+    assert delete.kwargs["params"]["requests_per_second"] > 0
+
+
+def test_audit_retention_waits_for_running_delete(ctx):
+    """A delete by query already running on the index is not submitted again."""
+    tasks = {
+        "node-1:41": {
+            "action": "indices:data/write/delete/byquery",
+            "description": "delete-by-query [ranger_audits]",
+        }
+    }
+    _, post = _run_audit_retention(ctx, retention_days=30, tasks=tasks, expired=1000)
+
+    post.assert_not_called()
+
+
+def test_audit_retention_ignores_delete_on_other_index(ctx):
+    """A delete by query on another index does not hold back the retention."""
+    tasks = {
+        "node-1:41": {
+            "action": "indices:data/write/delete/byquery",
+            "description": "delete-by-query [other_index]",
+        }
+    }
+    _, post = _run_audit_retention(ctx, retention_days=30, tasks=tasks, expired=1000)
+
+    assert post.call_count == 2
+
+
+def test_audit_retention_skips_when_nothing_expired(ctx):
+    """No delete is submitted while no audit is before the cutoff."""
+    _, post = _run_audit_retention(ctx, retention_days=30, expired=0)
+
+    assert [call.args[0] for call in post.call_args_list] == [
+        "https://opensearch:9200/ranger_audits/_count"
+    ]
+
+
+@pytest.mark.parametrize(
+    "retention_days, leader", [(0, True), (30, False)], ids=["disabled", "follower"]
+)
+def test_audit_retention_sends_no_request(ctx, retention_days, leader):
+    """Retention 0, or a follower unit, sends no retention request."""
+    get, post = _run_audit_retention(
+        ctx, retention_days=retention_days, expired=1000, leader=leader
+    )
+
+    get.assert_not_called()
+    post.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "error, failing, posts",
+    [
+        ("get_error", "_tasks", 0),
+        ("count_error", "ranger_audits/_count", 1),
+        ("delete_error", "ranger_audits/_delete_by_query", 2),
+    ],
+)
+def test_audit_retention_failure_does_not_fail_hook(ctx, caplog, error, failing, posts):
+    """A failed request is logged with its path and later requests are skipped."""
+    refused = requests.exceptions.ConnectionError("refused")
+    _, post = _run_audit_retention(ctx, retention_days=30, expired=1000, **{error: refused})
+
+    assert post.call_count == posts
+    assert f"The audit retention request to {failing} failed: refused" in caplog.text

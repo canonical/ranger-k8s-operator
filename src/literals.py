@@ -80,6 +80,8 @@ HEADERS = {
 
 # OpenSearch literals
 INDEX_NAME = "ranger_audits"
+AUDIT_RETENTION_REQUESTS_PER_SECOND = 5000
+MAX_AUDIT_RETENTION_DAYS = 36500
 CERTIFICATE_NAME = "opensearch-ca"
 OPENSEARCH_SCHEMA = {
     "properties": {

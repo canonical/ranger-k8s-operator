@@ -107,6 +107,12 @@ def test_usersync_ldap_behaviour_values(ctx) -> None:
     check_invalid_values(ctx, "sync-paged-results-size", [0, -1])
 
 
+def test_audit_retention_days_values(ctx) -> None:
+    """Audit retention accepts 0 and any positive number of days."""
+    check_valid_values(ctx, "audit-retention-days", [0, 1, 90, 36500])
+    check_invalid_values(ctx, "audit-retention-days", [-1, 36501, 1000000])
+
+
 def test_policy_mgr_url_values(ctx) -> None:
     """Policy manager URLs require an HTTP(S) URL with a hostname."""
     check_invalid_values(

@@ -277,3 +277,9 @@ config:
         even if they are already populated.
       type: boolean
       default: true
+    audit-retention-days:
+      description: |
+        Number of days of access audits to keep in the related OpenSearch index. Set 0 to keep every audit.
+        Applies only to an application with `charm-function=admin` related to OpenSearch.
+      type: int
+      default: 0

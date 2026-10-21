@@ -6,6 +6,7 @@
 import logging
 import re
 from datetime import datetime, timedelta, timezone
+from typing import Callable, Optional
 
 import requests
 from ops import framework
@@ -144,73 +145,98 @@ class OpensearchRelationHandler(framework.Object):
             logger.error("An exception has occurred while adding the audit schema: %s", error)
 
     def reconcile_audit_retention(self, conn: dict, retention_days: int) -> None:
-        """Delete the audits from before the retention cutoff from the audit index.
+        """Delete the audits older than the retention period from the audit index.
 
-        The cutoff is midnight UTC `retention_days` days ago. The delete runs as an OpenSearch
-        task and is submitted only while audits before the cutoff remain and no delete by query on
-        the index is running, so a run is due once a day and a failed one is resubmitted.
+        The cutoff is midnight UTC `retention_days` days ago. On every hook the leader first lists
+        the running OpenSearch tasks and stops if a delete by query on the audit index is still
+        running. It then counts the audits from before the cutoff and stops if there are none.
+        Otherwise it submits a delete by query for them, which OpenSearch runs in the background.
+        The cutoff only moves at midnight UTC, so a delete is submitted about once a day, and a
+        delete that fails or is cancelled is submitted again by the next hook.
 
         Args:
             conn: The OpenSearch connection values.
             retention_days: The days of audits to keep, or 0 to keep every audit.
         """
-        if not retention_days or not self.charm.unit.is_leader() or not conn.get("is_enabled"):
+        if retention_days == 0 or not self.charm.unit.is_leader() or not conn.get("is_enabled"):
             return
         cutoff = (datetime.now(timezone.utc).date() - timedelta(days=retention_days)).isoformat()
-        base_url = f"https://{conn['host']}:{conn['port']}"
-        request = {
-            "auth": HTTPBasicAuth(conn["username"], conn["password"]),
-            "headers": HEADERS,
-            "verify": False,
-            "timeout": 60,
-        }
         query = {"query": {"range": {"evtTime": {"lt": cutoff}}}}
-        try:
-            response = requests.get(
-                f"{base_url}/_tasks",
-                params={"actions": "*byquery", "detailed": "true"},
-                **request,
-            )  # nosec
-            response.raise_for_status()
-            description = f"delete-by-query [{conn['index']}]"
-            for node in response.json().get("nodes", {}).values():
-                for task_id, task in node.get("tasks", {}).items():
-                    if task.get("description", "").startswith(description):
-                        logger.debug("Audit retention task %s is still running", task_id)
-                        return
+        index = conn["index"]
 
-            # The index does not exist until the first audit is written.
-            response = requests.post(
-                f"{base_url}/{conn['index']}/_count",
-                params={"ignore_unavailable": "true"},
-                json=query,
-                **request,
-            )  # nosec
-            response.raise_for_status()
-            expired = response.json()["count"]
-            if not expired:
-                return
+        tasks = self._request_audit_retention(
+            requests.get, conn, "_tasks", params={"actions": "*byquery", "detailed": "true"}
+        )
+        if tasks is None:
+            return
+        description = f"delete-by-query [{index}]"
+        for node in tasks.get("nodes", {}).values():
+            for task_id, task in node.get("tasks", {}).items():
+                if task.get("description", "").startswith(description):
+                    logger.debug("Audit retention task %s is still running", task_id)
+                    return
 
-            response = requests.post(
-                f"{base_url}/{conn['index']}/_delete_by_query",
-                params={
-                    "wait_for_completion": "false",
-                    "conflicts": "proceed",
-                    "slices": "auto",
-                    "requests_per_second": AUDIT_RETENTION_REQUESTS_PER_SECOND,
-                },
-                json=query,
-                **request,
-            )  # nosec
-            response.raise_for_status()
+        # The index does not exist until the first audit is written.
+        count = self._request_audit_retention(
+            requests.post,
+            conn,
+            f"{index}/_count",
+            params={"ignore_unavailable": "true"},
+            json=query,
+        )
+        if count is None or count["count"] == 0:
+            return
+
+        delete = self._request_audit_retention(
+            requests.post,
+            conn,
+            f"{index}/_delete_by_query",
+            params={
+                "wait_for_completion": "false",
+                "conflicts": "proceed",
+                "slices": "auto",
+                "requests_per_second": AUDIT_RETENTION_REQUESTS_PER_SECOND,
+            },
+            json=query,
+        )
+        if delete is not None:
             logger.info(
                 "Deleting %d audits from before %s, task %s",
-                expired,
+                count["count"],
                 cutoff,
-                response.json().get("task"),
+                delete.get("task"),
             )
-        except (requests.exceptions.RequestException, KeyError, ValueError) as error:
-            logger.error("An exception has occurred while applying the audit retention: %s", error)
+
+    def _request_audit_retention(
+        self, send: Callable[..., requests.Response], conn: dict, path: str, **kwargs
+    ) -> Optional[dict]:
+        """Send one audit retention request to OpenSearch.
+
+        A failure is logged with the request path and does not fail the hook.
+
+        Args:
+            send: The `requests` function for the HTTP method.
+            conn: The OpenSearch connection values.
+            path: The request path, without the leading slash.
+            kwargs: Further arguments for `send`.
+
+        Returns:
+            The JSON response body, or None if the request failed.
+        """
+        try:
+            response = send(
+                f"https://{conn['host']}:{conn['port']}/{path}",
+                auth=HTTPBasicAuth(conn["username"], conn["password"]),
+                headers=HEADERS,
+                verify=False,
+                timeout=60,
+                **kwargs,
+            )  # nosec
+            response.raise_for_status()
+            return response.json()
+        except (requests.exceptions.RequestException, ValueError) as error:
+            logger.error("The audit retention request to %s failed: %s", path, error)
+            return None
 
     def reconcile_truststore_certificate(self, container, certificate, truststore_pwd) -> None:
         """Reconcile the OpenSearch certificate in the Java truststore.

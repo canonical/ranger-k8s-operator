@@ -612,7 +612,15 @@ def _cutoff(days):
 
 
 def _run_audit_retention(
-    ctx, *, retention_days, tasks=None, expired=0, leader=True, get_error=None
+    ctx,
+    *,
+    retention_days,
+    tasks=None,
+    expired=0,
+    leader=True,
+    get_error=None,
+    count_error=None,
+    delete_error=None,
 ):
     """Reconcile an admin related to OpenSearch with OpenSearch requests mocked.
 
@@ -623,6 +631,8 @@ def _run_audit_retention(
         expired: The count returned for audits before the cutoff.
         leader: Whether the unit is the leader.
         get_error: An exception raised by the `_tasks` request.
+        count_error: An exception raised by the `_count` request.
+        delete_error: An exception raised by the `_delete_by_query` request.
 
     Returns:
         The mocked `requests.get` and `requests.post`.
@@ -648,8 +658,8 @@ def _run_audit_retention(
         mock.patch(
             "relations.opensearch.requests.post",
             side_effect=[
-                _opensearch_response({"count": expired}),
-                _opensearch_response({"task": "node-1:42"}),
+                count_error or _opensearch_response({"count": expired}),
+                delete_error or _opensearch_response({"task": "node-1:42"}),
             ],
         ) as post,
         mock_ranger_api(),
@@ -732,13 +742,18 @@ def test_audit_retention_sends_no_request(ctx, retention_days, leader):
     post.assert_not_called()
 
 
-def test_audit_retention_failure_does_not_fail_hook(ctx):
-    """An OpenSearch error is logged, the hook completes and nothing is submitted."""
-    _, post = _run_audit_retention(
-        ctx,
-        retention_days=30,
-        expired=1000,
-        get_error=requests.exceptions.ConnectionError("refused"),
-    )
+@pytest.mark.parametrize(
+    "error, failing, posts",
+    [
+        ("get_error", "_tasks", 0),
+        ("count_error", "ranger_audits/_count", 1),
+        ("delete_error", "ranger_audits/_delete_by_query", 2),
+    ],
+)
+def test_audit_retention_failure_does_not_fail_hook(ctx, caplog, error, failing, posts):
+    """A failed request is logged with its path and later requests are skipped."""
+    refused = requests.exceptions.ConnectionError("refused")
+    _, post = _run_audit_retention(ctx, retention_days=30, expired=1000, **{error: refused})
 
-    post.assert_not_called()
+    assert post.call_count == posts
+    assert f"The audit retention request to {failing} failed: refused" in caplog.text

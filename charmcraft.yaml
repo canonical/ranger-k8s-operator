@@ -283,3 +283,10 @@ config:
         Applies only to an application with `charm-function=admin` related to OpenSearch.
       type: int
       default: 0
+    audit-max-result-window:
+      description: |
+        Maximum number of audits a single search of the related OpenSearch index can page through, as used
+        by the Audit tab and the `/service/assets/accessAudit` API. Sets `index.max_result_window` on the index.
+        Applies only to an application with `charm-function=admin` related to OpenSearch.
+      type: int
+      default: 10000

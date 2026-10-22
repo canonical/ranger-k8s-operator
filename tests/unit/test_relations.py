@@ -59,6 +59,13 @@ def _trino_relation():
     )
 
 
+@pytest.fixture(autouse=True)
+def _no_opensearch_reads():
+    """Answer OpenSearch reads with an empty body, so that no test reaches the network."""
+    with mock.patch("relations.opensearch.requests.get", return_value=_opensearch_response({})):
+        yield
+
+
 def _opensearch_relation(user_secret, tls_secret):
     """Build an OpenSearch relation backed by Juju secrets."""
     return testing.Relation(
@@ -649,6 +656,9 @@ def _run_audit_retention(
     tasks_response = _opensearch_response({"nodes": {"node-1": {"tasks": tasks or {}}}})
     with (
         mock.patch("relations.opensearch.datetime", wraps=datetime) as clock,
+        mock.patch(
+            "relations.opensearch.OpensearchRelationHandler.reconcile_audit_max_result_window"
+        ),
         mock.patch("relations.opensearch.requests.put"),
         mock.patch(
             "relations.opensearch.requests.get",
@@ -756,4 +766,114 @@ def test_audit_retention_failure_does_not_fail_hook(ctx, caplog, error, failing,
     _, post = _run_audit_retention(ctx, retention_days=30, expired=1000, **{error: refused})
 
     assert post.call_count == posts
-    assert f"The audit retention request to {failing} failed: refused" in caplog.text
+    assert f"The OpenSearch request to {failing} failed: refused" in caplog.text
+
+
+def _settings_response(explicit=None):
+    """Build the `_settings` response for `index.max_result_window` on the audit index."""
+    if explicit is None:
+        values = {"settings": {}, "defaults": {"index.max_result_window": "10000"}}
+    else:
+        values = {"settings": {"index.max_result_window": explicit}, "defaults": {}}
+    return {"ranger_audits": values}
+
+
+def _run_max_result_window(ctx, *, window, settings, leader=True, get_error=None):
+    """Reconcile an admin related to OpenSearch with OpenSearch requests mocked.
+
+    Args:
+        ctx: Scenario context.
+        window: The `audit-max-result-window` value.
+        settings: The body returned by the `_settings` read.
+        leader: Whether the unit is the leader.
+        get_error: An exception raised by the `_settings` read.
+
+    Returns:
+        The mocked `requests.get` and the `requests.put` calls made to `_settings`.
+    """
+    user = testing.Secret({"username": "ranger", "password": "password"})  # nosec B105
+    tls = testing.Secret(
+        {"tls-ca": "-----BEGIN CERTIFICATE-----\nfirst\n-----END CERTIFICATE-----"}
+    )
+    with (
+        mock.patch("relations.opensearch.requests.put") as put,
+        mock.patch(
+            "relations.opensearch.requests.get",
+            return_value=_opensearch_response(settings),
+            side_effect=get_error,
+        ) as get,
+        mock_ranger_api(),
+    ):
+        ctx.run(
+            ctx.on.update_status(),
+            build_admin_state(
+                leader=leader,
+                config={"audit-max-result-window": window},
+                extra_relations={_opensearch_relation(user, tls)},
+                extra_secrets=(user, tls),
+            ),
+        )
+    return get, [call for call in put.call_args_list if call.args[0].endswith("/_settings")]
+
+
+def test_max_result_window_raised_from_default(ctx):
+    """The leader writes the option when the index still has the OpenSearch default."""
+    get, puts = _run_max_result_window(ctx, window=100000, settings=_settings_response())
+
+    assert get.call_args.args == (
+        "https://opensearch:9200/ranger_audits/_settings/index.max_result_window",
+    )
+    assert get.call_args.kwargs["params"]["ignore_unavailable"] == "true"
+    (put,) = puts
+    assert put.args == ("https://opensearch:9200/ranger_audits/_settings",)
+    assert put.kwargs["json"] == {"index": {"max_result_window": 100000}}
+
+
+def test_max_result_window_resets_manual_value(ctx):
+    """A value set on the index by hand is replaced by the option."""
+    _, puts = _run_max_result_window(ctx, window=10000, settings=_settings_response("50000"))
+
+    (put,) = puts
+    assert put.kwargs["json"] == {"index": {"max_result_window": 10000}}
+
+
+@pytest.mark.parametrize(
+    "window, settings",
+    [
+        (10000, _settings_response()),
+        (100000, _settings_response("100000")),
+        (100000, {}),
+    ],
+    ids=["default", "already-set", "no-index"],
+)
+def test_max_result_window_not_written(ctx, window, settings):
+    """Nothing is written when the index already has the value or does not exist yet."""
+    _, puts = _run_max_result_window(ctx, window=window, settings=settings)
+
+    assert puts == []
+
+
+def test_max_result_window_follower_sends_nothing(ctx):
+    """A follower unit neither reads nor writes the setting."""
+    get, puts = _run_max_result_window(
+        ctx, window=100000, settings=_settings_response(), leader=False
+    )
+
+    get.assert_not_called()
+    assert puts == []
+
+
+def test_max_result_window_read_failure_does_not_fail_hook(ctx, caplog):
+    """A failed read is logged with its path and nothing is written."""
+    _, puts = _run_max_result_window(
+        ctx,
+        window=100000,
+        settings=_settings_response(),
+        get_error=requests.exceptions.ConnectionError("refused"),
+    )
+
+    assert puts == []
+    assert (
+        "The OpenSearch request to ranger_audits/_settings/index.max_result_window failed: refused"
+        in caplog.text
+    )

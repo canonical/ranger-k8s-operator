@@ -404,6 +404,22 @@ Setting the option back to `0` stops future deletes. A delete that is already ru
 until it finishes; to stop it sooner, cancel it with `POST _tasks/<task id>/_cancel`, using the
 task id from the charm's log.
 
+#### Audit search depth
+OpenSearch refuses a search that pages past the index's `index.max_result_window`, 10000 by
+default, so the Audit tab and `GET /service/assets/accessAudit` can read at most 10000 audits of one
+search (`startIndex` plus `pageSize`). To page further, raise `audit-max-result-window`:
+
+```
+juju config ranger-k8s audit-max-result-window=100000
+```
+
+The charm sets it on the index on the next hook, with no restart of Ranger or OpenSearch. Each page
+makes OpenSearch sort every audit before it, so set it just above the deepest search you need, for
+example the busiest window an audit exporter reads, rather than to the maximum. `totalCount` in the
+API response still reports at most 10000, so page until a page returns fewer audits than requested.
+
+The charm owns this setting: a value set on the index by hand is replaced by the option.
+
 ### Ingress
 The Ranger operator exposes its ports using the [Traefik](https://charmhub.io/traefik-k8s) ingress charm or any charm that implements the `ingress` interface (such as [gateway-api-integrator](https://charmhub.io/gateway-api-integrator)).
 

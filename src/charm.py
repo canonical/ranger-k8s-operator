@@ -665,6 +665,9 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         self.opensearch_relation_handler.reconcile_audit_retention(
             opensearch, self.config["audit-retention-days"]
         )
+        self.opensearch_relation_handler.reconcile_audit_max_result_window(
+            opensearch, self.config["audit-max-result-window"]
+        )
         self.opensearch_relation_handler.reconcile_truststore_certificate(
             container, certificate, truststore_pwd
         )

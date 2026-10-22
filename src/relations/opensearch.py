@@ -164,7 +164,7 @@ class OpensearchRelationHandler(framework.Object):
         query = {"query": {"range": {"evtTime": {"lt": cutoff}}}}
         index = conn["index"]
 
-        tasks = self._request_audit_retention(
+        tasks = self._request_opensearch(
             requests.get, conn, "_tasks", params={"actions": "*byquery", "detailed": "true"}
         )
         if tasks is None:
@@ -177,7 +177,7 @@ class OpensearchRelationHandler(framework.Object):
                     return
 
         # The index does not exist until the first audit is written.
-        count = self._request_audit_retention(
+        count = self._request_opensearch(
             requests.post,
             conn,
             f"{index}/_count",
@@ -187,7 +187,7 @@ class OpensearchRelationHandler(framework.Object):
         if count is None or count["count"] == 0:
             return
 
-        delete = self._request_audit_retention(
+        delete = self._request_opensearch(
             requests.post,
             conn,
             f"{index}/_delete_by_query",
@@ -207,10 +207,57 @@ class OpensearchRelationHandler(framework.Object):
                 delete.get("task"),
             )
 
-    def _request_audit_retention(
+    def reconcile_audit_max_result_window(self, conn: dict, max_result_window: int) -> None:
+        """Set `index.max_result_window` on the audit index.
+
+        The Audit tab and `/service/assets/accessAudit` page with from and size, and OpenSearch
+        refuses a page that ends past this setting. The leader reads the setting and writes it only
+        when it differs. Until a plugin writes the first audit the index does not exist, the read
+        returns nothing, and a later hook applies the value.
+
+        Args:
+            conn: The OpenSearch connection values.
+            max_result_window: The value for `index.max_result_window`.
+        """
+        if not self.charm.unit.is_leader() or not conn.get("is_enabled"):
+            return
+        index = conn["index"]
+        settings = self._request_opensearch(
+            requests.get,
+            conn,
+            f"{index}/_settings/index.max_result_window",
+            params={
+                "include_defaults": "true",
+                "flat_settings": "true",
+                "ignore_unavailable": "true",
+            },
+        )
+        if not settings:
+            return
+        values = next(iter(settings.values()))
+        current = values.get("settings", {}).get(
+            "index.max_result_window", values.get("defaults", {}).get("index.max_result_window")
+        )
+        if current == str(max_result_window):
+            return
+        updated = self._request_opensearch(
+            requests.put,
+            conn,
+            f"{index}/_settings",
+            json={"index": {"max_result_window": max_result_window}},
+        )
+        if updated is not None:
+            logger.info(
+                "Changed index.max_result_window on %s from %s to %d",
+                index,
+                current,
+                max_result_window,
+            )
+
+    def _request_opensearch(
         self, send: Callable[..., requests.Response], conn: dict, path: str, **kwargs
     ) -> Optional[dict]:
-        """Send one audit retention request to OpenSearch.
+        """Send one request to OpenSearch.
 
         A failure is logged with the request path and does not fail the hook.
 
@@ -235,7 +282,7 @@ class OpensearchRelationHandler(framework.Object):
             response.raise_for_status()
             return response.json()
         except (requests.exceptions.RequestException, ValueError) as error:
-            logger.error("The audit retention request to %s failed: %s", path, error)
+            logger.error("The OpenSearch request to %s failed: %s", path, error)
             return None
 
     def reconcile_truststore_certificate(self, container, certificate, truststore_pwd) -> None:

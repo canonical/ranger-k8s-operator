@@ -13,7 +13,11 @@ from urllib.parse import urlparse
 from charms.data_platform_libs.v0.data_models import BaseConfigModel
 from pydantic import root_validator, validator
 
-from literals import MAX_AUDIT_RETENTION_DAYS
+from literals import (
+    DEFAULT_MAX_RESULT_WINDOW,
+    MAX_AUDIT_RETENTION_DAYS,
+    MAX_RESULT_WINDOW_LIMIT,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +96,7 @@ class CharmConfig(BaseConfigModel):
     lookup_timeout: int
     enforce_strict_reconciliation: bool
     audit_retention_days: int
+    audit_max_result_window: int
 
     @validator("*", pre=True)
     @classmethod
@@ -162,6 +167,26 @@ class CharmConfig(BaseConfigModel):
         if 0 <= value <= MAX_AUDIT_RETENTION_DAYS:
             return value
         raise ValueError(f"Value must be between 0 and {MAX_AUDIT_RETENTION_DAYS}.")
+
+    @validator("audit_max_result_window")
+    @classmethod
+    def audit_max_result_window_validator(cls, value: int) -> int:
+        """Check validity of `audit_max_result_window` field.
+
+        Args:
+            value: The value for `index.max_result_window`.
+
+        Returns:
+            The validated value.
+
+        Raises:
+            ValueError: If the value is out of range.
+        """
+        if DEFAULT_MAX_RESULT_WINDOW <= value <= MAX_RESULT_WINDOW_LIMIT:
+            return value
+        raise ValueError(
+            f"Value must be between {DEFAULT_MAX_RESULT_WINDOW} and {MAX_RESULT_WINDOW_LIMIT}."
+        )
 
     @validator("policy_mgr_url")
     @classmethod

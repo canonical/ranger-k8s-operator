@@ -113,6 +113,12 @@ def test_audit_retention_days_values(ctx) -> None:
     check_invalid_values(ctx, "audit-retention-days", [-1, 36501, 1000000])
 
 
+def test_audit_max_result_window_values(ctx) -> None:
+    """The result window accepts the OpenSearch default up to maximum value."""
+    check_valid_values(ctx, "audit-max-result-window", [10000, 100000, 1000000])
+    check_invalid_values(ctx, "audit-max-result-window", [0, 9999, 1000001])
+
+
 def test_policy_mgr_url_values(ctx) -> None:
     """Policy manager URLs require an HTTP(S) URL with a hostname."""
     check_invalid_values(

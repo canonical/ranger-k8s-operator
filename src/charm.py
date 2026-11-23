@@ -181,6 +181,8 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         self._grafana_dashboards = GrafanaDashboardProvider(
             self, relation_name="grafana-dashboard"
         )
+        # Drop dashboards kept in stored state by earlier renders.
+        self._grafana_dashboards.remove_non_builtin_dashboards()
         self._grafana_dashboards.add_dashboard(
             render_dashboard(
                 Path(__file__).parent / "dashboard_templates" / "ranger-monitoring.json.tmpl",

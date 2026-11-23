@@ -3,13 +3,15 @@
 
 """Unit tests for the Grafana dashboard rendering."""
 
+import dataclasses
 import json
 from pathlib import Path
 
 import pytest
 from charms.grafana_k8s.v0.grafana_dashboard import LZMABase64
-from ops.testing import Relation
+from ops.testing import Context, Relation, StoredState
 
+from charm import RangerK8SCharm
 from dashboard import render_dashboard
 from tests.unit.helpers import build_admin_state, mock_ranger_api
 
@@ -58,6 +60,15 @@ def test_charm_publishes_single_dashboard_for_its_model(ctx):
     """The charm sends one dashboard, defaulting to its own model."""
     relation = Relation("grafana-dashboard", interface="grafana_dashboard")
     state = build_admin_state(extra_relations=[relation])
+    # The real charm root, so the lib's scan of src/grafana_dashboards runs.
+    spec = ctx.charm_spec
+    ctx = Context(
+        RangerK8SCharm,
+        meta=spec.meta,
+        config=spec.config,
+        actions=spec.actions,
+        charm_root=TEMPLATE.parents[2],
+    )
 
     with mock_ranger_api():
         out = ctx.run(ctx.on.config_changed(), state)
@@ -68,3 +79,30 @@ def test_charm_publishes_single_dashboard_for_its_model(ctx):
     dashboard = json.loads(LZMABase64.decompress(next(iter(templates.values()))["content"]))
     expected = [out.model.name]
     assert _variables(dashboard)["juju_model"]["current"]["value"] == expected
+
+
+def test_charm_drops_stale_dashboard_from_stored_state(ctx):
+    """A dashboard kept in stored state from an earlier render is not published."""
+    stale = {
+        "charm": "ranger-k8s",
+        "content": "x",
+        "juju_topology": {},
+        "inject_dropdowns": True,
+        "dashboard_alt_uid": "stale",
+    }
+    stored = StoredState(
+        owner_path="RangerK8SCharm/GrafanaDashboardProvider[grafana-dashboard]",
+        name="_stored",
+        content={"dashboard_templates": {"prog:STALE123": stale}},
+    )
+    relation = Relation("grafana-dashboard", interface="grafana_dashboard")
+    state = dataclasses.replace(
+        build_admin_state(extra_relations=[relation]), stored_states={stored}
+    )
+
+    with mock_ranger_api():
+        out = ctx.run(ctx.on.config_changed(), state)
+
+    templates = json.loads(out.get_relation(relation.id).local_app_data["dashboards"])["templates"]
+    assert len(templates) == 1
+    assert "prog:STALE123" not in templates

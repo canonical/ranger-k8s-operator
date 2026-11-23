@@ -188,6 +188,7 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
                 Path(__file__).parent / "dashboard_templates" / "ranger-monitoring.json.tmpl",
                 self.model.name,
                 self.model.uuid,
+                self.meta.name,
             )
         )
 

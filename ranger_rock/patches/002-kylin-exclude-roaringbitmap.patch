@@ -1,0 +1,30 @@
+diff --git a/plugin-kylin/pom.xml b/plugin-kylin/pom.xml
+index bc50dde..05ec472 100644
+--- a/plugin-kylin/pom.xml
++++ b/plugin-kylin/pom.xml
+@@ -130,6 +130,10 @@
+                     <groupId>org.apache.kylin</groupId>
+                     <artifactId>kylin-shaded-guava</artifactId>
+                 </exclusion>
++                <exclusion>
++                    <groupId>org.roaringbitmap</groupId>
++                    <artifactId>RoaringBitmap</artifactId>
++                </exclusion>
+                 <exclusion>
+                     <groupId>org.slf4j</groupId>
+                     <artifactId>*</artifactId>
+diff --git a/ranger-kylin-plugin-shim/pom.xml b/ranger-kylin-plugin-shim/pom.xml
+index d7c67ab..7b0defb 100644
+--- a/ranger-kylin-plugin-shim/pom.xml
++++ b/ranger-kylin-plugin-shim/pom.xml
+@@ -64,6 +64,10 @@
+                     <groupId>org.apache.kylin</groupId>
+                     <artifactId>kylin-shaded-guava</artifactId>
+                 </exclusion>
++                <exclusion>
++                    <groupId>org.roaringbitmap</groupId>
++                    <artifactId>RoaringBitmap</artifactId>
++                </exclusion>
+                 <exclusion>
+                     <groupId>org.slf4j</groupId>
+                     <artifactId>*</artifactId>

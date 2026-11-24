@@ -8,6 +8,7 @@ import json
 import logging
 import subprocess  # nosec B404
 import time
+from datetime import datetime, timezone
 
 import jubilant
 import pytest
@@ -18,11 +19,13 @@ from integration.helpers import (
     APP_NAME,
     POSTGRES_NAME,
     TRAEFIK_NAME,
+    assert_no_secrets_in_workload_output,
     get_pod_uids,
     get_unit_url,
     wait_for_apps,
     wait_for_ranger_jdbc_ssl,
     wait_for_replacement_pods,
+    wait_for_ui,
 )
 
 logger = logging.getLogger(__name__)
@@ -40,6 +43,10 @@ class TestDeployment:
 
         response = requests.get(url, timeout=300, verify=False)  # nosec
         assert response.status_code == 200
+
+    def test_no_secrets_in_workload_output(self, juju: jubilant.Juju):
+        """The workload output holds no secrets after the first start."""
+        assert_no_secrets_in_workload_output(juju)
 
     def test_database_transport_is_plaintext(self, juju: jubilant.Juju):
         """Ranger connects without TLS when PostgreSQL does not advertise it."""
@@ -80,6 +87,13 @@ class TestDeployment:
         juju.remove_application(TRAEFIK_NAME, destroy_storage=True)
         wait_for_apps(juju, [APP_NAME], status="active", timeout=600)
 
+    def test_no_secrets_in_workload_output_after_restart_action(self, juju: jubilant.Juju):
+        """The workload output holds no secrets after a Pebble service restart."""
+        restarted_at = datetime.now(timezone.utc)
+        juju.run(f"{APP_NAME}/0", "restart")
+        wait_for_ui(juju)
+        assert_no_secrets_in_workload_output(juju, since=restarted_at)
+
     def test_simulate_crash(self, juju: jubilant.Juju):
         """Simulate the crash of the Ranger charm by force-deleting its pod.
 
@@ -113,3 +127,7 @@ class TestDeployment:
         url = get_unit_url(juju, application=APP_NAME, unit=0, port=6080)
         response = requests.get(url, timeout=300, verify=False)  # nosec
         assert response.status_code == 200
+
+    def test_no_secrets_in_workload_output_after_crash(self, juju: jubilant.Juju):
+        """The output of the recreated workload container holds no secrets."""
+        assert_no_secrets_in_workload_output(juju)

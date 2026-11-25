@@ -1,0 +1,17 @@
+diff --git a/pom.xml b/pom.xml
+index bdcfb21..9e9f97a 100755
+--- a/pom.xml
++++ b/pom.xml
+@@ -326,6 +326,12 @@
+                 <artifactId>jacoco-maven-plugin</artifactId>
+                 <version>${jacoco.version}</version>
+             </dependency>
++            <dependency>
++                <!-- Kylin pins 0.7.36-os-kylin-r1, only served by the defunct repository.kyligence.io -->
++                <groupId>org.roaringbitmap</groupId>
++                <artifactId>RoaringBitmap</artifactId>
++                <version>0.7.36</version>
++            </dependency>
+             <dependency>
+                 <groupId>org.hamcrest</groupId>
+                 <artifactId>hamcrest</artifactId>

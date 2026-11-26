@@ -9,6 +9,7 @@ import logging
 import subprocess  # nosec B404
 import time
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Generator
 
@@ -33,6 +34,17 @@ HEADERS = {
 }
 LDAP_NAME = "comsys-openldap-k8s"
 RANGER_JDBC_APPLICATION_NAME = "PostgreSQL JDBC Driver"
+# The Ranger admin service environment entries that hold secrets.
+ADMIN_SECRET_ENV_NAMES = (
+    "DB_PWD",
+    "JAVA_TRUSTSTORE_PWD",
+    "OPENSEARCH_PWD",
+    "RANGER_ADMIN_PWD",
+    "RANGER_USERSYNC_PWD",
+    "RANGER_KEYADMIN_PWD",
+    "RANGER_TAGSYNC_PWD",
+    "JAVA_OPTS",
+)
 
 
 def ranger_jdbc_ssl_states(juju: jubilant.Juju) -> list[bool]:
@@ -333,6 +345,79 @@ def wait_for_replacement_pods(
             return
         time.sleep(5)
     raise TimeoutError(f"Timed out waiting for replacement pods to be Ready: {sorted(pending)}")
+
+
+def get_admin_secret_environment(juju: jubilant.Juju) -> dict[str, str]:
+    """Return the non-empty secrets in the Ranger admin service environment.
+
+    Args:
+        juju: Jubilant Juju object.
+
+    Returns:
+        The secret values keyed by environment variable name.
+    """
+    plan = yaml.safe_load(juju.ssh(f"{APP_NAME}/0", "pebble", "plan", container="ranger"))
+    environment = plan["services"]["ranger"]["environment"]
+    return {name: environment[name] for name in ADMIN_SECRET_ENV_NAMES if environment.get(name)}
+
+
+def get_workload_output(juju: jubilant.Juju, since: datetime | None = None) -> str:
+    """Return the output of the Ranger admin workload container.
+
+    Pebble forwards its services' output to the container's stdout.
+
+    Args:
+        juju: Jubilant Juju object.
+        since: Only return output written after this time.
+
+    Returns:
+        The container log.
+    """
+    command = ["kubectl", "logs", f"{APP_NAME}-0", "-c", "ranger", "-n", juju.model]
+    if since:
+        command.append(f"--since-time={since.isoformat()}")
+    result = subprocess.run(  # nosec B603
+        command, check=True, capture_output=True, text=True, timeout=60
+    )
+    return result.stdout
+
+
+def assert_no_secrets_in_workload_output(
+    juju: jubilant.Juju, since: datetime | None = None
+) -> None:
+    """Assert that no admin service secret value appears in the workload output.
+
+    Args:
+        juju: Jubilant Juju object.
+        since: Only check output written after this time.
+    """
+    secrets = get_admin_secret_environment(juju)
+    assert secrets, "The Ranger admin service environment holds no secrets"
+    output = get_workload_output(juju, since)
+    leaked = {name: value for name, value in secrets.items() if value in output}
+    assert not leaked, f"Ranger workload output contains secrets: {leaked}"
+
+
+def wait_for_ui(juju: jubilant.Juju, timeout: float = 600) -> None:
+    """Wait until the Ranger admin UI answers.
+
+    Args:
+        juju: Jubilant Juju object.
+        timeout: Seconds to wait.
+
+    Raises:
+        TimeoutError: If the UI does not answer in time.
+    """
+    url = get_unit_url(juju, application=APP_NAME, unit=0, port=6080)
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            if requests.get(url, timeout=10, verify=False).status_code == 200:  # nosec
+                return
+        except requests.RequestException:
+            logger.info("Ranger UI is not answering yet")
+        time.sleep(5)
+    raise TimeoutError(f"Ranger UI at {url} did not answer within {timeout} seconds")
 
 
 def get_unit_url(juju: jubilant.Juju, application, unit, port, protocol="http"):

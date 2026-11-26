@@ -194,6 +194,10 @@ parts:
       - python3-minimal
       - vim
       - libpostgresql-jdbc-java
+      # Ranger admin setup.sh sets DIST_NAME from `lsb_release -si` and runs
+      # `export $DIST_NAME`. Without lsb_release, DIST_NAME is empty and the
+      # bare `export` prints the environment, secrets included.
+      - lsb-release
     override-prime: |
       craftctl default
       ln -sf /usr/bin/python3 "${CRAFT_PRIME}/usr/bin/python"

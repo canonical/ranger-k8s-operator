@@ -8,6 +8,7 @@ import logging
 import subprocess  # nosec B404
 import time
 from enum import Enum
+from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -33,6 +34,7 @@ from pydantic import ValidationError
 
 import ranger_db
 from credentials import CredentialStore
+from dashboard import render_dashboard
 from exceptions import RangerDatabaseError, RelationNotReady
 from literals import (
     ADMIN_ENTRYPOINT,
@@ -178,6 +180,16 @@ class RangerK8SCharm(TypedCharmBase[CharmConfig]):
         self.log_proxy = LogProxyConsumer(self, log_files=LOG_FILES, relation_name="log-proxy")
         self._grafana_dashboards = GrafanaDashboardProvider(
             self, relation_name="grafana-dashboard"
+        )
+        # Drop dashboards kept in stored state by earlier renders.
+        self._grafana_dashboards.remove_non_builtin_dashboards()
+        self._grafana_dashboards.add_dashboard(
+            render_dashboard(
+                Path(__file__).parent / "dashboard_templates" / "ranger-monitoring.json.tmpl",
+                self.model.name,
+                self.model.uuid,
+                self.meta.name,
+            )
         )
 
     @property
